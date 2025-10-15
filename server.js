@@ -8,6 +8,7 @@ const connectDB = require('./src/config/db');
 const authRoutes = require('./src/routes/auth');
 const schoolRoutes = require('./src/routes/schools.route');
 const empStudentRoutes = require('./src/routes/employeeStudent.routes');
+const classSectionRoutes = require('./src/routes/classSection.routes');
 const logger = require('./src/utils/logger');
 const seedSuperAdmin = require('./src/seed/seedSuperAdmin');
 
@@ -30,6 +31,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/auth', authRoutes);
 app.use('/api/schools', schoolRoutes);
 app.use('/api/empStudent', empStudentRoutes);
+app.use('/api/classSection', classSectionRoutes);
 
 app.get('/', (req, res) => res.send('School Auth Microservice API'));
 
