@@ -24,10 +24,18 @@ const UserSchema = new Schema({
   salary: Number,
   joiningDate: Date,
   subjectAssigned: [String],
-  assignClass: String,
-  assignSection: String,
-  class: String,
-  section: String,
+  assignClass: { type: Schema.Types.ObjectId, ref: "Class" },
+  assignSection: { type: Schema.Types.ObjectId, ref: "Section" },
+  classInfo: {
+    id: { type: mongoose.Schema.Types.ObjectId, ref: "Class" },
+    name: String
+  },
+  sectionInfo: {
+    id: { type: mongoose.Schema.Types.ObjectId, ref: "Section" },
+    name: String
+  },
+
+
   rollNo: String,
   images: {
     cnicFront: String,
