@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const { addEmployeeBySchool, editEmployeeBySchool, deleteEmployeeBySchool, addStudentBySchool, editStudentBySchool, deleteStudentBySchool } = require("../controllers/employeeStudent.controller");
+const { addEmployeeBySchool, editEmployeeBySchool, deleteEmployeeBySchool, addStudentBySchool, editStudentBySchool, deleteStudentBySchool, getAllEmployeesBySchool, getAllStudentsBySchool, getStudentById } = require("../controllers/employeeStudent.controller");
 const { protect, isAdminOffice } = require("../middlewares/auth");
 const { upload } = require("../utils/multer");
 const { setPasswordForUser, userLogin } = require("../controllers/authController");
+const { getSchoolById } = require("../controllers/schoolController");
 
 router.post(
     "/add-employee",
@@ -30,6 +31,8 @@ router.put(
 );
 
 router.delete("/delete-employee/:id", protect, isAdminOffice, deleteEmployeeBySchool);
+router.get("/employee", protect, isAdminOffice, getAllEmployeesBySchool);
+router.get("/employee/:id", protect, isAdminOffice, getSchoolById);
 
 router.post(
     "/add-student",
@@ -56,6 +59,8 @@ router.put(
 );
 
 router.delete("/delete-student/:id", protect, isAdminOffice, deleteStudentBySchool);
+router.get("/student", protect, isAdminOffice, getAllStudentsBySchool);
+router.get("/student/:id", protect, isAdminOffice, getStudentById);
 router.post("/set-password-user", setPasswordForUser);
 router.post("/user-login", userLogin);
 

@@ -186,4 +186,53 @@ const deleteSchoolBySuperAdmin = async (req, res) => {
   }
 };
 
-module.exports = { addSchoolBySuperAdmin, deleteSchoolBySuperAdmin, editSchoolBySuperAdmin };
+// ✅ Get all schools (Super Admin only)
+const getAllSchools = async (req, res) => {
+  try {
+    const schools = await School.find().select("-password -otp"); // Hide sensitive fields
+    return res.status(200).json({
+      message: "All schools fetched successfully",
+      count: schools.length,
+      schools,
+    });
+  } catch (err) {
+    console.error("Error fetching schools:", err);
+    return res.status(500).json({
+      message: "Server error while fetching schools",
+      error: err.message,
+    });
+  }
+};
+
+// ✅ Get single school by ID
+const getSchoolById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const school = await School.findById(id).select("-password -otp");
+
+    if (!school) {
+      return res.status(404).json({ message: "School not found" });
+    }
+
+    return res.status(200).json({
+      message: "School fetched successfully",
+      school,
+    });
+  } catch (err) {
+    console.error("Error fetching school:", err);
+    return res.status(500).json({
+      message: "Server error while fetching school",
+      error: err.message,
+    });
+  }
+};
+
+
+
+module.exports = {
+  addSchoolBySuperAdmin,
+  deleteSchoolBySuperAdmin,
+  editSchoolBySuperAdmin,
+  getAllSchools,
+  getSchoolById
+};

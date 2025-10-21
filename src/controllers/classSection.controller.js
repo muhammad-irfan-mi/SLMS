@@ -172,9 +172,7 @@ const getClassesBySchool = async (req, res) => {
 };
 
 module.exports = {
-    // addClassWithSections,
     addMultipleClassesWithSections,
-    // addSectionToClass,
     updateAllClassesAndSections,
     deleteSectionFromClass,
     deleteClass,

@@ -22,6 +22,13 @@ const addSubject = async (req, res) => {
       sectionId,
     });
 
+    const existing = await Subject.findOne({
+      school: schoolId,
+      class: classId,
+      name: { $regex: new RegExp(`^${name}$`, "i") }
+    });
+    if (existing) return res.status(400).json({ message: "Subject already exists for this class" });
+
     res.status(201).json({ message: "Subject added successfully", subject });
   } catch (err) {
     console.error("Error adding subject:", err);
