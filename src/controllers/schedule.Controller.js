@@ -8,16 +8,70 @@ function isTimeOverlap(start1, end1, start2, end2) {
   };
   const s1 = toMinutes(start1), e1 = toMinutes(end1);
   const s2 = toMinutes(start2), e2 = toMinutes(end2);
-  return s1 < e2 && s2 < e1; 
+  return s1 < e2 && s2 < e1;
 }
+
+// const addSchedule = async (req, res) => {
+//   try {
+//     const { classId, sectionId, day, type, subjectId, startTime, endTime } = req.body;
+//     const schoolId = req.user.school;
+
+//     if (!classId || !day || !startTime || !endTime || !type)
+//       return res.status(400).json({ message: "Required fields missing" });
+
+//     if (type === "subject" && !subjectId)
+//       return res.status(400).json({ message: "Subject ID required for subject schedule" });
+
+//     if (subjectId) {
+//       const subject = await Subject.findById(subjectId);
+//       if (!subject) return res.status(404).json({ message: "Subject not found" });
+//     }
+
+//     const existingSchedules = await Schedule.find({
+//       school: schoolId,
+//       classId,
+//       sectionId,
+//       day,
+//     });
+
+//     for (const s of existingSchedules) {
+//       if (isTimeOverlap(startTime, endTime, s.startTime, s.endTime)) {
+//         console.log(`🧹 Removing overlapping schedule: ${s._id}`);
+//         await Schedule.findByIdAndDelete(s._id);
+//       }
+//     }
+
+//     const newSchedule = await Schedule.create({
+//       school: schoolId,
+//       classId,
+//       sectionId,
+//       day,
+//       type,
+//       subjectId,
+//       startTime,
+//       endTime,
+//     });
+
+//     return res.status(201).json({
+//       message: "Schedule entry added successfully (previous overlapping entries removed)",
+//       schedule: newSchedule,
+//     });
+//   } catch (error) {
+//     console.error("Error adding schedule:", error);
+//     res.status(500).json({ message: "Internal server error", error: error.message });
+//   }
+// };
 
 const addSchedule = async (req, res) => {
   try {
-    const { classId, sectionId, day, type, subjectId, startTime, endTime } = req.body;
+    const { classId, sectionIds, day, type, subjectId, startTime, endTime } = req.body;
     const schoolId = req.user.school;
 
     if (!classId || !day || !startTime || !endTime || !type)
       return res.status(400).json({ message: "Required fields missing" });
+
+    if (!Array.isArray(sectionIds) || sectionIds.length === 0)
+      return res.status(400).json({ message: "At least one section is required" });
 
     if (type === "subject" && !subjectId)
       return res.status(400).json({ message: "Subject ID required for subject schedule" });
@@ -27,40 +81,48 @@ const addSchedule = async (req, res) => {
       if (!subject) return res.status(404).json({ message: "Subject not found" });
     }
 
-    const existingSchedules = await Schedule.find({
-      school: schoolId,
-      classId,
-      sectionId,
-      day,
-    });
+    const results = [];
 
-    for (const s of existingSchedules) {
-      if (isTimeOverlap(startTime, endTime, s.startTime, s.endTime)) {
-        console.log(`🧹 Removing overlapping schedule: ${s._id}`);
-        await Schedule.findByIdAndDelete(s._id);
+    for (const sectionId of sectionIds) {
+      const existingSchedules = await Schedule.find({
+        school: schoolId,
+        classId,
+        sectionId,
+        day,
+      });
+
+      // Remove overlaps
+      for (const s of existingSchedules) {
+        if (isTimeOverlap(startTime, endTime, s.startTime, s.endTime)) {
+          console.log(`🧹 Removing overlapping schedule for section ${sectionId}: ${s._id}`);
+          await Schedule.findByIdAndDelete(s._id);
+        }
       }
+
+      const newSchedule = await Schedule.create({
+        school: schoolId,
+        classId,
+        sectionId,
+        day,
+        type,
+        subjectId,
+        startTime,
+        endTime,
+      });
+
+      results.push(newSchedule);
     }
 
-    const newSchedule = await Schedule.create({
-      school: schoolId,
-      classId,
-      sectionId,
-      day,
-      type,
-      subjectId,
-      startTime,
-      endTime,
-    });
-
     return res.status(201).json({
-      message: "Schedule entry added successfully (previous overlapping entries removed)",
-      schedule: newSchedule,
+      message: "Schedules added successfully for multiple sections",
+      created: results,
     });
   } catch (error) {
     console.error("Error adding schedule:", error);
     res.status(500).json({ message: "Internal server error", error: error.message });
   }
 };
+
 
 const getSchedule = async (req, res) => {
   try {
