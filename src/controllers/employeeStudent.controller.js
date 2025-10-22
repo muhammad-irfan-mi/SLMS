@@ -516,6 +516,7 @@ const editEmployeeBySchool = async (req, res) => {
     }
 };
 
+
 // GET ALL EMPLOYEES (Teacher / Admin Office)
 const getAllEmployeesBySchool = async (req, res) => {
     try {
@@ -711,6 +712,41 @@ const deleteStudentBySchool = async (req, res) => {
     }
 };
 
+const editOwnProfile = async (req, res) => {
+    try {
+        const userId = req.user._id; 
+        const existing = await User.findById(userId);
+        if (!existing)
+            return res.status(404).json({ message: "User not found" });
+
+        const images = await uploadFileToS3(req.files, existing.images || {});
+
+        const updatableFields = {
+            name: req.body.name ?? existing.name,
+            email: req.body.email ?? existing.email,
+            phone: req.body.phone ?? existing.phone,
+            address: req.body.address ?? existing.address,
+            cnic: req.body.cnic ?? existing.cnic,
+            images,
+        };
+
+        if (existing.role === "teacher" || existing.role === "admin_office") {
+            updatableFields.salary = req.body.salary ?? existing.salary;
+            updatableFields.joiningDate = req.body.joiningDate ?? existing.joiningDate;
+        } else if (existing.role === "student") {
+            updatableFields.fatherName = req.body.fatherName ?? existing.fatherName;
+            updatableFields.rollNo = req.body.rollNo ?? existing.rollNo;
+        }
+
+        const updated = await User.findByIdAndUpdate(userId, updatableFields, { new: true });
+        return res.status(200).json({ message: "Profile updated successfully", user: updated });
+    } catch (err) {
+        console.error("Error updating profile:", err);
+        return res.status(500).json({ message: err.message || "Server error while updating profile" });
+    }
+};
+
+
 module.exports = {
     addEmployeeBySchool,
     editEmployeeBySchool,
@@ -722,4 +758,5 @@ module.exports = {
     getStudentById,
     editStudentBySchool,
     deleteStudentBySchool,
+    editOwnProfile
 };

@@ -1,10 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const { addEmployeeBySchool, editEmployeeBySchool, deleteEmployeeBySchool, addStudentBySchool, editStudentBySchool, deleteStudentBySchool, getAllEmployeesBySchool, getAllStudentsBySchool, getStudentById } = require("../controllers/employeeStudent.controller");
-const { protect, isAdminOffice } = require("../middlewares/auth");
+const { addEmployeeBySchool, editEmployeeBySchool, deleteEmployeeBySchool, addStudentBySchool, editStudentBySchool, deleteStudentBySchool, getAllEmployeesBySchool, getAllStudentsBySchool, getStudentById, getEmployeeById, editOwnProfile } = require("../controllers/employeeStudent.controller");
+const { protect, isAdminOffice, editProfile } = require("../middlewares/auth");
 const { upload } = require("../utils/multer");
 const { setPasswordForUser, userLogin } = require("../controllers/authController");
-const { getSchoolById } = require("../controllers/schoolController");
 
 router.post(
     "/add-employee",
@@ -32,7 +31,7 @@ router.put(
 
 router.delete("/delete-employee/:id", protect, isAdminOffice, deleteEmployeeBySchool);
 router.get("/employee", protect, isAdminOffice, getAllEmployeesBySchool);
-router.get("/employee/:id", protect, isAdminOffice, getSchoolById);
+router.get("/employee/:id", protect, isAdminOffice, getEmployeeById);
 
 router.post(
     "/add-student",
@@ -64,6 +63,19 @@ router.get("/student", protect, isAdminOffice, getAllStudentsBySchool);
 router.get("/student/:id", protect, isAdminOffice, getStudentById);
 router.post("/set-password-user", setPasswordForUser);
 router.post("/user-login", userLogin);
+
+
+router.put(
+    "/profile-edit/:id",
+    protect,
+    editProfile,
+    upload.fields([
+        { name: "cnicFront", maxCount: 1 },
+        { name: "cnicBack", maxCount: 1 },
+        { name: "recentPic", maxCount: 1 },
+    ]),
+    editOwnProfile
+);
 
 
 module.exports = router;

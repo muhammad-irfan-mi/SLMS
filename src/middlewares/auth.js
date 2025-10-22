@@ -74,4 +74,25 @@ const isTeacher = (req, res, next) => {
   next();
 };
 
-module.exports = { protect, isSuperAdmin, isAdminOffice, isTeacher };
+const editProfile = (req, res, next) => {
+  try {
+    const userId = req.params.id;
+    const loggedInUser = req.user;
+
+    if (loggedInUser._id.toString() === userId.toString()) {
+      return next();
+    }
+
+    if (loggedInUser.role === "admin_office") {
+      return next();
+    }
+
+    return res.status(403).json({ message: "Access denied: Not allowed to edit this profile" });
+  } catch (err) {
+    console.error("canEditOwnProfile error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+
+module.exports = { protect, isSuperAdmin, isAdminOffice, isTeacher, editProfile };
