@@ -58,6 +58,7 @@ router.put(
     editStudentBySchool
 );
 
+
 router.delete("/delete-student/:id", protect, isAdminOffice, deleteStudentBySchool);
 router.get("/student", protect, isAdminOffice, getAllStudentsBySchool);
 router.get("/student/:id", protect, isAdminOffice, getStudentById);
