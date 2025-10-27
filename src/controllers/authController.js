@@ -128,8 +128,8 @@ const setPasswordForUser = async (req, res) => {
     if (!user)
       return res.status(404).json({ message: "User not found" });
 
-    if (user.verified)
-      return res.status(400).json({ message: "Password already set, please login instead." });
+    // if (user.verified)
+    //   return res.status(400).json({ message: "Password already set, please login instead." });
 
     const hashedPassword = await bcrypt.hash(password, 10);
     user.password = hashedPassword;
