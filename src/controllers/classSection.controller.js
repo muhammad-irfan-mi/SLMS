@@ -1,5 +1,6 @@
 const ClassSection = require("../models/ClassSection");
 const School = require("../models/School");
+const User = require("../models/User");
 
 const addMultipleClassesWithSections = async (req, res) => {
     try {
@@ -171,10 +172,84 @@ const getClassesBySchool = async (req, res) => {
     }
 };
 
+// Assign or reassign a section incharge
+const assignSectionIncharge = async (req, res) => {
+    try {
+        const { classId, sectionId, teacherId } = req.body;
+
+        if (!classId || !sectionId || !teacherId) {
+            return res.status(400).json({ message: "All fields are required" });
+        }
+
+        // const school = await School.findById(schoolId);
+        // if (!school) return res.status(404).json({ message: "School not found" });
+
+        const classDoc = await ClassSection.findById(classId);
+        if (!classDoc) return res.status(404).json({ message: "Class not found" });
+
+        const section = classDoc.sections.find(
+            (sec) => sec._id.toString() === sectionId
+        );
+        if (!section)
+            return res.status(404).json({ message: "Section not found in this class" });
+
+        const teacher = await User.findById(teacherId);
+        if (!teacher || teacher.role !== "teacher") {
+            return res.status(400).json({ message: "Invalid teacher ID" });
+        }
+
+        const existingIncharge = await User.findOne({
+            _id: { $ne: teacherId },
+            role: "teacher",
+            isIncharge: true,
+            "sectionInfo.id": { $exists: true },
+        });
+
+        if (
+            teacher.isIncharge &&
+            teacher.sectionInfo?.id?.toString() !== sectionId.toString()
+        ) {
+            return res.status(400).json({
+                message: "This teacher is already incharge of another section.",
+            });
+        }
+
+        await User.updateMany(
+            {
+                role: "teacher",
+                "sectionInfo.id": sectionId,
+                isIncharge: true,
+            },
+            { $set: { isIncharge: false, classInfo: null, sectionInfo: null } }
+        );
+
+        teacher.isIncharge = true;
+        teacher.classInfo = { id: classDoc._id, name: classDoc.class };
+        teacher.sectionInfo = { id: section._id, name: section.name };
+
+        await teacher.save();
+
+        return res.status(200).json({
+            message: "Teacher assigned as incharge successfully",
+            incharge: {
+                teacherId: teacher._id,
+                teacherName: teacher.name,
+                class: classDoc.class,
+                section: section.name,
+            },
+        });
+    } catch (err) {
+        console.error("Error assigning incharge:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+
 module.exports = {
     addMultipleClassesWithSections,
     updateAllClassesAndSections,
     deleteSectionFromClass,
     deleteClass,
     getClassesBySchool,
+    assignSectionIncharge
 };

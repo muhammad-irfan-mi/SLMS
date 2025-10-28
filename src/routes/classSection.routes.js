@@ -7,6 +7,7 @@ const {
     getClassesBySchool,
     addMultipleClassesWithSections,
     updateAllClassesAndSections,
+    assignSectionIncharge,
 } = require("../controllers/classSection.controller");
 const { protect, isAdminOffice } = require("../middlewares/auth");
 
@@ -35,5 +36,7 @@ router.get("/:schoolId",
     isAdminOffice,
     getClassesBySchool
 );
+
+router.post('/assing-incharge', protect, isAdminOffice, assignSectionIncharge)
 
 module.exports = router;
