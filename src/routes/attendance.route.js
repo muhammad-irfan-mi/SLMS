@@ -19,5 +19,4 @@ router.get("/section/:sectionId/date", protect, isTeacher, getAttendanceByDateOr
 router.get("/student/:studentId/date", protect, isTeacherOrStudent, getStudentAttendanceByDateOrRange);
 
 
-
 module.exports = router;
