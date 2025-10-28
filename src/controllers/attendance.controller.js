@@ -167,6 +167,59 @@ const getAttendanceByDateOrRange = async (req, res) => {
     }
 };
 
+const getStudentAttendanceByDateOrRange = async (req, res) => {
+    try {
+        const { studentId } = req.params;
+        const { date, startDate, endDate } = req.query;
+        const school = req.user.school;
+
+        if (!studentId)
+            return res.status(400).json({ message: "studentId is required" });
+
+        if (!date && (!startDate || !endDate))
+            return res.status(400).json({ message: "Provide either a date or startDate & endDate" });
+
+        let filter = {
+            school,
+            "students.studentId": new mongoose.Types.ObjectId(studentId),
+        };
+
+        if (date) {
+            filter.date = date;
+        } else if (startDate && endDate) {
+            filter.date = { $gte: startDate, $lte: endDate };
+        }
+
+        const records = await Attendance.find(filter)
+            .select("date classId sectionId students")
+            .sort({ date: 1 })
+            .lean();
+
+        if (!records.length)
+            return res.status(404).json({ message: "No attendance records found for this student" });
+
+        const result = records.map((r) => {
+            const st = r.students.find((s) => String(s.studentId) === String(studentId));
+            return {
+                date: r.date,
+                classId: r.classId,
+                sectionId: r.sectionId,
+                status: st?.status || "N/A",
+            };
+        });
+
+        return res.status(200).json({
+            total: result.length,
+            from: startDate || date,
+            to: endDate || date,
+            records: result,
+        });
+    } catch (err) {
+        console.error("Error fetching student attendance by range:", err);
+        return res.status(500).json({ message: err.message || "Server error" });
+    }
+};
+
 
 module.exports = {
     markAttendance,
@@ -174,4 +227,5 @@ module.exports = {
     getAttendanceBySection,
     getAttendanceByStudent,
     getAttendanceByDateOrRange,
+    getStudentAttendanceByDateOrRange
 };

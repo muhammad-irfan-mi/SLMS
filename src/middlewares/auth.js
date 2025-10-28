@@ -74,6 +74,32 @@ const isTeacher = (req, res, next) => {
   next();
 };
 
+const isStudent = (req, res, next) => {
+  if (!req.user || req.user.role !== "student") {
+    return res.status(403).json({ message: "Access denied: student only" });
+  }
+  next();
+};
+const isTeacherOrStudent = (req, res, next) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Not authorized" });
+    }
+
+    const allowedRoles = ["student", "teacher"];
+
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({ message: "Access denied: Students or Teachers only" });
+    }
+
+    next();
+  } catch (err) {
+    console.error("isStudentOrTeacher error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+
 const editProfile = (req, res, next) => {
   try {
     const userId = req.params.id;
@@ -95,4 +121,4 @@ const editProfile = (req, res, next) => {
 };
 
 
-module.exports = { protect, isSuperAdmin, isAdminOffice, isTeacher, editProfile };
+module.exports = { protect, isSuperAdmin, isAdminOffice, isTeacher, isStudent, isTeacherOrStudent, editProfile };
