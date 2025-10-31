@@ -5,13 +5,30 @@ const addSubject = async (req, res) => {
   try {
     const schoolId = req.user.school;
     const { name, code, description, classId, sectionId } = req.body;
-    console.log('req.body', req.body)
 
-    if (!name || !classId)
-      return res.status(400).json({ message: "Subject name and classId are required" });
+    console.log("req.body", req.body);
+
+    if (!name || !classId) {
+      return res.status(400).json({
+        message: "Subject name and classId are required",
+      });
+    }
 
     const classDoc = await ClassSection.findById(classId);
-    if (!classDoc) return res.status(400).json({ message: "Invalid classId" });
+    if (!classDoc) {
+      return res.status(400).json({ message: "Invalid classId" });
+    }
+
+    const existing = await Subject.findOne({
+      school: schoolId,
+      name: { $regex: new RegExp(`^${name}$`, "i") },
+    });
+
+    if (existing) {
+      return res.status(400).json({
+        message: "Subject with this name already exists in this class and section",
+      });
+    }
 
     const subject = await Subject.create({
       name,
@@ -19,22 +36,22 @@ const addSubject = async (req, res) => {
       description,
       school: schoolId,
       class: classId,
-      sectionId,
+      sectionId: sectionId || null,
     });
 
-    const existing = await Subject.findOne({
-      school: schoolId,
-      class: classId,
-      name: { $regex: new RegExp(`^${name}$`, "i") }
+    res.status(201).json({
+      message: "Subject added successfully",
+      subject,
     });
-    if (existing) return res.status(400).json({ message: "Subject already exists for this class" });
-
-    res.status(201).json({ message: "Subject added successfully", subject });
   } catch (err) {
     console.error("Error adding subject:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
+    res.status(500).json({
+      message: "Server error",
+      error: err.message,
+    });
   }
 };
+
 
 const getSubjects = async (req, res) => {
   try {
