@@ -1,5 +1,5 @@
 const SchoolMedia = require('../models/SchoolMedia');
-const { uploadFileToS3, deleteFileFromS3 } = require('../services/s3.service'); 
+const { uploadFileToS3, deleteFileFromS3 } = require('../services/s3.service');
 
 const formatDate = (d) => {
   if (!d) return null;
@@ -13,10 +13,6 @@ const createMedia = async (req, res) => {
     const school = req.user.school;
     const userId = req.user._id;
     const userName = req.user.name || 'Unknown';
-
-    // if (!req.user.role || !['admin_office','superadmin'].includes(req.user.role)) {
-    //   return res.status(403).json({ message: 'Access denied: only school admin or superadmin can add media' });
-    // }
 
     const { title, description, type, visibility, tags, eventDate } = req.body;
 
@@ -39,8 +35,8 @@ const createMedia = async (req, res) => {
       description: description || '',
       type: type === 'reel' ? 'reel' : 'video',
       visibility: visibility === 'public' ? 'public' : 'school-only',
-      fileUrl: uploaded,            
-      fileKey: uploaded,            
+      fileUrl: uploaded,
+      fileKey: uploaded,
       mimeType: file.mimetype,
       tags: Array.isArray(tags) ? tags : (tags ? String(tags).split(',').map(t => t.trim()) : []),
       eventDate: eventDate ? formatDate(eventDate) : null,
@@ -60,19 +56,36 @@ const updateMedia = async (req, res) => {
     const userId = req.user._id;
 
     const media = await SchoolMedia.findById(id);
-    if (!media) return res.status(404).json({ message: 'Media not found' });
-    if (String(media.school) !== String(school)) return res.status(403).json({ message: 'Access denied' });
-    if (String(media.createdBy) !== String(userId) && req.user.role !== 'superadmin')
-      return res.status(403).json({ message: 'Only creator or superadmin can edit' });
+    if (!media) return res.status(404).json({ message: "Media not found" });
+
+    if (String(media.school) !== String(school))
+      return res.status(403).json({ message: "Access denied" });
+
+    if (String(media.createdBy) !== String(userId) && req.user.role !== "superadmin")
+      return res.status(403).json({ message: "Only creator or superadmin can edit" });
 
     const { title, description, type, visibility, tags, eventDate } = req.body;
 
-    if (title) media.title = title;
+    if (title !== undefined) media.title = title;
     if (description !== undefined) media.description = description;
-    if (type) media.type = type === 'reel' ? 'reel' : 'video';
-    if (visibility) media.visibility = visibility === 'public' ? 'public' : 'school-only';
-    if (tags !== undefined) media.tags = Array.isArray(tags) ? tags : String(tags).split(',').map(t => t.trim());
-    if (eventDate !== undefined) media.eventDate = eventDate ? formatDate(eventDate) : null;
+    if (type !== undefined) media.type = type === "reel" ? "reel" : "video";
+    if (visibility !== undefined)
+      media.visibility = visibility === "public" ? "public" : "school-only";
+
+    if (tags !== undefined) {
+      if (Array.isArray(tags)) {
+        media.tags = tags;
+      } else {
+        media.tags = String(tags)
+          .split(",")
+          .map((t) => t.trim())
+          .filter((t) => t.length > 0);
+      }
+    }
+
+    if (eventDate !== undefined) {
+      media.eventDate = eventDate ? formatDate(eventDate) : null;
+    }
 
     if (req.file) {
       const file = req.file;
@@ -81,9 +94,15 @@ const updateMedia = async (req, res) => {
         fileName: file.originalname,
         mimeType: file.mimetype,
       });
+
       if (media.fileUrl) {
-        try { await deleteFileFromS3(media.fileUrl); } catch (e) { console.warn('Failed deleting old file from S3', e.message); }
+        try {
+          await deleteFileFromS3(media.fileUrl);
+        } catch (e) {
+          console.warn("Failed deleting old file from S3:", e.message);
+        }
       }
+
       media.fileUrl = uploaded;
       media.fileKey = uploaded;
       media.mimeType = file.mimetype;
@@ -92,10 +111,13 @@ const updateMedia = async (req, res) => {
     media.updatedAt = new Date();
     await media.save();
 
-    return res.status(200).json({ message: 'Media updated', media });
+    return res.status(200).json({
+      message: "Media updated successfully",
+      media,
+    });
   } catch (err) {
-    console.error('updateMedia error:', err);
-    return res.status(500).json({ message: err.message || 'Server error' });
+    console.error("updateMedia error:", err);
+    return res.status(500).json({ message: err.message || "Server error" });
   }
 };
 
