@@ -22,6 +22,8 @@ const addSubject = async (req, res) => {
     const existing = await Subject.findOne({
       school: schoolId,
       name: { $regex: new RegExp(`^${name}$`, "i") },
+      class: classId,
+      sectionId: sectionId || null,
     });
 
     if (existing) {
