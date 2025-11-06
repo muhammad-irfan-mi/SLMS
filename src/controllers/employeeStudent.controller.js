@@ -309,6 +309,37 @@ const getAllStudentsBySchool = async (req, res) => {
     }
 };
 
+const getStudentsBySection = async (req, res) => {
+    try {
+        const schoolId = req.user.school;
+        const { sectionId } = req.params;
+
+        if (!sectionId) {
+            return res.status(400).json({ message: "sectionId is required" });
+        }
+
+        const students = await User.find({
+            school: schoolId,
+            role: "student",
+            "sectionInfo.id": sectionId, 
+        }).select("-password");
+
+        if (!students.length) {
+            return res.status(404).json({ message: "No students found in this section" });
+        }
+
+        return res.status(200).json({
+            total: students.length,
+            students,
+        });
+    } catch (err) {
+        console.error("Error fetching students by section:", err);
+        return res.status(500).json({
+            message: err.message || "Server error while fetching students by section",
+        });
+    }
+};
+
 // GET STUDENT BY ID
 const getStudentById = async (req, res) => {
     try {
@@ -354,7 +385,7 @@ const deleteStudentBySchool = async (req, res) => {
 
 const editOwnProfile = async (req, res) => {
     try {
-        const userId = req.user._id; 
+        const userId = req.user._id;
         const existing = await User.findById(userId);
         if (!existing)
             return res.status(404).json({ message: "User not found" });
@@ -395,6 +426,7 @@ module.exports = {
     deleteEmployeeBySchool,
     addStudentBySchool,
     getAllStudentsBySchool,
+    getStudentsBySection,
     getStudentById,
     editStudentBySchool,
     deleteStudentBySchool,

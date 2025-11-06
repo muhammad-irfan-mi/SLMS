@@ -14,9 +14,6 @@ function isTimeOverlap(start1, end1, start2, end2) {
   return s1 < e2 && s2 < e1;
 }
 
-console.log(isTimeOverlap("09:00", "12:00", "11:00", "13:00")); // true
-console.log(isTimeOverlap("09:00", "12:00", "12:00", "13:00"));
-
 const addExamSchedule = async (req, res) => {
   try {
     const { classId, sectionId, day, subjectId, startTime, endTime, teacherId, type, year } = req.body;
