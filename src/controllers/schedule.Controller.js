@@ -136,17 +136,41 @@ const getSchedule = async (req, res) => {
 const getScheduleByTeacher = async (req, res) => {
   try {
     const teacherId = req.user._id;
-    const schedule = await Schedule.find({ teacherId })
-      .populate("classId", "class")
-      .populate("sectionId", "name")
+
+    let schedule = await Schedule.find({ teacherId })
+      .populate({
+        path: "classId",
+        select: "class sections"
+      })
       .populate("subjectId", "name code");
 
-    res.status(200).json({ total: schedule.length, schedule });
+    const scheduleWithSection = schedule.map((item) => {
+      const section = item.classId?.sections?.find(
+        (sec) => sec._id.toString() === item.sectionId.toString()
+      );
+
+      return {
+        ...item.toObject(),
+        classId: {
+          _id: item.classId._id,
+          class: item.classId.class,
+        },
+        sectionId: section
+          ? { _id: section._id, name: section.name }
+          : { _id: item.sectionId, name: null },
+      };
+    });
+
+    res.status(200).json({
+      total: scheduleWithSection.length,
+      schedule: scheduleWithSection,
+    });
   } catch (error) {
     console.error("Teacher schedule error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
+
 
 const getScheduleByStudent = async (req, res) => {
   try {
@@ -163,6 +187,7 @@ const getScheduleByStudent = async (req, res) => {
       return res.status(400).json({ message: "Student is not assigned to a class or section" });
     }
 
+    // Fetch all schedules for student's class & section
     const schedule = await Schedule.find({
       classId,
       sectionId,
@@ -170,12 +195,43 @@ const getScheduleByStudent = async (req, res) => {
     })
       .populate("subjectId", "name code")
       .populate("teacherId", "name email")
-      .populate("classId", "class");
+      .populate("classId", "class sections");
 
+    // --- Add section info manually (id + name)
+    const formattedSchedule = schedule.map((item) => {
+      const section = item.classId?.sections?.find(
+        (sec) => sec._id.toString() === item.sectionId.toString()
+      );
+
+      return {
+        _id: item._id,
+        class: item.classId?.class || null,
+        section: {
+          _id: section?._id || null,
+          name: section?.name || null,
+        },
+        subject: {
+          _id: item.subjectId?._id,
+          name: item.subjectId?.name,
+          code: item.subjectId?.code,
+        },
+        teacher: {
+          _id: item.teacherId?._id,
+          name: item.teacherId?.name,
+          email: item.teacherId?.email,
+        },
+        day: item.day,
+        type: item.type,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      };
+    });
 
     return res.status(200).json({
-      total: schedule.length,
-      schedule,
+      total: formattedSchedule.length,
+      schedule: formattedSchedule,
     });
   } catch (error) {
     console.error("Get student schedule error:", error);
