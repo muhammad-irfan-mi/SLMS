@@ -1,0 +1,28 @@
+// models/Leave.js
+const mongoose = require("mongoose");
+
+const leaveSchema = new mongoose.Schema(
+  {
+    school: { type: mongoose.Schema.Types.ObjectId, ref: "School", required: true },
+    studentId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    studentName: String,
+    classId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection", required: true },
+    sectionId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    date: { type: String, required: true }, // yyyy-mm-dd (use same format as attendance)
+    reason: { type: String, required: true },
+    appliedAt: { type: Date, default: Date.now },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected", "cancelled"],
+      default: "pending",
+    },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, 
+    reviewedAt: Date,
+    remark: String, 
+  },
+  { timestamps: true }
+);
+
+leaveSchema.index({ school: 1, studentId: 1, date: 1 }, { unique: false });
+
+module.exports = mongoose.model("Leave", leaveSchema);

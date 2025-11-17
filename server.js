@@ -13,6 +13,7 @@ const subjectRoutes = require('./src/routes/subject.routes');
 const classesScheduleRoutes = require('./src/routes/schedule.routes');
 const examScheduleRoutes = require('./src/routes/examSchedule.routes');
 const attendanceRoutes = require('./src/routes/attendance.route');
+const leaveRoutes = require('./src/routes/leave.route');
 const diaryRoutes = require('./src/routes/diary.routes');
 const socialMediaRoutes = require('./src/routes/schoolMedia.routes');
 const logger = require('./src/utils/logger');
@@ -42,6 +43,7 @@ app.use('/api/subject', subjectRoutes);
 app.use('/api/schedule', classesScheduleRoutes);
 app.use('/api/examSchedule', examScheduleRoutes);
 app.use('/api/attendance', attendanceRoutes);
+app.use('/api/leave', leaveRoutes);
 app.use('/api/diary', diaryRoutes);
 app.use('/api/socialMedia', socialMediaRoutes);
 
