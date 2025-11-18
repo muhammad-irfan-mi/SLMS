@@ -1,4 +1,4 @@
-# School Auth Microservice
+# School Learning management system
 
 This project implements a school/user/student authentication microservice using Node.js, Express, MongoDB (Mongoose), AWS S3 (for files), Nodemailer for OTP emails, and JWT for authentication.
 
