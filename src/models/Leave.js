@@ -10,6 +10,7 @@ const leaveSchema = new mongoose.Schema(
     sectionId: { type: mongoose.Schema.Types.ObjectId, required: true },
     date: { type: String, required: true }, // yyyy-mm-dd (use same format as attendance)
     reason: { type: String, required: true },
+    subject: { type: String, required: true },
     appliedAt: { type: Date, default: Date.now },
     status: {
       type: String,

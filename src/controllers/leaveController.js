@@ -21,10 +21,10 @@ const applyLeave = async (req, res) => {
         const school = req.user.school;
         const studentId = req.user._id;
         const studentName = req.user.name;
-        const { classId, sectionId, dates, reason } = req.body;
+        const { classId, sectionId, dates, subject, reason } = req.body;
 
-        if (!classId || !sectionId || !dates || !Array.isArray(dates) || dates.length === 0 || !reason) {
-            return res.status(400).json({ message: "classId, sectionId, dates[] and reason are required" });
+        if (!classId || !sectionId || !dates || !Array.isArray(dates) || dates.length === 0 || !reason || !subject) {
+            return res.status(400).json({ message: "classId, sectionId, dates[], subject and reason are required" });
         }
 
         const formattedDates = dates.map(d => formatDate(d));
@@ -62,6 +62,7 @@ const applyLeave = async (req, res) => {
             classId,
             sectionId,
             date,
+            subject,
             reason,
             status: "pending"
         }));
