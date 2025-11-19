@@ -1,9 +1,8 @@
 // controllers/leaveController.js
 const mongoose = require("mongoose");
 const Leave = require("../models/Leave");
-const Attendance = require("../models/Attendance");
-const User = require("../models/User");
-const ClassSection = require("../models/ClassSection");
+const AttendanceImported = require("../models/Attendance");
+const Attendance = AttendanceImported.default || AttendanceImported;
 
 // reuse your date formatter (copy from attendance file)
 const formatDate = (date) => {
@@ -132,6 +131,7 @@ const getLeaves = async (req, res) => {
 const approveLeave = async (req, res) => {
     try {
         const reviewerId = req.user._id;
+        console.log(req.user)
         const school = req.user.school;
         const { id } = req.params;
         const { remark } = req.body;
@@ -158,7 +158,7 @@ const approveLeave = async (req, res) => {
         if (attendance) {
             const student = attendance.students.find((s) => String(s.studentId) === String(leave.studentId));
             if (student) {
-                student.status = "leave"; // special status
+                student.status = "leave";
                 await attendance.save();
             }
         }

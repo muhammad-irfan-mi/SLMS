@@ -155,7 +155,6 @@ const isAuthorizedUser = async (req, res, next) => {
   }
 };
 
-
 const isTeacherOrAdminOfficeOrSchool = (req, res, next) => {
   try {
     const user = req.user;
@@ -164,11 +163,7 @@ const isTeacherOrAdminOfficeOrSchool = (req, res, next) => {
       return res.status(401).json({ message: "Unauthorized user" });
     }
 
-    if (user.role === "school") {
-      req.user.school = user._id;
-      return next();
-    }
-
+    // 1. ADMIN OFFICE
     if (user.role === "admin_office") {
       if (!user.school) {
         return res.status(400).json({ message: "Admin Office is not linked to any school" });
@@ -177,6 +172,7 @@ const isTeacherOrAdminOfficeOrSchool = (req, res, next) => {
       return next();
     }
 
+    // 2. TEACHER
     if (user.role === "teacher") {
       if (!user.school) {
         return res.status(400).json({ message: "Teacher is not linked to any school" });
@@ -185,8 +181,14 @@ const isTeacherOrAdminOfficeOrSchool = (req, res, next) => {
       return next();
     }
 
+    // 3. SCHOOL (NO ROLE, but has verified + schoolId)
+    if (user.verified && user.schoolId) {
+      req.user.school = user._id; // school _id is the school itself
+      return next();
+    }
+
     return res.status(403).json({
-      message: "Access denied: Only teacher, admin office, or school admin can access"
+      message: "Access denied: Only teacher, admin office, or school can access"
     });
 
   } catch (err) {

@@ -1,4 +1,3 @@
-// models/Leave.js
 const mongoose = require("mongoose");
 
 const leaveSchema = new mongoose.Schema(
@@ -8,7 +7,7 @@ const leaveSchema = new mongoose.Schema(
     studentName: String,
     classId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection", required: true },
     sectionId: { type: mongoose.Schema.Types.ObjectId, required: true },
-    date: { type: String, required: true }, // yyyy-mm-dd (use same format as attendance)
+    date: { type: String, required: true },
     reason: { type: String, required: true },
     subject: { type: String, required: true },
     appliedAt: { type: Date, default: Date.now },
@@ -17,9 +16,9 @@ const leaveSchema = new mongoose.Schema(
       enum: ["pending", "approved", "rejected", "cancelled"],
       default: "pending",
     },
-    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, 
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     reviewedAt: Date,
-    remark: String, 
+    remark: String,
   },
   { timestamps: true }
 );
