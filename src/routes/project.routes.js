@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { protect, isTeacherOrAdminOfficeOrSchool, isStudent } = require("../middleware/auth");
+const {protect, isTeacherOrAdminOfficeOrSchool, isStudent} = require('../middlewares/auth')
 const { createProject, getProjectsForTeacher, updateProject, deleteProject, getProjectsForStudent } = require("../controllers/projectController");
 
 router.post("/", protect, isTeacherOrAdminOfficeOrSchool, createProject);

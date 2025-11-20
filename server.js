@@ -16,6 +16,7 @@ const examSyllabusRoutes = require('./src/routes/syllabus.route');
 const attendanceRoutes = require('./src/routes/attendance.route');
 const leaveRoutes = require('./src/routes/leave.route');
 const diaryRoutes = require('./src/routes/diary.routes');
+const projectRoutes = require('./src/routes/project.routes');
 const socialMediaRoutes = require('./src/routes/schoolMedia.routes');
 const logger = require('./src/utils/logger');
 const seedSuperAdmin = require('./src/seed/seedSuperAdmin');
@@ -47,6 +48,7 @@ app.use('/api/syllabus', examSyllabusRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/leave', leaveRoutes);
 app.use('/api/diary', diaryRoutes);
+app.use('/api/project', projectRoutes);
 app.use('/api/socialMedia', socialMediaRoutes);
 
 app.get('/', (req, res) => res.send('School Auth Microservice API'));
