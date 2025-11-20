@@ -5,7 +5,7 @@ const mongoose = require("mongoose");
 
 const formatDate = d => {
   const D = d ? new Date(d) : new Date();
-  return `${D.getFullYear()}-${String(D.getMonth()+1).padStart(2,"0")}-${String(D.getDate()).padStart(2,"0")}`;
+  return `${D.getFullYear()}-${String(D.getMonth() + 1).padStart(2, "0")}-${String(D.getDate()).padStart(2, "0")}`;
 };
 
 // teacher creates project
@@ -13,7 +13,7 @@ const createProject = async (req, res) => {
   try {
     const school = req.user.school;
     const teacherId = req.user._id;
-    const { title, description, classId, sectionId, targetType, studentIds, attachments, deadline, maxMarks } = req.body;
+    const { title, description, detail, classId, sectionId, targetType, studentIds, deadline, maxMarks } = req.body;
 
     if (!title || !classId || !sectionId || !targetType) {
       return res.status(400).json({ message: "title, classId, sectionId and targetType are required" });
@@ -39,11 +39,11 @@ const createProject = async (req, res) => {
       school,
       title,
       description: description || "",
+      detail: detail || "",
       classId, sectionId,
       assignedBy: teacherId,
       targetType,
       studentIds: targetType === "students" ? studentIds : [],
-      attachments: Array.isArray(attachments) ? attachments : [],
       deadline: deadline ? formatDate(deadline) : undefined,
       maxMarks
     });
@@ -99,9 +99,9 @@ const getProjectsForStudent = async (req, res) => {
         { targetType: "students", studentIds: studentId }
       ]
     })
-    .populate("assignedBy", "name")
-    .sort({ deadline: 1, createdAt: -1 })
-    .lean();
+      .populate("assignedBy", "name")
+      .sort({ deadline: 1, createdAt: -1 })
+      .lean();
 
     return res.status(200).json({ total: projects.length, projects });
   } catch (err) {
