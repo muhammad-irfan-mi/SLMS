@@ -6,7 +6,7 @@ const { createProject, getProjectsForTeacher, updateProject, deleteProject, getP
 router.post("/", protect, isTeacherOrAdminOfficeOrSchool, createProject);
 router.get("/teacher", protect, isTeacherOrAdminOfficeOrSchool, getProjectsForTeacher);
 router.get("/student", protect, isStudent, getProjectsForStudent);
-router.put("/:id", protect, isTeacherOrAdminOfficeOrSchool, updateProject);
+router.patch("/:id", protect, isTeacherOrAdminOfficeOrSchool, updateProject);
 router.delete("/:id", protect, isTeacherOrAdminOfficeOrSchool, deleteProject);
 
 module.exports = router;

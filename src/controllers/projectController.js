@@ -13,34 +13,82 @@ const createProject = async (req, res) => {
   try {
     const school = req.user.school;
     const teacherId = req.user._id;
-    const { title, description, detail, classId, sectionId, targetType, studentIds, deadline, maxMarks } = req.body;
+
+    const {
+      title, description, detail,
+      classId, sectionId,
+      targetType, studentIds,
+      deadline, maxMarks
+    } = req.body;
 
     if (!title || !classId || !sectionId || !targetType) {
-      return res.status(400).json({ message: "title, classId, sectionId and targetType are required" });
+      return res.status(400).json({
+        message: "title, classId, sectionId and targetType are required"
+      });
     }
 
-    if (targetType === "students" && (!Array.isArray(studentIds) || studentIds.length === 0)) {
-      return res.status(400).json({ message: "studentIds required when targetType is 'students'" });
-    }
-
-    // validate class and (if studentIds) students
+    // 1. Validate class
     const classDoc = await ClassSection.findById(classId);
     if (!classDoc) return res.status(404).json({ message: "Class not found" });
 
+    // 2. Validate section belongs to class
+    const sectionInClass = classDoc.sections.find(
+      sec => String(sec._id) === String(sectionId)
+    );
+
+    if (!sectionInClass) {
+      return res.status(400).json({
+        message: "Section does NOT belong to the selected class"
+      });
+    }
+
+    // 3. If targetType == students → validate each student
     if (targetType === "students") {
-      // ensure all studentIds exist and belong to same school
-      const found = await User.find({ _id: { $in: studentIds }, role: "student", school });
-      if (found.length !== studentIds.length) {
-        return res.status(400).json({ message: "Some studentIds are invalid or do not belong to this school" });
+      if (!Array.isArray(studentIds) || studentIds.length === 0) {
+        return res.status(400).json({
+          message: "studentIds required when targetType is 'students'"
+        });
+      }
+
+      const students = await User.find({
+        _id: { $in: studentIds },
+        role: "student",
+        school
+      }).lean();
+
+      if (students.length !== studentIds.length) {
+        return res.status(400).json({
+          message: "Some studentIds are invalid or do not belong to this school"
+        });
+      }
+
+      // Validate class & section match for each student
+      const invalidStudents = students.filter(st =>
+        String(st.classInfo?.id) !== String(classId) ||
+        String(st.sectionInfo?.id) !== String(sectionId)
+      );
+
+      if (invalidStudents.length > 0) {
+        return res.status(400).json({
+          message: "Some students are NOT in the selected class/section",
+          invalidStudents: invalidStudents.map(s => ({
+            id: s._id,
+            name: s.name,
+            class: s.classInfo?.name,
+            section: s.sectionInfo?.name
+          }))
+        });
       }
     }
 
+    // CREATE PROJECT
     const project = await Project.create({
       school,
       title,
       description: description || "",
       detail: detail || "",
-      classId, sectionId,
+      classId,
+      sectionId,
       assignedBy: teacherId,
       targetType,
       studentIds: targetType === "students" ? studentIds : [],
@@ -48,10 +96,17 @@ const createProject = async (req, res) => {
       maxMarks
     });
 
-    return res.status(201).json({ message: "Project created", project });
+    return res.status(201).json({
+      message: "Project created successfully",
+      project
+    });
+
   } catch (err) {
     console.error("createProject error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res.status(500).json({
+      message: "Server error",
+      error: err.message
+    });
   }
 };
 
@@ -114,17 +169,62 @@ const getProjectsForStudent = async (req, res) => {
 const updateProject = async (req, res) => {
   try {
     const { id } = req.params;
+    const updates = req.body;
+
     const project = await Project.findById(id);
     if (!project) return res.status(404).json({ message: "Project not found" });
 
-    // allow only creator or admin to update (you can expand check)
     if (String(project.assignedBy) !== String(req.user._id) && req.user.role !== "admin_office") {
-      return res.status(403).json({ message: "Not authorized to update" });
+      return res.status(403).json({ message: "Not authorized to update this project" });
     }
 
-    // partial update allowed
-    const updated = await Project.findByIdAndUpdate(id, { $set: req.body }, { new: true });
+    if (updates.classId) {
+      const classDoc = await ClassSection.findById(updates.classId);
+      if (!classDoc) return res.status(404).json({ message: "Updated classId not found" });
+    }
+
+    if (updates.targetType === "students" || updates.studentIds) {
+      const studentIds = updates.studentIds || project.studentIds;
+
+      if (!Array.isArray(studentIds) || studentIds.length === 0) {
+        return res.status(400).json({ message: "studentIds required when targetType is 'students'" });
+      }
+
+      const finalClassId = updates.classId || project.classId;
+      const finalSectionId = updates.sectionId || project.sectionId;
+
+      const foundStudents = await User.find({
+        _id: { $in: studentIds },
+        role: "student",
+        school: req.user.school
+      });
+
+      if (foundStudents.length !== studentIds.length) {
+        return res.status(400).json({ message: "One or more studentIds are invalid" });
+      }
+
+      const invalidStudents = foundStudents.filter(
+        s =>
+          String(s.classInfo?.id) !== String(finalClassId) ||
+          String(s.sectionInfo?.id) !== String(finalSectionId)
+      );
+
+      if (invalidStudents.length > 0) {
+        return res.status(400).json({
+          message: "One or more students do not belong to this class/section",
+          invalidStudentIds: invalidStudents.map(s => s._id)
+        });
+      }
+    }
+
+    const updated = await Project.findByIdAndUpdate(
+      id,
+      { $set: updates },
+      { new: true }
+    );
+
     return res.status(200).json({ message: "Project updated", project: updated });
+
   } catch (err) {
     console.error("updateProject error:", err);
     return res.status(500).json({ message: "Server error", error: err.message });
