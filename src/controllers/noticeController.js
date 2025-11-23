@@ -1,34 +1,76 @@
+const ClassSection = require("../models/ClassSection");
 const Notice = require("../models/Notice");
 const User = require("../models/User");
 
 const formatDate = d => {
   if (!d) return undefined;
   const D = new Date(d);
-  return `${D.getFullYear()}-${String(D.getMonth()+1).padStart(2,"0")}-${String(D.getDate()).padStart(2,"0")}`;
+  return `${D.getFullYear()}-${String(D.getMonth() + 1).padStart(2, "0")}-${String(D.getDate()).padStart(2, "0")}`;
 };
+
 
 const createNotice = async (req, res) => {
   try {
     const school = req.user.school;
     const createdBy = req.user._id;
-    const { title, message, target, targetTeacherIds, targetStudentIds, classId, sectionId, category, startDate, endDate, attachments, pinned } = req.body;
 
-    if (!title || !message) return res.status(400).json({ message: "title and message required" });
+    const {
+      title, message, target, targetTeacherIds, targetStudentIds,
+      classId, sectionId, category, startDate, endDate, attachments, pinned
+    } = req.body;
 
-    // validate targets if required
-    if (target === "selected_teachers" && (!Array.isArray(targetTeacherIds) || targetTeacherIds.length === 0)) {
-      return res.status(400).json({ message: "targetTeacherIds required when target is selected_teachers" });
+    if (!title || !message) {
+      return res.status(400).json({ message: "Title and message are required" });
     }
 
-    if (target === "selected_students" && (!Array.isArray(targetStudentIds) || targetStudentIds.length === 0)) {
-      return res.status(400).json({ message: "targetStudentIds required when target is selected_students" });
+    if (target === "selected_teachers" && (!targetTeacherIds || targetTeacherIds.length === 0)) {
+      return res.status(400).json({ message: "targetTeacherIds required" });
+    }
+
+    if (target === "selected_students" && (!targetStudentIds || targetStudentIds.length === 0)) {
+      return res.status(400).json({ message: "targetStudentIds required" });
+    }
+
+    let classExists = null;
+
+    if (classId) {
+      classExists = await ClassSection.findById(classId);
+      if (!classExists) {
+        return res.status(400).json({ message: "Invalid classId - class not found" });
+      }
+
+      if (sectionId) {
+        const sectionExists = classExists.sections.some(
+          (sec) => String(sec._id) === String(sectionId)
+        );
+
+        if (!sectionExists) {
+          return res.status(400).json({
+            message: "Invalid sectionId - section not found in this class"
+          });
+        }
+      }
     }
 
     const notice = await Notice.create({
-      school, title, message, createdBy, target: target || "all", targetTeacherIds: targetTeacherIds || [], targetStudentIds: targetStudentIds || [], classId, sectionId, category: category || "notice", startDate: formatDate(startDate), endDate: formatDate(endDate), attachments: attachments || [], pinned: !!pinned
+      school,
+      title,
+      message,
+      createdBy,
+      target: target || "all",
+      targetTeacherIds: targetTeacherIds || [],
+      targetStudentIds: targetStudentIds || [],
+      classId: classId || null,
+      sectionId: sectionId || null,
+      category: category || "notice",
+      startDate: startDate ? formatDate(startDate) : undefined,
+      endDate: endDate ? formatDate(endDate) : undefined,
+      attachments: attachments || [],
+      pinned: !!pinned
     });
 
     return res.status(201).json({ message: "Notice created", notice });
+
   } catch (err) {
     console.error("createNotice error:", err);
     return res.status(500).json({ message: "Server error", error: err.message });
@@ -36,30 +78,59 @@ const createNotice = async (req, res) => {
 };
 
 // get notices relevant to a teacher (filters: all, selected)
-const getNoticesForTeacher = async (req, res) => {
+const getNotices = async (req, res) => {
   try {
-    const school = req.user.school;
-    const teacherId = req.user._id;
-    const { classId, sectionId, category, activeOnly } = req.query;
-    const now = formatDate(new Date());
+    const user = req.user;
+    const school = user.school;
 
+    const { classId, sectionId, category, activeOnly } = req.query;
+
+    const now = new Date();
     const base = { school };
 
     if (classId) base.classId = classId;
     if (sectionId) base.sectionId = sectionId;
     if (category) base.category = category;
 
+    let roleFilters = [];
+
+    if (user.role === "teacher") {
+      roleFilters = [
+        { target: "all_teachers" },
+        { target: "class" },
+        { target: "section" },
+        { target: "selected_teachers", targetTeacherIds: user._id },
+        { target: "custom", targetTeacherIds: user._id }
+      ];
+    }
+
+    // if (user.role === "student") {
+    //   roleFilters = [
+    //     { target: "all" },
+    //     { target: "all_students" },
+    //     { target: "class" },
+    //     { target: "section" },
+    //     { target: "selected_students", targetStudentIds: user._id },
+    //     { target: "custom", targetStudentIds: user._id }
+    //   ];
+    // }
+    if (user.role === "admin") {
+      roleFilters = [
+        { target: "all" },
+        { target: "all_teachers" },
+        { target: "all_students" },
+        { target: "class" },
+        { target: "section" },
+        { target: "selected_teachers" },
+        { target: "selected_students" },
+        { target: "custom" }
+      ];
+    }
+
     const query = {
       $and: [
         base,
-        {
-          $or: [
-            { target: "all" },
-            { target: "all_teachers" },
-            { target: "selected_teachers", targetTeacherIds: teacherId },
-            { target: "custom", targetTeacherIds: teacherId }
-          ]
-        }
+        { $or: roleFilters }
       ]
     };
 
@@ -68,33 +139,38 @@ const getNoticesForTeacher = async (req, res) => {
         $or: [
           { startDate: { $exists: false } },
           { startDate: { $lte: now } }
-        ],
+        ]
       });
       query.$and.push({
         $or: [
           { endDate: { $exists: false } },
           { endDate: { $gte: now } }
-        ],
+        ]
       });
     }
 
-    const notices = await Notice.find(query).populate("createdBy", "name email").sort({ pinned: -1, createdAt: -1 }).lean();
+    const notices = await Notice.find(query)
+      .populate("createdBy", "name email")
+      .sort({ pinned: -1, createdAt: -1 })
+      .lean();
+
     return res.status(200).json({ total: notices.length, notices });
+
   } catch (err) {
-    console.error("getNoticesForTeacher error:", err);
+    console.error("getNotices error:", err);
     return res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
-// get notices for student (similar logic)
+// get notices for student
 const getNoticesForStudent = async (req, res) => {
   try {
     const school = req.user.school;
     const studentId = req.user._id;
-    const classId = req.user.classId || req.user.classInfo?.id;
-    const sectionId = req.user.sectionId || req.user.sectionInfo?.id;
+    const classId = req.user.classInfo?.id;
+    const sectionId = req.user.sectionInfo?.id;
     const { category, activeOnly } = req.query;
-    const now = formatDate(new Date());
+    const now = new Date();
 
     const base = { school };
     if (category) base.category = category;
@@ -104,40 +180,48 @@ const getNoticesForStudent = async (req, res) => {
         base,
         {
           $or: [
-            { target: "all" },
-            { target: "all_students" },
+            // Notices targeted to the student's class
+            { target: "class", classId: classId },
+            // Notices targeted to the student's section
+            { target: "section", classId: classId, sectionId: sectionId },
+            // Notices targeted to the student individually
             { target: "selected_students", targetStudentIds: studentId },
+            // Custom notices including student
             { target: "custom", targetStudentIds: studentId },
-            // notices targeted by class/section (optional)
-            { classId },
-            { sectionId }
           ]
         }
       ]
     };
 
+    // Only active notices
     if (activeOnly === "true") {
       query.$and.push({
         $or: [
           { startDate: { $exists: false } },
           { startDate: { $lte: now } }
-        ],
+        ]
       });
       query.$and.push({
         $or: [
           { endDate: { $exists: false } },
           { endDate: { $gte: now } }
-        ],
+        ]
       });
     }
 
-    const notices = await Notice.find(query).populate("createdBy", "name email").sort({ pinned: -1, createdAt: -1 }).lean();
+    const notices = await Notice.find(query)
+      .populate("createdBy", "name email")
+      .sort({ pinned: -1, createdAt: -1 })
+      .lean();
+
     return res.status(200).json({ total: notices.length, notices });
+
   } catch (err) {
     console.error("getNoticesForStudent error:", err);
     return res.status(500).json({ message: "Server error", error: err.message });
   }
 };
+
 
 const updateNotice = async (req, res) => {
   try {
@@ -178,7 +262,7 @@ const deleteNotice = async (req, res) => {
 
 module.exports = {
   createNotice,
-  getNoticesForTeacher,
+  getNotices,
   getNoticesForStudent,
   updateNotice,
   deleteNotice

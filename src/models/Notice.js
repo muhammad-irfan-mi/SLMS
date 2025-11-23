@@ -6,18 +6,18 @@ const noticeSchema = new Schema({
   title: { type: String, required: true },
   message: { type: String, required: true },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  target: { // who should see it
+  target: { 
     type: String,
-    enum: ["all_teachers", "selected_teachers", "all_students", "selected_students", "all", "custom"],
+    enum: ["all_teachers", "selected_teachers", "all_students", "selected_students", "all", "custom",'class'],
     default: "all"
   },
-  targetTeacherIds: [{ type: Schema.Types.ObjectId, ref: "User" }], // when selected_teachers/custom
-  targetStudentIds: [{ type: Schema.Types.ObjectId, ref: "User" }], // when selected_students/custom
-  classId: { type: Schema.Types.ObjectId, ref: "ClassSection" }, // optional
-  sectionId: { type: Schema.Types.ObjectId }, // optional
+  targetTeacherIds: [{ type: Schema.Types.ObjectId, ref: "User" }], 
+  targetStudentIds: [{ type: Schema.Types.ObjectId, ref: "User" }], 
+  classId: { type: Schema.Types.ObjectId, ref: "ClassSection" }, 
+  sectionId: { type: Schema.Types.ObjectId },
   category: { type: String, enum: ["notice","meeting","holiday","general"], default: "notice" },
-  startDate: { type: String }, // when notice becomes active
-  endDate: { type: String }, // optional
+  startDate: { type: String }, 
+  endDate: { type: String }, 
   pinned: { type: Boolean, default: false },
   attachments: [{ type: String }]
 }, { timestamps: true });
