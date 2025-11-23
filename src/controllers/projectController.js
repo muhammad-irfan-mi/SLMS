@@ -115,14 +115,35 @@ const getProjectsForTeacher = async (req, res) => {
   try {
     const school = req.user.school;
     const teacherId = req.user._id;
-    const { classId, sectionId } = req.query;
-    const filter = { school };
+    const { classId, sectionId, deadlineStatus, creationDate, createdTo } = req.query;
+
+    const filter = {
+      school,
+      assignedBy: teacherId,
+    };
 
     if (classId) filter.classId = classId;
     if (sectionId) filter.sectionId = sectionId;
 
-    // teacher can view projects assigned by them OR projects for the class/section (optionally)
-    filter.$or = [{ assignedBy: teacherId }, { classId: filter.classId || { $exists: true } }];
+    if (deadlineStatus === "upcoming") {
+      filter.deadline = { $gte: new Date() };
+    }
+
+    if (deadlineStatus === "expired") {
+      filter.deadline = { $lt: new Date() };
+    }
+
+    if (creationDate || createdTo) {
+      filter.createdAt = {};
+
+      if (creationDate) {
+        filter.createdAt.$gte = new Date(creationDate);
+      }
+
+      if (createdTo) {
+        filter.createdAt.$lte = new Date(createdTo);
+      }
+    }
 
     const projects = await Project.find(filter)
       .populate("assignedBy", "name email")
@@ -130,7 +151,11 @@ const getProjectsForTeacher = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    return res.status(200).json({ total: projects.length, projects });
+    return res.status(200).json({
+      total: projects.length,
+      projects,
+    });
+
   } catch (err) {
     console.error("getProjectsForTeacher error:", err);
     return res.status(500).json({ message: "Server error", error: err.message });

@@ -43,7 +43,6 @@ const getNoticesForTeacher = async (req, res) => {
     const { classId, sectionId, category, activeOnly } = req.query;
     const now = formatDate(new Date());
 
-    // Build query: any notice that is global to teachers OR targeted to this teacher OR to section/class matching
     const base = { school };
 
     if (classId) base.classId = classId;

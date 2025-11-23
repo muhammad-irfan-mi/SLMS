@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
-const { protect, isTeacherOrAdminOfficeOrSchool, isStudent } = require("../middleware/auth");
-const { createNotice, getNoticesForStudent, updateNotice, deleteNotice } = require("../controllers/noticeController");
+const { createNotice, getNoticesForStudent, updateNotice, deleteNotice, getNoticesForTeacher } = require("../controllers/noticeController");
+const { isTeacherOrAdminOfficeOrSchool, protect, isStudent } = require("../middlewares/auth");
 
 router.post("/", protect, isTeacherOrAdminOfficeOrSchool, createNotice);
 router.get("/teacher", protect, isTeacherOrAdminOfficeOrSchool, getNoticesForTeacher);
