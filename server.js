@@ -18,6 +18,7 @@ const leaveRoutes = require('./src/routes/leave.route');
 const diaryRoutes = require('./src/routes/diary.routes');
 const projectRoutes = require('./src/routes/project.routes');
 const noticeRoutes = require('./src/routes/notice.routes');
+const salaryRoutes = require('./src/routes/salarySlip.routes');
 const socialMediaRoutes = require('./src/routes/schoolMedia.routes');
 const logger = require('./src/utils/logger');
 const seedSuperAdmin = require('./src/seed/seedSuperAdmin');
@@ -51,6 +52,7 @@ app.use('/api/leave', leaveRoutes);
 app.use('/api/diary', diaryRoutes);
 app.use('/api/project', projectRoutes);
 app.use('/api/notice', noticeRoutes);
+app.use('/api/salary', salaryRoutes);
 app.use('/api/socialMedia', socialMediaRoutes);
 
 app.get('/', (req, res) => res.send('School Auth Microservice API'));
