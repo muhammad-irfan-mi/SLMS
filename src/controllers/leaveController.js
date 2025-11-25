@@ -212,6 +212,191 @@ const getLeavesByStudent = async (req, res) => {
     }
 };
 
+
+
+
+
+// TEACHER APPLY LEAVE
+const applyTeacherLeave = async (req, res) => {
+    try {
+        const school = req.user.school;
+        const teacherId = req.user._id;
+        const teacherName = req.user.name;
+        const { dates, subject, reason } = req.body;
+
+        if (!dates || !Array.isArray(dates) || dates.length === 0 || !subject || !reason) {
+            return res.status(400).json({ message: "dates[], subject, reason required" });
+        }
+
+        const formattedDates = dates.map(d => formatDate(d));
+        const today = formatDate(new Date());
+
+        const pastDates = formattedDates.filter(d => d < today);
+        if (pastDates.length > 0)
+            return res.status(400).json({ message: "Cannot apply leave for past dates", pastDates });
+
+        const existing = await Leave.find({
+            school,
+            teacherId,
+            date: { $in: formattedDates },
+            status: { $in: ["pending", "approved"] },
+        });
+
+        if (existing.length > 0) {
+            return res.status(400).json({
+                message: "Leave already applied for some dates",
+                conflictDates: existing.map(e => e.date),
+            });
+        }
+
+        const newLeaves = formattedDates.map(date => ({
+            school,
+            userType: "teacher",
+            teacherId,
+            teacherName,
+            date,
+            subject,
+            reason,
+            status: "pending",
+        }));
+
+        const created = await Leave.insertMany(newLeaves);
+
+        res.status(201).json({ message: "Leave applied", leaves: created });
+    } catch (err) {
+        console.error("applyTeacherLeave error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// TEACHER VIEW OWN LEAVES
+const getTeacherLeaves = async (req, res) => {
+    try {
+        const school = req.user.school;
+        const teacherId = req.user._id;
+
+        const leaves = await Leave.find({
+            school,
+            teacherId,
+            userType: "teacher",
+        }).sort({ createdAt: -1 });
+
+        res.status(200).json({ total: leaves.length, leaves });
+    } catch (err) {
+        console.error("getTeacherLeaves error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// TEACHER CAN UPDATE OWN PENDING FUTURE LEAVE
+const updateTeacherLeave = async (req, res) => {
+    try {
+        const school = req.user.school;
+        const teacherId = req.user._id;
+        const { id } = req.params;
+        const { subject, reason } = req.body;
+
+        const leave = await Leave.findById(id);
+        if (!leave) return res.status(404).json({ message: "Leave not found" });
+
+        if (leave.teacherId?.toString() !== teacherId.toString())
+            return res.status(403).json({ message: "Not your leave" });
+
+        if (leave.status !== "pending")
+            return res.status(400).json({ message: "Only pending leave can be updated" });
+
+        const today = formatDate(new Date());
+        if (leave.date < today)
+            return res.status(400).json({ message: "Cannot update past leave" });
+
+        if (subject) leave.subject = subject;
+        if (reason) leave.reason = reason;
+
+        await leave.save();
+
+        res.status(200).json({ message: "Leave updated", leave });
+    } catch (err) {
+        console.error("updateTeacherLeave error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// TEACHER CANCEL LEAVE
+const cancelTeacherLeave = async (req, res) => {
+    try {
+        const school = req.user.school;
+        const teacherId = req.user._id;
+        const { id } = req.params;
+
+        const leave = await Leave.findById(id);
+
+        if (!leave) return res.status(404).json({ message: "Leave not found" });
+
+        if (leave.teacherId?.toString() !== teacherId.toString())
+            return res.status(403).json({ message: "Not your leave" });
+
+        leave.status = "cancelled";
+        leave.reviewedAt = new Date();
+
+        await leave.save();
+
+        res.status(200).json({ message: "Leave cancelled", leave });
+    } catch (err) {
+        console.error("cancelTeacherLeave error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// ADMIN APPROVE TEACHER LEAVE
+const approveTeacherLeave = async (req, res) => {
+    try {
+        const school = req.user.school;
+        const reviewer = req.user._id;
+        const { id } = req.params;
+
+        const leave = await Leave.findById(id);
+        if (!leave) return res.status(404).json({ message: "Leave not found" });
+        if (leave.userType !== "teacher") return res.status(400).json({ message: "Not a teacher leave" });
+
+        leave.status = "approved";
+        leave.reviewedAt = new Date();
+        leave.reviewedBy = reviewer;
+
+        await leave.save();
+
+        res.status(200).json({ message: "Teacher leave approved", leave });
+    } catch (err) {
+        console.error("adminApproveTeacherLeave error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+// ADMIN REJECT TEACHER LEAVE
+const rejectTeacherLeave = async (req, res) => {
+    try {
+        const school = req.user.school;
+        const reviewer = req.user._id;
+        const { id } = req.params;
+        const { remark } = req.body;
+
+        const leave = await Leave.findById(id);
+        if (!leave) return res.status(404).json({ message: "Leave not found" });
+
+        leave.status = "rejected";
+        leave.reviewedBy = reviewer;
+        leave.reviewedAt = new Date();
+        if (remark) leave.remark = remark;
+
+        await leave.save();
+
+        res.status(200).json({ message: "Teacher leave rejected", leave });
+    } catch (err) {
+        console.error("adminRejectTeacherLeave error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+
 module.exports = {
     applyLeave,
     cancelLeave,
@@ -219,4 +404,10 @@ module.exports = {
     approveLeave,
     rejectLeave,
     getLeavesByStudent,
+    applyTeacherLeave,
+    getTeacherLeaves,
+    updateTeacherLeave,
+    cancelTeacherLeave,
+    approveTeacherLeave,
+    rejectTeacherLeave,
 };

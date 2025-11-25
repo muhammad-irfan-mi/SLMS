@@ -3,13 +3,19 @@ const mongoose = require("mongoose");
 const leaveSchema = new mongoose.Schema(
   {
     school: { type: mongoose.Schema.Types.ObjectId, ref: "School", required: true },
+
     studentId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     studentName: String,
     classId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection", required: true },
     sectionId: { type: mongoose.Schema.Types.ObjectId, required: true },
+
+    teacherId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    teacherName: String,
+
+    userType: { type: String, enum: ["student", "teacher"], default: "student" },
     date: { type: String, required: true },
-    reason: { type: String, required: true },
     subject: { type: String, required: true },
+    reason: { type: String, required: true },
     appliedAt: { type: Date, default: Date.now },
     status: {
       type: String,
