@@ -6,8 +6,8 @@ const leaveSchema = new mongoose.Schema(
 
     studentId: { type: mongoose.Schema.Types.ObjectId, ref: "User"},
     studentName: String,
-    classId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection", required: true },
-    sectionId: { type: mongoose.Schema.Types.ObjectId, required: true },
+    classId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection" },
+    sectionId: { type: mongoose.Schema.Types.ObjectId },
 
     teacherId: { type: mongoose.Schema.Types.ObjectId, ref: "User"},
     teacherName: String,
