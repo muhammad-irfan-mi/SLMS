@@ -2,11 +2,46 @@ const Project = require("../models/Project");
 const ClassSection = require("../models/ClassSection");
 const User = require("../models/User");
 const mongoose = require("mongoose");
+const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
 
 const formatDate = d => {
   const D = d ? new Date(d) : new Date();
   return `${D.getFullYear()}-${String(D.getMonth() + 1).padStart(2, "0")}-${String(D.getDate()).padStart(2, "0")}`;
 };
+
+async function handleProjectUploads(files, existing = {}) {
+  let images = existing.images || [];
+  let pdf = existing.pdf || null;
+
+  if (files?.images) {
+    for (const img of images) {
+      await deleteFileFromS3(img);
+    }
+
+    images = [];
+
+    for (const file of files.images.slice(0, 2)) {
+      const uploaded = await uploadFileToS3({
+        fileBuffer: file.buffer,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+      });
+      images.push(uploaded);
+    }
+  }
+
+  if (files?.pdf?.[0]) {
+    if (pdf) await deleteFileFromS3(pdf);
+
+    pdf = await uploadFileToS3({
+      fileBuffer: files.pdf[0].buffer,
+      fileName: files.pdf[0].originalname,
+      mimeType: files.pdf[0].mimetype,
+    });
+  }
+
+  return { images, pdf };
+}
 
 // teacher creates project
 const createProject = async (req, res) => {
@@ -81,6 +116,7 @@ const createProject = async (req, res) => {
       }
     }
 
+    const uploads = await handleProjectUploads(req.files);
     // CREATE PROJECT
     const project = await Project.create({
       school,
@@ -93,7 +129,10 @@ const createProject = async (req, res) => {
       targetType,
       studentIds: targetType === "students" ? studentIds : [],
       deadline: deadline ? formatDate(deadline) : undefined,
-      maxMarks
+      maxMarks,
+
+      images: uploads.images,
+      pdf: uploads.pdf
     });
 
     return res.status(201).json({
@@ -194,65 +233,40 @@ const getProjectsForStudent = async (req, res) => {
 const updateProject = async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
 
     const project = await Project.findById(id);
-    if (!project) return res.status(404).json({ message: "Project not found" });
+    if (!project)
+      return res.status(404).json({ message: "Project not found" });
 
-    if (String(project.assignedBy) !== String(req.user._id) && req.user.role !== "admin_office") {
-      return res.status(403).json({ message: "Not authorized to update this project" });
+    if (String(project.assignedBy) !== String(req.user._id) &&
+      req.user.role !== "admin_office") {
+      return res.status(403).json({ message: "Not authorized" });
     }
 
-    if (updates.classId) {
-      const classDoc = await ClassSection.findById(updates.classId);
-      if (!classDoc) return res.status(404).json({ message: "Updated classId not found" });
-    }
+    const updates = req.body;
 
-    if (updates.targetType === "students" || updates.studentIds) {
-      const studentIds = updates.studentIds || project.studentIds;
+    const uploads = await handleProjectUploads(req.files, {
+      images: project.images,
+      pdf: project.pdf
+    });
 
-      if (!Array.isArray(studentIds) || studentIds.length === 0) {
-        return res.status(400).json({ message: "studentIds required when targetType is 'students'" });
-      }
+    Object.keys(updates).forEach(key => {
+      project[key] = updates[key];
+    });
 
-      const finalClassId = updates.classId || project.classId;
-      const finalSectionId = updates.sectionId || project.sectionId;
+    project.images = uploads.images.length > 0 ? uploads.images : project.images;
+    project.pdf = uploads.pdf ? uploads.pdf : project.pdf;
 
-      const foundStudents = await User.find({
-        _id: { $in: studentIds },
-        role: "student",
-        school: req.user.school
-      });
+    await project.save();
 
-      if (foundStudents.length !== studentIds.length) {
-        return res.status(400).json({ message: "One or more studentIds are invalid" });
-      }
-
-      const invalidStudents = foundStudents.filter(
-        s =>
-          String(s.classInfo?.id) !== String(finalClassId) ||
-          String(s.sectionInfo?.id) !== String(finalSectionId)
-      );
-
-      if (invalidStudents.length > 0) {
-        return res.status(400).json({
-          message: "One or more students do not belong to this class/section",
-          invalidStudentIds: invalidStudents.map(s => s._id)
-        });
-      }
-    }
-
-    const updated = await Project.findByIdAndUpdate(
-      id,
-      { $set: updates },
-      { new: true }
-    );
-
-    return res.status(200).json({ message: "Project updated", project: updated });
+    return res.status(200).json({
+      message: "Project updated successfully",
+      project
+    });
 
   } catch (err) {
     console.error("updateProject error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res.status(500).json({ message: err.message });
   }
 };
 
@@ -260,18 +274,34 @@ const updateProject = async (req, res) => {
 const deleteProject = async (req, res) => {
   try {
     const { id } = req.params;
-    const project = await Project.findById(id);
-    if (!project) return res.status(404).json({ message: "Project not found" });
 
-    if (String(project.assignedBy) !== String(req.user._id) && req.user.role !== "admin_office") {
-      return res.status(403).json({ message: "Not authorized to delete" });
+    const project = await Project.findById(id);
+    if (!project)
+      return res.status(404).json({ message: "Project not found" });
+
+    if (String(project.assignedBy) !== String(req.user._id) &&
+      req.user.role !== "admin_office") {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    // delete images
+    if (project.images && project.images.length > 0) {
+      for (const img of project.images) {
+        await deleteFileFromS3(img);
+      }
+    }
+
+    // delete pdf
+    if (project.pdf) {
+      await deleteFileFromS3(project.pdf);
     }
 
     await project.deleteOne();
     return res.status(200).json({ message: "Project deleted" });
+
   } catch (err) {
     console.error("deleteProject error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res.status(500).json({ message: err.message });
   }
 };
 

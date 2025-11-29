@@ -6,16 +6,27 @@ const projectSchema = new Schema({
   title: { type: String, required: true },
   description: String,
   detail: String,
+
   classId: { type: Schema.Types.ObjectId, ref: "ClassSection", required: true },
   sectionId: { type: Schema.Types.ObjectId, required: true },
-  assignedBy: { type: Schema.Types.ObjectId, ref: "User", required: true }, 
+
+  assignedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   assignedAt: { type: Date, default: Date.now },
 
   targetType: { type: String, enum: ["section", "students"], default: "section" },
   studentIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
+
   deadline: { type: String },
   maxMarks: Number,
-  status: { type: String, enum: ["draft", "assigned", "completed", "graded"], default: "assigned" }
+  status: {
+    type: String,
+    enum: ["draft", "assigned", "completed", "graded"],
+    default: "assigned"
+  },
+
+  images: [String],
+  pdf: String
+
 }, { timestamps: true });
 
 module.exports = mongoose.model("Project", projectSchema);

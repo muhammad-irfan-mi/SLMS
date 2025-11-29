@@ -38,6 +38,7 @@ const resultSchema = new mongoose.Schema(
 
     marksObtained: { type: Number, required: true },
     totalMarks: { type: Number, required: true },
+    image: { type: String },
   },
   { timestamps: true }
 );

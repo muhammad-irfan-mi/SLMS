@@ -3,6 +3,25 @@ const Subject = require("../models/Subject");
 const User = require("../models/User");
 const ClassSection = require("../models/ClassSection");
 const ExamSchedule = require("../models/ExamSchedule");
+const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
+
+
+async function handleResultImageUpload(file, existingImage = null) {
+    if (!file) return existingImage;
+
+    if (existingImage) {
+        await deleteFileFromS3(existingImage);
+    }
+
+    const uploaded = await uploadFileToS3({
+        fileBuffer: file.buffer,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+    });
+
+    return uploaded;
+}
+
 
 // Add Result
 const addResult = async (req, res) => {
@@ -24,15 +43,12 @@ const addResult = async (req, res) => {
         if (student?.classInfo?.id.toString() !== classId || student?.sectionInfo?.id.toString() !== sectionId) {
             return res.status(400).json({ message: "Student not in this class or section" });
         }
+
         const subject = await Subject.findById(subjectId);
         if (!subject) return res.status(404).json({ message: "Subject not found" });
 
-        if (
-            subject.class.toString() !== classId.toString() ||
-            subject.sectionId.toString() !== sectionId.toString()
-        ) {
+        if (subject.class.toString() !== classId.toString() || subject.sectionId.toString() !== sectionId.toString())
             return res.status(400).json({ message: "Subject not assigned to this class & section" });
-        }
 
         const examExists = await ExamSchedule.findOne({
             school: schoolId,
@@ -44,9 +60,7 @@ const addResult = async (req, res) => {
         });
 
         if (!examExists)
-            return res.status(400).json({
-                message: `Exam schedule not found. You must add ${examType} exam for ${year} before adding result.`,
-            });
+            return res.status(400).json({ message: `Exam schedule not found.` });
 
         const already = await Result.findOne({
             school: schoolId,
@@ -57,9 +71,12 @@ const addResult = async (req, res) => {
         });
 
         if (already)
-            return res.status(400).json({
-                message: "Result already added for this student for this subject in this exam.",
-            });
+            return res.status(400).json({ message: "Result already added for this student." });
+
+        let image = null;
+        if (req.file) {
+            image = await handleResultImageUpload(req.file);
+        }
 
         const newResult = await Result.create({
             school: schoolId,
@@ -71,6 +88,7 @@ const addResult = async (req, res) => {
             year,
             marksObtained,
             totalMarks,
+            image,
         });
 
         res.status(201).json({ message: "Result added successfully", result: newResult });
@@ -91,49 +109,11 @@ const updateResult = async (req, res) => {
         if (!result) return res.status(404).json({ message: "Result not found" });
 
         const updatedData = req.body;
-        const { studentId, classId, sectionId, subjectId, examType, year } = {
-            ...result.toObject(),
-            ...updatedData,
-        };
 
-        const student = await User.findById(studentId);
-        if (!student) return res.status(404).json({ message: "Student not found" });
-
-        if (student.classId.toString() !== classId.toString() || student.sectionId.toString() !== sectionId.toString())
-            return res.status(400).json({ message: "Student not in this class or section" });
-
-        const subject = await Subject.findById(subjectId);
-        if (!subject) return res.status(404).json({ message: "Subject not found" });
-
-        if (subject.class.toString() !== classId.toString() || subject.sectionId.toString() !== sectionId.toString()) {
-            return res.status(400).json({ message: "Subject not assigned to this class & section" });
+        if (req.file) {
+            const newImage = await handleResultImageUpload(req.file, result.image);
+            updatedData.image = newImage;
         }
-
-        const examExists = await ExamSchedule.findOne({
-            school: schoolId,
-            classId,
-            sectionId,
-            subjectId,
-            type: examType,
-            year,
-        });
-
-        if (!examExists)
-            return res.status(400).json({
-                message: `Exam schedule not found, cannot update result.`,
-            });
-
-        const other = await Result.findOne({
-            _id: { $ne: id },
-            school: schoolId,
-            studentId,
-            subjectId,
-            examType,
-            year,
-        });
-
-        if (other)
-            return res.status(400).json({ message: "Result already exists for this subject and exam." });
 
         const updated = await Result.findByIdAndUpdate(id, { $set: updatedData }, { new: true });
 
@@ -209,8 +189,14 @@ const deleteResult = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const deleted = await Result.findByIdAndDelete(id);
-        if (!deleted) return res.status(404).json({ message: "Result not found" });
+        const result = await Result.findById(id);
+        if (!result) return res.status(404).json({ message: "Result not found" });
+
+        if (result.image) {
+            await deleteFileFromS3(result.image);
+        }
+
+        await result.deleteOne();
 
         res.status(200).json({ message: "Result deleted successfully" });
 
