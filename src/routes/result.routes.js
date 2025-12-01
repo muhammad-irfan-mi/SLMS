@@ -7,10 +7,10 @@ const { addResult, updateResult, getResults, getStudentResults, deleteResult, } 
 
 
 router.post("/", protect, isTeacherOrAdminOfficeOrSchool, upload.single("image"), addResult);
-router.put("/:id", protect, isTeacherOrAdminOfficeOrSchool, updateResult);
+router.put("/:id", protect, isTeacherOrAdminOfficeOrSchool, upload.single("image"), updateResult);
 router.delete("/:id", protect, isAdminOffice, deleteResult);
 
-router.get("/", protect, isTeacherOrAdminOfficeOrSchool, upload.single("image"), getResults);
+router.get("/", protect, isTeacherOrAdminOfficeOrSchool, getResults);
 router.get("/student", protect, isStudent, getStudentResults);
 
 

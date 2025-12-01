@@ -7,24 +7,21 @@ const resultSchema = new mongoose.Schema(
       ref: "School",
       required: true,
     },
+
     studentId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
+
     classId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "ClassSection",
       required: true,
     },
+
     sectionId: {
       type: mongoose.Schema.Types.ObjectId,
-      required: true,
-    },
-
-    subjectId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Subject",
       required: true,
     },
 
@@ -38,6 +35,13 @@ const resultSchema = new mongoose.Schema(
 
     marksObtained: { type: Number, required: true },
     totalMarks: { type: Number, required: true },
+
+    position: {
+      type: String,
+      enum: ["first", "second", "third", "pass", "fail"],
+      required: true,
+    },
+
     image: { type: String },
   },
   { timestamps: true }

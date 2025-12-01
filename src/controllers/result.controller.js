@@ -5,12 +5,11 @@ const ClassSection = require("../models/ClassSection");
 const ExamSchedule = require("../models/ExamSchedule");
 const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
 
+async function handleResultImageUpload(file, oldImage = null) {
+    if (!file) return oldImage;
 
-async function handleResultImageUpload(file, existingImage = null) {
-    if (!file) return existingImage;
-
-    if (existingImage) {
-        await deleteFileFromS3(existingImage);
+    if (oldImage) {
+        await deleteFileFromS3(oldImage);
     }
 
     const uploaded = await uploadFileToS3({
@@ -22,79 +21,92 @@ async function handleResultImageUpload(file, existingImage = null) {
     return uploaded;
 }
 
-
 // Add Result
 const addResult = async (req, res) => {
     try {
-        const { studentId, classId, sectionId, subjectId, examType, year, marksObtained, totalMarks } = req.body;
+        const {
+            studentId,
+            classId,
+            sectionId,
+            marksObtained,
+            totalMarks,
+            position,
+            examType,
+            year
+        } = req.body;
+
         const schoolId = req.user.school;
 
-        if (!studentId || !classId || !sectionId || !subjectId || !examType || !year || !marksObtained || !totalMarks)
+        if (
+            !studentId ||
+            !classId ||
+            !sectionId ||
+            !marksObtained ||
+            !totalMarks ||
+            !position ||
+            !examType ||
+            !year
+        ) {
             return res.status(400).json({ message: "Missing required fields" });
+        }
 
+        // ---- Check Student ----
         const student = await User.findById(studentId);
         if (!student) return res.status(404).json({ message: "Student not found" });
         if (student.role !== "student") return res.status(400).json({ message: "This is not a student" });
 
-        if (!student?.classInfo?.id || !student?.sectionInfo?.id) {
-            return res.status(400).json({ message: "Student missing class or section assignment" });
+        if (!student.classInfo?.id || !student.sectionInfo?.id)
+            return res.status(400).json({ message: "Student missing class or section" });
+
+        // ---- Match class + section ----
+        if (student.classInfo.id.toString() !== classId) {
+            return res.status(400).json({ message: "Student not in this class" });
+        }
+        if (student.sectionInfo.id.toString() !== sectionId) {
+            return res.status(400).json({ message: "Student not in this section" });
         }
 
-        if (student?.classInfo?.id.toString() !== classId || student?.sectionInfo?.id.toString() !== sectionId) {
-            return res.status(400).json({ message: "Student not in this class or section" });
-        }
-
-        const subject = await Subject.findById(subjectId);
-        if (!subject) return res.status(404).json({ message: "Subject not found" });
-
-        if (subject.class.toString() !== classId.toString() || subject.sectionId.toString() !== sectionId.toString())
-            return res.status(400).json({ message: "Subject not assigned to this class & section" });
-
-        const examExists = await ExamSchedule.findOne({
-            school: schoolId,
-            classId,
-            sectionId,
-            subjectId,
-            type: examType,
-            year,
-        });
-
-        if (!examExists)
-            return res.status(400).json({ message: `Exam schedule not found.` });
-
+        // ---- Check Duplicate Result ----
         const already = await Result.findOne({
             school: schoolId,
             studentId,
-            subjectId,
+            classId,
+            sectionId,
             examType,
-            year,
+            year
         });
 
-        if (already)
-            return res.status(400).json({ message: "Result already added for this student." });
+        if (already) {
+            return res.status(400).json({ message: "Result already exists for this student" });
+        }
 
+        // ---- Upload Image ----
         let image = null;
         if (req.file) {
             image = await handleResultImageUpload(req.file);
         }
 
+        // ---- Create Result ----
         const newResult = await Result.create({
             school: schoolId,
             studentId,
             classId,
             sectionId,
-            subjectId,
-            examType,
-            year,
             marksObtained,
             totalMarks,
-            image,
+            position,
+            examType,
+            year,
+            image
         });
 
-        res.status(201).json({ message: "Result added successfully", result: newResult });
+        res.status(201).json({
+            message: "Result added successfully",
+            result: newResult
+        });
 
     } catch (err) {
-        console.error("Add result error:", err);
+        console.error("Add Result Error:", err);
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
@@ -103,13 +115,13 @@ const addResult = async (req, res) => {
 const updateResult = async (req, res) => {
     try {
         const { id } = req.params;
-        const schoolId = req.user.school;
 
         const result = await Result.findById(id);
         if (!result) return res.status(404).json({ message: "Result not found" });
 
         const updatedData = req.body;
 
+        // Replace image if new uploaded
         if (req.file) {
             const newImage = await handleResultImageUpload(req.file, result.image);
             updatedData.image = newImage;
@@ -120,7 +132,7 @@ const updateResult = async (req, res) => {
         res.status(200).json({ message: "Result updated", result: updated });
 
     } catch (err) {
-        console.error("Update result error:", err);
+        console.error("Update Result Error:", err);
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
@@ -129,14 +141,13 @@ const updateResult = async (req, res) => {
 const getResults = async (req, res) => {
     try {
         const schoolId = req.user.school;
-        const { studentId, classId, sectionId, subjectId, examType, year, page = 1, limit = 10 } = req.query;
+        const { studentId, classId, sectionId, examType, year, page = 1, limit = 10 } = req.query;
 
         const filter = { school: schoolId };
 
         if (studentId) filter.studentId = studentId;
         if (classId) filter.classId = classId;
         if (sectionId) filter.sectionId = sectionId;
-        if (subjectId) filter.subjectId = subjectId;
         if (examType) filter.examType = examType;
         if (year) filter.year = year;
 
@@ -144,8 +155,7 @@ const getResults = async (req, res) => {
 
         const results = await Result.find(filter)
             .populate("studentId", "name email rollNo")
-            .populate("subjectId", "name code")
-            .populate("classId", "class sections")
+            .populate("classId", "class section")
             .skip(skip)
             .limit(Number(limit))
             .sort({ createdAt: -1 });
@@ -158,8 +168,9 @@ const getResults = async (req, res) => {
             totalPages: Math.ceil(total / limit),
             results,
         });
+
     } catch (err) {
-        console.error("Get results error:", err);
+        console.error("Get Results Error:", err);
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
@@ -172,14 +183,12 @@ const getStudentResults = async (req, res) => {
         const results = await Result.find({
             studentId: student._id,
             school: student.school,
-        })
-            .populate("subjectId", "name code")
-            .populate("classId", "class");
+        });
 
         res.status(200).json({ total: results.length, results });
 
     } catch (err) {
-        console.error("Student result error:", err);
+        console.error("Student Results Error:", err);
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
@@ -201,7 +210,7 @@ const deleteResult = async (req, res) => {
         res.status(200).json({ message: "Result deleted successfully" });
 
     } catch (err) {
-        console.error("Delete result error:", err);
+        console.error("Delete Result Error:", err);
         res.status(500).json({ message: "Server error", error: err.message });
     }
 };
