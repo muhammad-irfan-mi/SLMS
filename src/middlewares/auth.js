@@ -197,5 +197,49 @@ const isTeacherOrAdminOfficeOrSchool = (req, res, next) => {
   }
 };
 
+const allowedRoles = async (req, res, next) => {
+  try {
+    const user = req.user;
 
-module.exports = { protect, isSuperAdmin, isAdminOffice, isTeacher, isStudent, isTeacherOrStudent, editProfile, isAuthorizedUser, isTeacherOrAdminOfficeOrSchool };
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized: No user found" });
+    }
+
+    if (user.role === "admin_office") {
+      if (!user.school) {
+        return res.status(400).json({ message: "Admin Office is not linked to any school" });
+      }
+      req.user.school = user.school;
+      return next();
+    }
+
+    if (user.role === "teacher") {
+      if (!user.school) {
+        return res.status(400).json({ message: "Teacher is not linked to any school" });
+      }
+      req.user.school = user.school;
+      return next();
+    }
+
+    if (user.role === "student") {
+      if (!user.school) {
+        return res.status(400).json({ message: "Student is not linked to any school" });
+      }
+      req.user.school = user.school;
+      return next();
+    }
+
+    if (user.verified && user.schoolId) {
+      req.user.school = user._id;
+      return next();
+    }
+
+    return res.status(403).json({ message: "Access denied: Invalid role" });
+
+  } catch (err) {
+    console.error("checkUserRoleAndSchool error:", err);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+module.exports = { protect, isSuperAdmin, isAdminOffice, isTeacher, isStudent, isTeacherOrStudent, editProfile, isAuthorizedUser, isTeacherOrAdminOfficeOrSchool, allowedRoles };
