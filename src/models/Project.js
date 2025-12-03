@@ -14,6 +14,7 @@ const projectSchema = new Schema({
   assignedAt: { type: Date, default: Date.now },
 
   targetType: { type: String, enum: ["section", "students"], default: "section" },
+  subjectId: { type: Schema.Types.ObjectId, ref: "Subject", required: true },
   studentIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
 
   deadline: { type: String },

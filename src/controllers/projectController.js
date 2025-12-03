@@ -1,7 +1,7 @@
 const Project = require("../models/Project");
 const ClassSection = require("../models/ClassSection");
 const User = require("../models/User");
-const mongoose = require("mongoose");
+const Schedule = require("../models/Schedule");
 const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
 
 const formatDate = d => {
@@ -14,9 +14,9 @@ async function handleProjectUploads(files, existing = {}) {
   let pdf = existing.pdf || null;
 
   if (files?.images) {
-    for (const img of images) {
+    // delete old images
+    for (const img of images)
       await deleteFileFromS3(img);
-    }
 
     images = [];
 
@@ -30,6 +30,7 @@ async function handleProjectUploads(files, existing = {}) {
     }
   }
 
+  // replace pdf
   if (files?.pdf?.[0]) {
     if (pdf) await deleteFileFromS3(pdf);
 
@@ -52,38 +53,46 @@ const createProject = async (req, res) => {
     const {
       title, description, detail,
       classId, sectionId,
+      subjectId,
       targetType, studentIds,
       deadline, maxMarks
     } = req.body;
 
-    if (!title || !classId || !sectionId || !targetType) {
+    if (!title || !classId || !sectionId || !subjectId) {
       return res.status(400).json({
-        message: "title, classId, sectionId and targetType are required"
+        message: "title, classId, sectionId and subjectId are required"
       });
     }
 
-    // 1. Validate class
+    // Validate class
     const classDoc = await ClassSection.findById(classId);
-    if (!classDoc) return res.status(404).json({ message: "Class not found" });
+    if (!classDoc)
+      return res.status(404).json({ message: "Class not found" });
 
-    // 2. Validate section belongs to class
-    const sectionInClass = classDoc.sections.find(
-      sec => String(sec._id) === String(sectionId)
-    );
+    // Validate section inside class
+    const sectionInClass = classDoc.sections.find(s => String(s._id) === sectionId);
+    if (!sectionInClass)
+      return res.status(400).json({ message: "Section does NOT belong to selected class" });
 
-    if (!sectionInClass) {
-      return res.status(400).json({
-        message: "Section does NOT belong to the selected class"
+    // CHECK teacher is assigned subject in Schedule
+    const schedule = await Schedule.findOne({
+      school,
+      classId,
+      sectionId,
+      subjectId,
+      teacherId
+    });
+
+    if (!schedule) {
+      return res.status(403).json({
+        message: "Teacher is NOT assigned this subject in schedule"
       });
     }
 
-    // 3. If targetType == students → validate each student
+    // If students selected, validate each
     if (targetType === "students") {
-      if (!Array.isArray(studentIds) || studentIds.length === 0) {
-        return res.status(400).json({
-          message: "studentIds required when targetType is 'students'"
-        });
-      }
+      if (!studentIds?.length)
+        return res.status(400).json({ message: "studentIds required" });
 
       const students = await User.find({
         _id: { $in: studentIds },
@@ -91,33 +100,23 @@ const createProject = async (req, res) => {
         school
       }).lean();
 
-      if (students.length !== studentIds.length) {
-        return res.status(400).json({
-          message: "Some studentIds are invalid or do not belong to this school"
-        });
-      }
+      if (students.length !== studentIds.length)
+        return res.status(400).json({ message: "Invalid students" });
 
-      // Validate class & section match for each student
-      const invalidStudents = students.filter(st =>
-        String(st.classInfo?.id) !== String(classId) ||
-        String(st.sectionInfo?.id) !== String(sectionId)
+      const invalid = students.filter(
+        st => String(st.classInfo?.id) !== classId || String(st.sectionInfo?.id) !== sectionId
       );
 
-      if (invalidStudents.length > 0) {
+      if (invalid.length)
         return res.status(400).json({
-          message: "Some students are NOT in the selected class/section",
-          invalidStudents: invalidStudents.map(s => ({
-            id: s._id,
-            name: s.name,
-            class: s.classInfo?.name,
-            section: s.sectionInfo?.name
-          }))
+          message: "Some students NOT in this class/section",
+          invalidStudents: invalid.map(s => ({ id: s._id, name: s.name }))
         });
-      }
     }
 
+    // Uploads
     const uploads = await handleProjectUploads(req.files);
-    // CREATE PROJECT
+
     const project = await Project.create({
       school,
       title,
@@ -125,27 +124,21 @@ const createProject = async (req, res) => {
       detail: detail || "",
       classId,
       sectionId,
+      subjectId,
       assignedBy: teacherId,
       targetType,
       studentIds: targetType === "students" ? studentIds : [],
-      deadline: deadline ? formatDate(deadline) : undefined,
+      deadline: formatDate(deadline),
       maxMarks,
-
       images: uploads.images,
       pdf: uploads.pdf
     });
 
-    return res.status(201).json({
-      message: "Project created successfully",
-      project
-    });
+    return res.status(201).json({ message: "Project created", project });
 
   } catch (err) {
     console.error("createProject error:", err);
-    return res.status(500).json({
-      message: "Server error",
-      error: err.message
-    });
+    return res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
@@ -154,7 +147,8 @@ const getProjectsForTeacher = async (req, res) => {
   try {
     const school = req.user.school;
     const teacherId = req.user._id;
-    const { classId, sectionId, deadlineStatus, creationDate, createdTo } = req.query;
+
+    const { classId, sectionId, subjectId, page = 1, limit = 10 } = req.query;
 
     const filter = {
       school,
@@ -163,41 +157,29 @@ const getProjectsForTeacher = async (req, res) => {
 
     if (classId) filter.classId = classId;
     if (sectionId) filter.sectionId = sectionId;
+    if (subjectId) filter.subjectId = subjectId;
 
-    if (deadlineStatus === "upcoming") {
-      filter.deadline = { $gte: new Date() };
-    }
-
-    if (deadlineStatus === "expired") {
-      filter.deadline = { $lt: new Date() };
-    }
-
-    if (creationDate || createdTo) {
-      filter.createdAt = {};
-
-      if (creationDate) {
-        filter.createdAt.$gte = new Date(creationDate);
-      }
-
-      if (createdTo) {
-        filter.createdAt.$lte = new Date(createdTo);
-      }
-    }
+    const skip = (page - 1) * limit;
 
     const projects = await Project.find(filter)
-      .populate("assignedBy", "name email")
       .populate("classId", "class sections")
+      .populate("subjectId", "name")
       .sort({ createdAt: -1 })
-      .lean();
+      .skip(skip)
+      .limit(Number(limit));
+
+    const total = await Project.countDocuments(filter);
 
     return res.status(200).json({
-      total: projects.length,
-      projects,
+      total,
+      page: Number(page),
+      totalPages: Math.ceil(total / limit),
+      projects
     });
 
   } catch (err) {
     console.error("getProjectsForTeacher error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res.status(500).json({ message: err.message });
   }
 };
 
@@ -206,10 +188,11 @@ const getProjectsForStudent = async (req, res) => {
   try {
     const school = req.user.school;
     const studentId = req.user._id;
-    const classId = req.user.classId || req.user.classInfo?.id;
-    const sectionId = req.user.sectionId || req.user.sectionInfo?.id;
+    const classId = req.user.classInfo?.id;
+    const sectionId = req.user.sectionInfo?.id;
 
-    if (!classId || !sectionId) return res.status(400).json({ message: "Student not assigned to class/section" });
+    if (!classId || !sectionId)
+      return res.status(400).json({ message: "Student not assigned to class/section" });
 
     const projects = await Project.find({
       school,
@@ -219,13 +202,14 @@ const getProjectsForStudent = async (req, res) => {
       ]
     })
       .populate("assignedBy", "name")
-      .sort({ deadline: 1, createdAt: -1 })
-      .lean();
+      .populate("subjectId", "name")
+      .sort({ deadline: 1 });
 
     return res.status(200).json({ total: projects.length, projects });
+
   } catch (err) {
     console.error("getProjectsForStudent error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res.status(500).json({ message: err.message });
   }
 };
 
@@ -250,19 +234,14 @@ const updateProject = async (req, res) => {
       pdf: project.pdf
     });
 
-    Object.keys(updates).forEach(key => {
-      project[key] = updates[key];
-    });
+    Object.assign(project, updates);
 
-    project.images = uploads.images.length > 0 ? uploads.images : project.images;
-    project.pdf = uploads.pdf ? uploads.pdf : project.pdf;
+    project.images = uploads.images.length ? uploads.images : project.images;
+    project.pdf = uploads.pdf || project.pdf;
 
     await project.save();
 
-    return res.status(200).json({
-      message: "Project updated successfully",
-      project
-    });
+    return res.status(200).json({ message: "Project updated", project });
 
   } catch (err) {
     console.error("updateProject error:", err);
@@ -281,23 +260,18 @@ const deleteProject = async (req, res) => {
 
     if (String(project.assignedBy) !== String(req.user._id) &&
       req.user.role !== "admin_office") {
-      return res.status(403).json({ message: "Not authorized" });
+      return res.status(403).json({ message: "Not authorized to delete" });
     }
 
-    // delete images
-    if (project.images && project.images.length > 0) {
-      for (const img of project.images) {
-        await deleteFileFromS3(img);
-      }
-    }
+    for (const img of project.images)
+      await deleteFileFromS3(img);
 
-    // delete pdf
-    if (project.pdf) {
+    if (project.pdf)
       await deleteFileFromS3(project.pdf);
-    }
 
     await project.deleteOne();
-    return res.status(200).json({ message: "Project deleted" });
+
+    return res.status(200).json({ message: "Project deleted successfully" });
 
   } catch (err) {
     console.error("deleteProject error:", err);
