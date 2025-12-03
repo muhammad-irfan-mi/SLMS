@@ -22,6 +22,7 @@ const noticeRoutes = require('./src/routes/notice.routes');
 const salaryRoutes = require('./src/routes/salarySlip.routes');
 const complainRoutes = require('./src/routes/complaintFeedback.routes');
 const eventRoutes = require('./src/routes/event.routes');
+const studentDocumentRoutes = require('./src/routes/studentDocument.routes');
 const feeVoucherRoutes = require('./src/routes/feeVoucher.route');
 const socialMediaRoutes = require('./src/routes/schoolMedia.routes');
 const logger = require('./src/utils/logger');
@@ -60,6 +61,7 @@ app.use('/api/notice', noticeRoutes);
 app.use('/api/salary', salaryRoutes);
 app.use('/api/complain', complainRoutes);
 app.use('/api/event', eventRoutes);
+app.use('/api/studentDocument', studentDocumentRoutes);
 app.use('/api/feeVoucher', feeVoucherRoutes);
 app.use('/api/socialMedia', socialMediaRoutes);
 
