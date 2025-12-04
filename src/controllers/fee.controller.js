@@ -167,6 +167,44 @@ const deleteFeeDetail = async (req, res) => {
     }
 };
 
+// Get All Fee Records 
+const getAllFeeDetails = async (req, res) => {
+    try {
+        const schoolId = req.user.school;
+
+        let { page = 1, limit = 10, studentId, month, status } = req.query;
+        page = Number(page);
+        limit = Number(limit);
+
+        const filter = { school: schoolId };
+
+        if (studentId) filter.studentId = studentId;
+        if (month) filter.month = month;
+        if (status) filter.status = status;
+
+        const skip = (page - 1) * limit;
+
+        const fees = await FeeDetail.find(filter)
+            .populate("studentId", "name email classId sectionId")
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit);
+
+        const total = await FeeDetail.countDocuments(filter);
+
+        res.status(200).json({
+            total,
+            page,
+            totalPages: Math.ceil(total / limit),
+            fees,
+        });
+
+    } catch (err) {
+        console.error("Error fetching all fee records:", err);
+        res.status(500).json({ message: err.message });
+    }
+};
+
 // Get My Fee Records
 const getMyFeeDetails = async (req, res) => {
     try {
@@ -193,5 +231,6 @@ module.exports = {
     approvePayment,
     updateFeeDetail,
     deleteFeeDetail,
+    getAllFeeDetails,
     getMyFeeDetails,
 };
