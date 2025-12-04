@@ -234,6 +234,10 @@ const allowedRoles = async (req, res, next) => {
       return next();
     }
 
+    if (req.user || req.user.role == "superadmin") {
+      next();
+    }
+
     return res.status(403).json({ message: "Access denied: Invalid role" });
 
   } catch (err) {
