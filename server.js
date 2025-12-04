@@ -26,6 +26,7 @@ const studentDocumentRoutes = require('./src/routes/studentDocument.routes');
 const feeVoucherRoutes = require('./src/routes/feeVoucher.route');
 const socialMediaRoutes = require('./src/routes/schoolMedia.routes');
 const islamicAttendanceRoutes = require('./src/routes/dailyIslamicAttendance.routes');
+const aiYusahRoutes = require('./src/routes/aiYusah.routes');
 const logger = require('./src/utils/logger');
 const seedSuperAdmin = require('./src/seed/seedSuperAdmin');
 
@@ -66,6 +67,7 @@ app.use('/api/studentDocument', studentDocumentRoutes);
 app.use('/api/feeVoucher', feeVoucherRoutes);
 app.use('/api/socialMedia', socialMediaRoutes);
 app.use('/api/nmazQuran', islamicAttendanceRoutes);
+app.use('/api/aiYusha', aiYusahRoutes);
 
 app.get('/', (req, res) => res.send('School Auth Microservice API'));
 
