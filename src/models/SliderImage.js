@@ -10,9 +10,20 @@ const SliderImageSchema = new mongoose.Schema(
 
     image: { type: String, required: true },
 
+    category: {
+      type: String,
+      required: true,
+      enum: ["global", "event", "notice", "general"], 
+    },
+
     uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
     school: { type: mongoose.Schema.Types.ObjectId, ref: "School", default: null },
-    uploadedByRole: { type: String, enum: ["superadmin", "admin_office"], required: true },
+
+    uploadedByRole: {
+      type: String,
+      enum: ["superadmin", "admin_office", "school"],
+      required: true
+    },
   },
   { timestamps: true }
 );

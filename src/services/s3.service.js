@@ -32,16 +32,29 @@ async function uploadFileToS3({ fileBuffer, fileName, mimeType }) {
 
 async function deleteFileFromS3(s3Url) {
   try {
-    const key = s3Url.split('/').pop();
+    if (!s3Url) return;
+
+    const key = s3Url.split(".amazonaws.com/")[1];
+
+    if (!key) {
+      console.error("Could not extract S3 key from URL:", s3Url);
+      return;
+    }
+
     const params = {
       Bucket: process.env.AWS_BUCKET_NAME,
       Key: key,
     };
+
     const command = new DeleteObjectCommand(params);
     await s3.send(command);
+
+    console.log("Deleted from S3:", key);
+
   } catch (err) {
     console.error("S3 delete error:", err);
   }
 }
+
 
 module.exports = { uploadFileToS3, deleteFileFromS3 };

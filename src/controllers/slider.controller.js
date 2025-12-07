@@ -1,101 +1,111 @@
 const SliderImage = require("../models/SliderImage");
-const User = require("../models/User");
 const { uploadFileToS3, deleteFileFromS3 } = require("../services/s3.service");
-
 
 async function uploadSingleImage(file) {
     if (!file) return null;
-
-    const uploaded = await uploadFileToS3({
+    return await uploadFileToS3({
         fileBuffer: file.buffer,
         fileName: file.originalname,
         mimeType: file.mimetype,
     });
-
-    return uploaded;
 }
 
-async function deleteImage(url) {
-    if (!url) return;
-    await deleteFileFromS3(url);
+async function deleteImage(fileUrl) {
+    await deleteFileFromS3(fileUrl);
 }
 
-
-// Create slider
+// CREATE SLIDER
 const createSlider = async (req, res) => {
     try {
         const user = req.user;
-        console.log(user)
-        const { title, caption, link, order } = req.body;
+        const { title, caption, link, order, category } = req.body;
 
-        const active = req.body.active !== undefined ? req.body.active === "true" : true;
-
-        if (!title || !req.file) {
+        if (!user.role) user.role = "school";
+        if (!title || !req.file)
             return res.status(400).json({ message: "Title and image are required" });
+
+        let allowedCategories = [];
+        let selectedCategory = category;
+
+        if (user.role === "superadmin") {
+            allowedCategories = ["global"];
+            selectedCategory = "global";
+        }
+
+        if (user.role === "admin_office" || user.role === "school") {
+            allowedCategories = ["event", "notice", "general"];
+            if (!allowedCategories.includes(category))
+                return res.status(400).json({ message: "Invalid category for school admin" });
         }
 
         const imageUrl = await uploadSingleImage(req.file);
 
-        let school = null;
-        if (user.role === "admin_office") {
-            if (!user.school) return res.status(400).json({ message: "School admin not linked to any school" });
-            school = user.school;
-        } else if (user.role === "superadmin") {
-            school = req.body.school || null;
-        } else if (user.schoolId) {
-            school = user._id || null;
-        }
+        // let school = null;
+        // if (user.role === "admin_office") school = user.school;
 
         const slider = await SliderImage.create({
             title,
             caption,
             link,
             order: order ? Number(order) : 0,
-            active,
+            active: req.body.active !== undefined ? req.body.active === "true" : true,
             image: imageUrl,
             uploadedBy: user._id,
-            uploadedByRole: user.role || "admin_office",
-            school,
+            uploadedByRole: user.role,
+            school: user.role === "school" ? user.id : user.role === "admin_office" ? user.school : null,
+            category: selectedCategory,
         });
 
         return res.status(201).json({ message: "Slider created", slider });
+
     } catch (err) {
-        console.error("createSlider error:", err);
         return res.status(500).json({ message: err.message });
     }
 };
 
+
 // Get visible sliders for any logged-in user (students/teachers/admins)
-// GET /api/slider
 const getVisibleSliders = async (req, res) => {
     try {
         const user = req.user;
-        let { page = 1, limit = 10, search } = req.query;
-        page = Number(page);
-        limit = Number(limit);
+        let filter = { active: true };
 
-        const filter = {};
+        const { category } = req.query;
 
-        if (search) filter.title = { $regex: search, $options: "i" };
+        if (user.school) {
+            filter.$or = [
+                { category: "global", uploadedByRole: "superadmin" },
+                { school: user.school }
+            ];
 
-        if (user.role === "superadmin") {
-            // superadmin sees all sliders
-        } else if (user.school) {
-            filter.$or = [{ school: null }, { school: user.school }];
-        } else {
-            filter.school = null; // users without school only see superadmin global sliders
+            // If category filter exists
+            if (category) {
+                filter.$and = [
+                    { $or: filter.$or },
+                    { category: category }
+                ];
+                delete filter.$or;
+            }
+        }
+        else {
+            filter = {
+                active: true,
+                category: "global",
+                uploadedByRole: "superadmin"
+            };
+
+            if (category) {
+                filter.category = category;
+            }
         }
 
-        const skip = (page - 1) * limit;
+        const sliders = await SliderImage.find(filter)
+            .sort({ order: -1, createdAt: -1 });
 
-        const [total, sliders] = await Promise.all([
-            SliderImage.countDocuments(filter),
-            SliderImage.find(filter).sort({ order: -1, createdAt: -1 }).skip(skip).limit(limit),
-        ]);
+        return res.status(200).json({ sliders });
 
-        return res.status(200).json({ total, page, totalPages: Math.ceil(total / limit), sliders });
     } catch (err) {
-        console.error("getVisibleSliders error:", err);
+        console.error(err);
         return res.status(500).json({ message: err.message });
     }
 };
@@ -104,33 +114,16 @@ const getVisibleSliders = async (req, res) => {
 const getSlidersForSuperadmin = async (req, res) => {
     try {
         const user = req.user;
-        if (!user || user.role !== "superadmin") return res.status(403).json({ message: "SuperAdmin only" });
 
-        let { page = 1, limit = 10, search } = req.query;
-        page = Number(page);
-        limit = Number(limit);
+        const sliders = await SliderImage.find({
+            uploadedBy: user._id,
+            uploadedByRole: "superadmin"
+        }).sort({ createdAt: -1 });
 
-        const filter = {};
-        if (search) filter.title = { $regex: search, $options: "i" };
+        return res.status(200).json({ sliders });
 
-        // superadmin uploads specifically
-        filter.uploadedByRole = "superadmin";
-
-        const skip = (page - 1) * limit;
-
-        const [total, sliders] = await Promise.all([
-            SliderImage.countDocuments(filter),
-            SliderImage.find(filter)
-                .sort({ createdAt: -1 })
-                .skip(skip)
-                .limit(Number(limit))
-                .lean()
-        ]);
-
-        return res.status(200).json({ total, page, totalPages: Math.ceil(total / limit), sliders });
     } catch (err) {
-        console.error("getSlidersForSuperadmin error:", err);
-        return res.status(500).json({ message: err.message || "Server error" });
+        return res.status(500).json({ message: err.message });
     }
 };
 
@@ -138,31 +131,18 @@ const getSlidersForSuperadmin = async (req, res) => {
 const getSlidersForSchoolAdmin = async (req, res) => {
     try {
         const user = req.user;
+        console.log('user', user)
+        console.log('user', user._id)
 
-        let { page = 1, limit = 10, search } = req.query;
-        page = Number(page);
-        limit = Number(limit);
+        const sliders = await SliderImage.find({
+            uploadedByRole: { $in: ["admin_office", "school"] },
+            school: user.school || user._id
+        }).sort({ createdAt: -1 });
 
-        if (!user.school) return res.status(400).json({ message: "School admin not linked to a school" });
+        return res.status(200).json({ sliders });
 
-        const filter = { uploadedByRole: "admin_office", school: user.school };
-        if (search) filter.title = { $regex: search, $options: "i" };
-
-        const skip = (page - 1) * limit;
-
-        const [total, sliders] = await Promise.all([
-            SliderImage.countDocuments(filter),
-            SliderImage.find(filter)
-                .sort({ order: -1, createdAt: -1 })
-                .skip(skip)
-                .limit(Number(limit))
-                .lean()
-        ]);
-
-        return res.status(200).json({ total, page, totalPages: Math.ceil(total / limit), sliders });
     } catch (err) {
-        console.error("getSlidersForSchoolAdmin error:", err);
-        return res.status(500).json({ message: err.message || "Server error" });
+        return res.status(500).json({ message: err.message });
     }
 };
 
@@ -211,35 +191,26 @@ const updateSlider = async (req, res) => {
         const slider = await SliderImage.findById(id);
         if (!slider) return res.status(404).json({ message: "Slider not found" });
 
-        // Permission check
-        if (String(slider.uploadedBy) !== String(user._id)) {
-            return res.status(403).json({ message: "Not authorized to update this slider" });
-        }
+        if (String(slider.uploadedBy) !== String(user._id))
+            return res.status(403).json({ message: "Not authorized" });
 
-        // Update allowed fields
-        ["title", "caption", "link", "order", "active"].forEach(field => {
-            if (req.body[field] !== undefined) slider[field] = req.body[field];
+        // Update fields
+        ["title", "caption", "link", "order", "active"].forEach(f => {
+            if (req.body[f] !== undefined) slider[f] = req.body[f];
         });
 
-        // Update image
         if (req.file) {
-            if (slider.image) await deleteImage(slider.image);
+            await deleteImage(slider.image);
             slider.image = await uploadSingleImage(req.file);
         }
 
-        // Superadmin can change school
-        if (user.role === "superadmin" && req.body.school !== undefined) {
-            slider.school = req.body.school || null;
-        }
-
         await slider.save();
-        return res.status(200).json({ message: "Slider updated", slider });
+        res.json({ message: "Updated", slider });
+
     } catch (err) {
-        console.error("updateSlider error:", err);
         return res.status(500).json({ message: err.message });
     }
 };
-
 
 const deleteSlider = async (req, res) => {
     try {
@@ -249,26 +220,19 @@ const deleteSlider = async (req, res) => {
         const slider = await SliderImage.findById(id);
         if (!slider) return res.status(404).json({ message: "Slider not found" });
 
-        if (String(slider.uploadedBy) !== String(user._id) && user.role !== "superadmin") {
-            return res.status(403).json({ message: "Not authorized to delete this slider" });
-        }
+        if (String(slider.uploadedBy) !== String(user._id))
+            return res.status(403).json({ message: "Not authorized" });
 
-        if (slider.image) {
-            try {
-                await deleteImage(slider.image);
-            } catch (s3Err) {
-                console.error("S3 delete error:", s3Err.message);
-            }
-        }
-
+        await deleteImage(slider.image);
         await slider.deleteOne();
+
         return res.status(200).json({ message: "Slider deleted" });
 
     } catch (err) {
-        console.error("deleteSlider error:", err);
         return res.status(500).json({ message: err.message });
     }
 };
+
 
 
 
