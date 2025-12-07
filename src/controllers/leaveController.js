@@ -112,15 +112,38 @@ const getLeaves = async (req, res) => {
         const school = req.user.school;
         const { classId, sectionId, status, studentId, date } = req.query;
 
+        // Pagination
+        let page = parseInt(req.query.page) || 1;
+        let limit = parseInt(req.query.limit) || 10;
+        let skip = (page - 1) * limit;
+
+        // Filters
         const filter = { school };
+
         if (classId) filter.classId = classId;
         if (sectionId) filter.sectionId = sectionId;
         if (status) filter.status = status;
         if (studentId) filter.studentId = studentId;
         if (date) filter.date = formatDate(date);
 
-        const leaves = await Leave.find(filter).sort({ createdAt: -1 }).lean();
-        return res.status(200).json({ total: leaves.length, leaves });
+        // Count total results (before pagination)
+        const total = await Leave.countDocuments(filter);
+
+        // Fetch paginated results
+        const leaves = await Leave.find(filter)
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean();
+
+        return res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            leaves
+        });
+
     } catch (err) {
         console.error("getLeaves error:", err);
         return res.status(500).json({ message: "Server error", error: err.message });
@@ -204,8 +227,30 @@ const getLeavesByStudent = async (req, res) => {
         const { studentId } = req.params;
         if (!studentId) return res.status(400).json({ message: "studentId required" });
 
-        const leaves = await Leave.find({ school, studentId }).sort({ date: -1 }).lean();
-        return res.status(200).json({ total: leaves.length, leaves });
+        // Pagination
+        let { page = 1, limit = 20 } = req.query;
+        page = parseInt(page);
+        limit = parseInt(limit);
+
+        const skip = (page - 1) * limit;
+
+        // Count total leaves for this student
+        const total = await Leave.countDocuments({ school, studentId });
+
+        const leaves = await Leave.find({ school, studentId })
+            .sort({ date: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean();
+
+        return res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            leaves
+        });
+
     } catch (err) {
         console.error("getLeavesByStudent error:", err);
         return res.status(500).json({ message: "Server error", error: err.message });
@@ -275,13 +320,38 @@ const getTeacherLeaves = async (req, res) => {
         const school = req.user.school;
         const teacherId = req.user._id;
 
+        // Pagination
+        let { page = 1, limit = 20 } = req.query;
+        page = parseInt(page);
+        limit = parseInt(limit);
+
+        const skip = (page - 1) * limit;
+
+        // Total leave count
+        const total = await Leave.countDocuments({
+            school,
+            teacherId,
+            userType: "teacher",
+        });
+
         const leaves = await Leave.find({
             school,
             teacherId,
             userType: "teacher",
-        }).sort({ createdAt: -1 });
+        })
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean();
 
-        res.status(200).json({ total: leaves.length, leaves });
+        res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            leaves,
+        });
+
     } catch (err) {
         console.error("getTeacherLeaves error:", err);
         res.status(500).json({ message: "Server error", error: err.message });

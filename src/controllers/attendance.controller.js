@@ -100,8 +100,27 @@ const getAttendanceBySection = async (req, res) => {
         const { sectionId } = req.params;
         const school = req.user.school;
 
-        const records = await Attendance.find({ school, sectionId }).sort({ date: -1 }).lean();
-        return res.status(200).json({ total: records.length, attendance: records });
+        let { page = 1, limit = 20 } = req.query;
+        page = parseInt(page);
+        limit = parseInt(limit);
+        const skip = (page - 1) * limit;
+
+        const total = await Attendance.countDocuments({ school, sectionId });
+
+        const records = await Attendance.find({ school, sectionId })
+            .sort({ date: -1 })
+            .skip(skip)
+            .limit(limit)
+            .lean();
+
+        return res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            attendance: records
+        });
+
     } catch (err) {
         return res.status(500).json({ message: err.message || "Server error" });
     }
@@ -112,20 +131,45 @@ const getAttendanceByStudent = async (req, res) => {
         const { studentId } = req.params;
         const school = req.user.school;
 
-        const records = await Attendance.find({
+        let { page = 1, limit = 20 } = req.query;
+        page = parseInt(page);
+        limit = parseInt(limit);
+        const skip = (page - 1) * limit;
+
+        const filter = {
             school,
             "students.studentId": new mongoose.Types.ObjectId(studentId),
-        })
+        };
+
+        const total = await Attendance.countDocuments(filter);
+
+        const records = await Attendance.find(filter)
             .select("date classId sectionId students")
             .sort({ date: -1 })
+            .skip(skip)
+            .limit(limit)
             .lean();
 
         const result = records.map((r) => {
-            const st = r.students.find((s) => String(s.studentId) === String(studentId));
-            return { date: r.date, classId: r.classId, sectionId: r.sectionId, status: st?.status || "N/A" };
+            const st = r.students.find(
+                (s) => String(s.studentId) === String(studentId)
+            );
+            return {
+                date: r.date,
+                classId: r.classId,
+                sectionId: r.sectionId,
+                status: st?.status || "N/A",
+            };
         });
 
-        return res.status(200).json({ total: result.length, attendance: result });
+        return res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            attendance: result
+        });
+
     } catch (err) {
         return res.status(500).json({ message: err.message || "Server error" });
     }
@@ -137,31 +181,45 @@ const getAttendanceByDateOrRange = async (req, res) => {
         const { date, startDate, endDate } = req.query;
         const school = req.user.school;
 
-        if (!sectionId) return res.status(400).json({ message: "sectionId is required" });
+        let { page = 1, limit = 20 } = req.query;
+        page = parseInt(page);
+        limit = parseInt(limit);
+        const skip = (page - 1) * limit;
+
+        if (!sectionId)
+            return res.status(400).json({ message: "sectionId is required" });
+
         if (!date && (!startDate || !endDate))
-            return res.status(400).json({ message: "Provide either a date or startDate & endDate" });
+            return res.status(400).json({
+                message: "Provide either a date or startDate & endDate",
+            });
 
         let filter = { school, sectionId };
 
         if (date) {
             filter.date = date;
-        } else if (startDate && endDate) {
+        } else {
             filter.date = { $gte: startDate, $lte: endDate };
         }
 
+        const total = await Attendance.countDocuments(filter);
+
         const attendance = await Attendance.find(filter)
             .sort({ date: 1 })
+            .skip(skip)
+            .limit(limit)
             .lean();
 
-        if (!attendance.length)
-            return res.status(404).json({ message: "No attendance records found" });
-
         return res.status(200).json({
-            total: attendance.length,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
             from: startDate || date,
             to: endDate || date,
-            records: attendance,
+            records: attendance
         });
+
     } catch (err) {
         return res.status(500).json({ message: err.message || "Server error" });
     }
@@ -173,11 +231,18 @@ const getStudentAttendanceByDateOrRange = async (req, res) => {
         const { date, startDate, endDate } = req.query;
         const school = req.user.school;
 
+        let { page = 1, limit = 20 } = req.query;
+        page = parseInt(page);
+        limit = parseInt(limit);
+        const skip = (page - 1) * limit;
+
         if (!studentId)
             return res.status(400).json({ message: "studentId is required" });
 
         if (!date && (!startDate || !endDate))
-            return res.status(400).json({ message: "Provide either a date or startDate & endDate" });
+            return res.status(400).json({
+                message: "Provide either a date or startDate & endDate",
+            });
 
         let filter = {
             school,
@@ -186,20 +251,23 @@ const getStudentAttendanceByDateOrRange = async (req, res) => {
 
         if (date) {
             filter.date = date;
-        } else if (startDate && endDate) {
+        } else {
             filter.date = { $gte: startDate, $lte: endDate };
         }
+
+        const total = await Attendance.countDocuments(filter);
 
         const records = await Attendance.find(filter)
             .select("date classId sectionId students")
             .sort({ date: 1 })
+            .skip(skip)
+            .limit(limit)
             .lean();
 
-        if (!records.length)
-            return res.status(404).json({ message: "No attendance records found for this student" });
-
         const result = records.map((r) => {
-            const st = r.students.find((s) => String(s.studentId) === String(studentId));
+            const st = r.students.find(
+                (s) => String(s.studentId) === String(studentId)
+            );
             return {
                 date: r.date,
                 classId: r.classId,
@@ -209,11 +277,15 @@ const getStudentAttendanceByDateOrRange = async (req, res) => {
         });
 
         return res.status(200).json({
-            total: result.length,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
             from: startDate || date,
             to: endDate || date,
             records: result,
         });
+
     } catch (err) {
         console.error("Error fetching student attendance by range:", err);
         return res.status(500).json({ message: err.message || "Server error" });
