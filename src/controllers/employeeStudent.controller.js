@@ -233,7 +233,7 @@ const addStudentBySchool = async (req, res) => {
             return res.status(400).json({ message: result.error });
         }
         const { classInfo, sectionInfo } = result;
-        
+
         const images = await uploadFiles(req.files);
 
         const newStudent = new User({
@@ -394,10 +394,11 @@ const editOwnProfile = async (req, res) => {
     try {
         const userId = req.user._id;
         const existing = await User.findById(userId);
+
         if (!existing)
             return res.status(404).json({ message: "User not found" });
 
-        const images = await uploadFileToS3(req.files, existing.images || {});
+        const updatedImages = await uploadFiles(req.files, existing.images);
 
         const updatableFields = {
             name: req.body.name ?? existing.name,
@@ -405,7 +406,7 @@ const editOwnProfile = async (req, res) => {
             phone: req.body.phone ?? existing.phone,
             address: req.body.address ?? existing.address,
             cnic: req.body.cnic ?? existing.cnic,
-            images,
+            images: updatedImages,
         };
 
         if (existing.role === "teacher" || existing.role === "admin_office") {
@@ -417,7 +418,12 @@ const editOwnProfile = async (req, res) => {
         }
 
         const updated = await User.findByIdAndUpdate(userId, updatableFields, { new: true });
-        return res.status(200).json({ message: "Profile updated successfully", user: updated });
+
+        return res.status(200).json({
+            message: "Profile updated successfully",
+            user: updated
+        });
+
     } catch (err) {
         console.error("Error updating profile:", err);
         return res.status(500).json({ message: err.message || "Server error while updating profile" });

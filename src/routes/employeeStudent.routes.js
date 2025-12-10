@@ -67,7 +67,7 @@ router.post("/user-login", userLogin);
 
 
 router.put(
-    "/profile-edit/:id",
+    "/profile-edit",
     protect,
     allowedRoles,
     upload.fields([
