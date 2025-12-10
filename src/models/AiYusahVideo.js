@@ -5,8 +5,21 @@ const AiYusahVideoSchema = new mongoose.Schema(
     title: { type: String, required: true },
     description: String,
     youtubeLink: { type: String, required: true },
-    // school: { type: mongoose.Schema.Types.ObjectId, ref: "School", required: true },
-    // uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+
+    category: {
+      type: String,
+      enum: [
+        "Behavioural Activities",
+        "English Learning",
+        "Health & Food",
+        "Islamic Studies",
+        "Capacity Building",
+        "Sports",
+        "Education",
+        "AI Poems"
+      ],
+      required: true
+    }
   },
   { timestamps: true }
 );

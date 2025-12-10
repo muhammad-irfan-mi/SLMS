@@ -165,8 +165,27 @@ const deleteClass = async (req, res) => {
 const getClassesBySchool = async (req, res) => {
     try {
         const { schoolId } = req.params;
-        const classes = await ClassSection.find({ school: schoolId });
-        res.status(200).json({ count: classes.length, classes });
+
+        let { page = 1, limit = 20 } = req.query;
+        page = parseInt(page);
+        limit = parseInt(limit);
+        const skip = (page - 1) * limit;
+
+        const total = await ClassSection.countDocuments({ school: schoolId });
+
+        const classes = await ClassSection.find({ school: schoolId })
+            .skip(skip)
+            .limit(limit);
+
+        res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            count: classes.length,
+            classes,
+        });
+
     } catch (err) {
         res.status(500).json({ message: "Error fetching classes", error: err.message });
     }

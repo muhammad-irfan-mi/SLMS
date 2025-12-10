@@ -58,17 +58,31 @@ const addSubject = async (req, res) => {
 const getSubjects = async (req, res) => {
   try {
     const schoolId = req.user.school;
-    const { classId, sectionId } = req.query;
+    const { classId, sectionId, page = 1, limit = 2 } = req.query;
 
     const filter = { school: schoolId };
     if (classId) filter.class = classId;
     if (sectionId) filter.sectionId = sectionId;
 
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const total = await Subject.countDocuments(filter);
+
     const subjects = await Subject.find(filter)
       .populate("class", "class")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
 
-    res.status(200).json({ subjects });
+    res.status(200).json({
+      total,
+      page: parseInt(page),
+      limit: parseInt(limit),
+      totalPages: Math.ceil(total / limit),
+      count: subjects.length,
+      subjects,
+    });
+
   } catch (err) {
     res.status(500).json({ message: "Server error", error: err.message });
   }
@@ -78,6 +92,11 @@ const getSubjectsByTeacher = async (req, res) => {
   try {
     const teacherId = req.user._id;
     const schoolId = req.user.school;
+
+    let { page = 1, limit = 20 } = req.query;
+    page = parseInt(page);
+    limit = parseInt(limit);
+    const skip = (page - 1) * limit;
 
     const schedules = await Schedule.find({ school: schoolId, teacherId })
       .populate({
@@ -130,9 +149,17 @@ const getSubjectsByTeacher = async (req, res) => {
       }
     }
 
+    // Apply pagination safely
+    const total = uniqueSubjects.length;
+    const paginated = uniqueSubjects.slice(skip, skip + limit);
+
     res.status(200).json({
-      total: uniqueSubjects.length,
-      subjects: uniqueSubjects,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+      count: paginated.length,
+      subjects: paginated,
     });
   } catch (error) {
     console.error("Error fetching subjects by teacher:", error);

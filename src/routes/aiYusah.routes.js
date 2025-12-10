@@ -11,6 +11,6 @@ router.get("/", protect, isSuperAdmin, getVideosForSuperadmin);
 router.get("/school/:id", protect, allowedRoles, getVideoById);
 router.get("/school", protect, allowedRoles, getVideosBySchool);
 
-router.get("/:id", protect, isSuperAdmin, getVideoById);
+router.get("/:id", protect, allowedRoles, getVideoById);
 
 module.exports = router;

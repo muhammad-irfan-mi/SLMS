@@ -5,11 +5,10 @@ const User = require("../models/User");
 // Superadmin Create Video
 const createAiVideo = async (req, res) => {
     try {
-        // const schoolId = req.user.school;
-        const { title, description, youtubeLink } = req.body;
+        const { title, description, youtubeLink, category } = req.body;
 
-        if (!title || !youtubeLink) {
-            return res.status(400).json({ message: "Title, YouTube link & school are required" });
+        if (!title || !youtubeLink || !category) {
+            return res.status(400).json({ message: "Title, YouTube link & category are required" });
         }
 
         if (!youtubeLink.includes("youtube.com") && !youtubeLink.includes("youtu.be")) {
@@ -20,8 +19,7 @@ const createAiVideo = async (req, res) => {
             title,
             description,
             youtubeLink,
-            // school: schoolId,
-            // uploadedBy: req.user._id,
+            category
         });
 
         await video.save();
@@ -38,17 +36,16 @@ const createAiVideo = async (req, res) => {
 
 const updateAiVideo = async (req, res) => {
     try {
-        // const schoolId = req.user.school;
         const { id } = req.params;
-        const { title, description, youtubeLink } = req.body;
+        const { title, description, youtubeLink, category } = req.body;
 
         const video = await AiYusahVideo.findById(id);
-
         if (!video) return res.status(404).json({ message: "Video not found" });
 
         if (title) video.title = title;
         if (description) video.description = description;
-        // if (schoolId) video.school = schoolId;
+
+        if (category) video.category = category;
 
         if (youtubeLink) {
             if (!youtubeLink.includes("youtube.com") && !youtubeLink.includes("youtu.be")) {
@@ -72,21 +69,19 @@ const updateAiVideo = async (req, res) => {
 
 const getVideosForSuperadmin = async (req, res) => {
     try {
+        let { page = 1, limit = 10, search, category } = req.query;
 
-        let { page = 1, limit = 10, search } = req.query;
         page = Number(page);
         limit = Number(limit);
 
         const filter = {};
 
-        if (search) {
-            filter.title = { $regex: search, $options: "i" };
-        }
+        if (search) filter.title = { $regex: search, $options: "i" };
+        if (category) filter.category = category;
 
         const skip = (page - 1) * limit;
 
         const videos = await AiYusahVideo.find(filter)
-            // .populate("uploadedBy", "name email")
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(limit);
@@ -109,15 +104,14 @@ const getVideosForSuperadmin = async (req, res) => {
 // Get All Videos (All Students, Teachers, Admin)
 const getVideosBySchool = async (req, res) => {
     try {
-        let { page = 1, limit = 10, search } = req.query;
+        let { page = 1, limit = 10, search, category } = req.query;
         page = Number(page);
         limit = Number(limit);
 
         const filter = {};
 
-        if (search) {
-            filter.title = { $regex: search, $options: "i" };
-        }
+        if (search) filter.title = { $regex: search, $options: "i" };
+        if (category) filter.category = category;
 
         const skip = (page - 1) * limit;
 

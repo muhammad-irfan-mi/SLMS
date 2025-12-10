@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { addEmployeeBySchool, editEmployeeBySchool, deleteEmployeeBySchool, addStudentBySchool, editStudentBySchool, deleteStudentBySchool, getAllEmployeesBySchool, getAllStudentsBySchool, getStudentById, getEmployeeById, editOwnProfile, getStudentsBySection } = require("../controllers/employeeStudent.controller");
-const { protect, isAdminOffice, editProfile, isTeacher, isAuthorizedUser } = require("../middlewares/auth");
+const { protect, isAdminOffice, editProfile, isTeacher, isAuthorizedUser, isTeacherOrAdminOfficeOrSchool, allowedRoles } = require("../middlewares/auth");
 const { upload } = require("../utils/multer");
 const { setPasswordForUser, userLogin } = require("../controllers/authController");
 
@@ -31,7 +31,7 @@ router.put(
 
 router.delete("/delete-employee/:id", protect, isAdminOffice, deleteEmployeeBySchool);
 router.get("/employee", protect, isAdminOffice, getAllEmployeesBySchool);
-router.get("/employee/:id", protect, isAuthorizedUser, getEmployeeById);
+router.get("/employee/:id", protect, isTeacherOrAdminOfficeOrSchool, getEmployeeById);
 
 router.post(
     "/add-student",
@@ -60,8 +60,8 @@ router.put(
 
 router.delete("/delete-student/:id", protect, isAdminOffice, deleteStudentBySchool);
 router.get("/student", protect, isAdminOffice, getAllStudentsBySchool);
-router.get("/section-student/:sectionId", protect, isAuthorizedUser, getStudentsBySection);
-router.get("/student/:id", protect, isAuthorizedUser, getStudentById);
+router.get("/section-student/:sectionId", protect, isTeacherOrAdminOfficeOrSchool, getStudentsBySection);
+router.get("/student/:id", protect, allowedRoles, getStudentById);
 router.post("/set-password-user", setPasswordForUser);
 router.post("/user-login", userLogin);
 
@@ -69,7 +69,7 @@ router.post("/user-login", userLogin);
 router.put(
     "/profile-edit/:id",
     protect,
-    editProfile,
+    allowedRoles,
     upload.fields([
         { name: "cnicFront", maxCount: 1 },
         { name: "cnicBack", maxCount: 1 },

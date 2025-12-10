@@ -186,12 +186,28 @@ const deleteSchoolBySuperAdmin = async (req, res) => {
   }
 };
 
-// ✅ Get all schools (Super Admin only)
+// Get all schools (Super Admin only)
 const getAllSchools = async (req, res) => {
   try {
-    const schools = await School.find().select("-password -otp"); // Hide sensitive fields
+    let { page = 1, limit = 20 } = req.query;
+
+    page = parseInt(page);
+    limit = parseInt(limit);
+    const skip = (page - 1) * limit;
+
+    const total = await School.countDocuments();
+
+    const schools = await School.find()
+      .select("-password -otp")
+      .skip(skip)
+      .limit(limit);
+
     return res.status(200).json({
       message: "All schools fetched successfully",
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
       count: schools.length,
       schools,
     });
@@ -204,7 +220,8 @@ const getAllSchools = async (req, res) => {
   }
 };
 
-// ✅ Get single school by ID
+
+// Get single school by ID
 const getSchoolById = async (req, res) => {
   try {
     const { id } = req.params;

@@ -24,7 +24,7 @@ async function getClassAndSection(classId, sectionId) {
     if (!classId) return { classInfo: null, sectionInfo: null };
 
     const classDoc = await ClassSection.findById(classId);
-    if (!classDoc) throw new Error("Invalid class ID");
+    if (!classDoc) return { error: "Invalid class ID" };
 
     const classInfo = { id: classDoc._id, name: classDoc.class };
     let sectionInfo = null;
@@ -33,7 +33,8 @@ async function getClassAndSection(classId, sectionId) {
         const sectionObj = classDoc.sections.find(
             (sec) => sec._id.toString() === sectionId
         );
-        if (!sectionObj) throw new Error("Invalid section ID for this class");
+        if (!sectionObj) return { error: "Invalid section ID for this class" };
+
         sectionInfo = { id: sectionObj._id, name: sectionObj.name };
     }
 
@@ -226,7 +227,13 @@ const addStudentBySchool = async (req, res) => {
         if (existing)
             return res.status(400).json({ message: "Student with this email already exists" });
 
-        const { classInfo, sectionInfo } = await getClassAndSection(classId, sectionId);
+        const result = await getClassAndSection(classId, sectionId);
+
+        if (result.error) {
+            return res.status(400).json({ message: result.error });
+        }
+        const { classInfo, sectionInfo } = result;
+        
         const images = await uploadFiles(req.files);
 
         const newStudent = new User({
@@ -321,7 +328,7 @@ const getStudentsBySection = async (req, res) => {
         const students = await User.find({
             school: schoolId,
             role: "student",
-            "sectionInfo.id": sectionId, 
+            "sectionInfo.id": sectionId,
         }).select("-password");
 
         if (!students.length) {
