@@ -40,10 +40,28 @@ const markAttendance = async (req, res) => {
             return res.status(400).json({ message: "Attendance already marked for today" });
 
         const studentIds = students.map((s) => s.studentId);
+
+        const leaveDocs = await Leave.find({
+            school,
+            studentId: { $in: studentIds },
+            date: attendanceDate,
+            status: "approved"
+        }).lean();
+
+        const leaveStudentIds = leaveDocs.map(l => String(l.studentId));
+
         const userDocs = await User.find({ _id: { $in: studentIds } }).select("name email").lean();
         const finalStudents = students.map((s) => {
             const u = userDocs.find((x) => String(x._id) === String(s.studentId));
-            return { studentId: s.studentId, name: u?.name || "Unknown", email: u?.email || "N/A", status: s.status || "present" };
+
+            const isOnLeave = leaveStudentIds.includes(String(s.studentId));
+
+            return {
+                studentId: s.studentId,
+                name: u?.name || "Unknown",
+                email: u?.email || "N/A",
+                status: isOnLeave ? "leave" : (s.status || "present"),
+            };
         });
 
         const attendance = await Attendance.create({
