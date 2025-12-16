@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const AttendanceImported = require("../models/Attendance");
 const UserImported = require("../models/User");
 const ClassSectionImported = require("../models/ClassSection");
+const Leave = require("../models/Leave");
 
 const Attendance = AttendanceImported.default || AttendanceImported;
 const User = UserImported.default || UserImported;

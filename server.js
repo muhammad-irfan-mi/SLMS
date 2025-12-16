@@ -78,7 +78,13 @@ app.get('/', (req, res) => res.send('School Auth Microservice API'));
 const port = process.env.PORT || 4000;
 const startServer = async () => {
     try {
-        await connectDB(process.env.MONGO_URL || 'mongodb://localhost:27017/schoolauth');
+        await connectDB(process.env.MONGO_URL || 'mongodb://localhost:27017/schoolauth',
+            {
+                maxPoolSize: 300,         
+                serverSelectionTimeoutMS: 5000,
+                socketTimeoutMS: 45000,
+            }
+        );
         await seedSuperAdmin();
         app.listen(port, () => logger.info(`Server running on port ${port}`));
     } catch (err) {

@@ -1,0 +1,25 @@
+{
+  "_id": "64f123abcd...",
+  "school": "schoolId123",
+  "title": "Math Quiz",
+  "status": "published",
+  "startTime": "2025-12-16T00:00:00Z",
+  "endTime": "2025-12-17T00:00:00Z",
+  "questions": [
+    {
+      "_id": "64f123q1...",
+      "type": "mcq",
+      "question": "2 + 2 = ?",
+      "options": ["2","3","4","5"],
+      "correctOptionIndex": 2,
+      "marks": 1
+    },
+    {
+      "_id": "64f123q2...",
+      "type": "fill",
+      "question": "5 + 3 = ?",
+      "correctAnswer": "8",
+      "marks": 1
+    }
+  ]
+}

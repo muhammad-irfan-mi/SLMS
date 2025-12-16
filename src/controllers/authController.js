@@ -131,7 +131,7 @@ const setPasswordForUser = async (req, res) => {
     // if (user.verified)
     //   return res.status(400).json({ message: "Password already set, please login instead." });
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const hashedPassword = await bcrypt.hash(password, 8);
     user.password = hashedPassword;
     user.verified = true;
     await user.save();
