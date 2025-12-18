@@ -2,6 +2,7 @@ const User = require("../models/User");
 const School = require("../models/School");
 const ClassSection = require("../models/ClassSection");
 const { uploadFileToS3, deleteFileFromS3 } = require("../services/s3.service");
+const { validateName, validateEmail, validatePhone, validatePassword } = require("../validators/common.validation");
 
 // Helper for S3 uploads
 async function uploadFiles(files, existingImages = {}) {
@@ -58,7 +59,13 @@ const addEmployeeBySchool = async (req, res) => {
             sectionId,
         } = req.body;
 
-        if (!name || !email || !role)
+        if (validateName(name))
+            return res.status(400).json({ message: validateName(name) });
+
+        if (validateEmail(email))
+            return res.status(400).json({ message: validateEmail(email) });
+
+        if (!role)
             return res.status(400).json({ message: "Name, email, and role are required" });
 
         if (!["teacher", "admin_office"].includes(role))
@@ -74,12 +81,11 @@ const addEmployeeBySchool = async (req, res) => {
         let classInfo = null;
         let sectionInfo = null;
 
-        // 🔹 Only for teacher who is incharge
         if (role === "teacher" && isIncharge === "true" && classId) {
             ({ classInfo, sectionInfo } = await getClassAndSection(classId, sectionId));
         }
 
-        // 🔹 Ensure teacher always has isIncharge set (default false)
+        // Ensure teacher always has isIncharge set (default false)
         const inchargeFlag =
             role === "teacher" ? isIncharge === "true" : undefined;
 
@@ -92,7 +98,7 @@ const addEmployeeBySchool = async (req, res) => {
             role,
             salary: role === "teacher" ? salary : salary || null,
             joiningDate,
-            isIncharge: inchargeFlag ?? false, // always set for teacher
+            isIncharge: inchargeFlag ?? false,
             classInfo,
             sectionInfo,
             school: schoolId,
@@ -117,6 +123,28 @@ const editEmployeeBySchool = async (req, res) => {
 
         if (existing.school.toString() !== req.user.school.toString())
             return res.status(403).json({ message: "Unauthorized" });
+
+        if (req.body.name && req.body.name !== existing.name) {
+            const err = validateName(req.body.name);
+            if (err) return res.status(400).json({ message: err });
+        }
+
+        if (req.body.phone) {
+            const err = validatePhone(req.body.phone);
+            if (err) return res.status(400).json({ message: err });
+        }
+
+        // if (req.body.email && req.body.email !== existing.email) {
+        //     const err = validateEmail(req.body.email);
+        //     if (err) return res.status(400).json({ message: err });
+        // }
+
+        if (req.body.password) {
+            const err = validatePassword(req.body.password);
+            if (err) return res.status(400).json({ message: err });
+
+            req.body.password = await bcrypt.hash(req.body.password, 10);
+        }
 
         const images = await uploadFiles(req.files, existing.images);
 
@@ -219,8 +247,11 @@ const addStudentBySchool = async (req, res) => {
     try {
         const { name, email, phone, address, cnic, fatherName, classId, sectionId, rollNo } = req.body;
 
-        if (!name || !email)
-            return res.status(400).json({ message: "Name and email are required" });
+        if (validateName(name))
+            return res.status(400).json({ message: validateName(name) });
+
+        if (validateEmail(email))
+            return res.status(400).json({ message: validateEmail(email) });
 
         const schoolId = req.user.school;
         const existing = await User.findOne({ email });
@@ -271,6 +302,28 @@ const editStudentBySchool = async (req, res) => {
 
         if (existing.school.toString() !== req.user.school.toString())
             return res.status(403).json({ message: "Unauthorized" });
+
+        if (req.body.name && req.body.name !== existing.name) {
+            const err = validateName(req.body.name);
+            if (err) return res.status(400).json({ message: err });
+        }
+
+        if (req.body.phone) {
+            const err = validatePhone(req.body.phone);
+            if (err) return res.status(400).json({ message: err });
+        }
+
+        // if (req.body.email && req.body.email !== existing.email) {
+        //     const err = validateEmail(req.body.email);
+        //     if (err) return res.status(400).json({ message: err });
+        // }
+
+        if (req.body.password) {
+            const err = validatePassword(req.body.password);
+            if (err) return res.status(400).json({ message: err });
+
+            req.body.password = await bcrypt.hash(req.body.password, 10);
+        }
 
         const images = await uploadFiles(req.files, existing.images);
         let classInfo = existing.classInfo;

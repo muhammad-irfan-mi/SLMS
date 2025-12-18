@@ -1,13 +1,21 @@
 const School = require("../models/School");
 const { uploadFileToS3, deleteFileFromS3 } = require("../services/s3.service");
+const { validateEmail, validatePhone, validateSchoolName } = require("../validators/common.validation");
+const { validateSchoolNameUniqueness } = require("../validators/school.validator");
 
 const addSchoolBySuperAdmin = async (req, res) => {
   try {
     const { name, email, phone, address, cnic, lat, lon, noOfStudents } = req.body;
 
-    if (!name || !email) {
-      return res.status(400).json({ message: "Name and Email are required" });
-    }
+    const nameError = await validateSchoolNameUniqueness(name);
+    if (nameError) { return res.status(400).json({ message: nameError }); }
+
+    const emailError = validateEmail(email);
+    if (emailError) return res.status(400).json({ message: emailError });
+
+    const phoneError = validatePhone(phone);
+    if (phoneError) return res.status(400).json({ message: phoneError });
+
 
     const existingSchool = await School.findOne({ email });
     if (existingSchool) {
@@ -89,59 +97,44 @@ const editSchoolBySuperAdmin = async (req, res) => {
       return res.status(404).json({ message: "School not found" });
     }
 
-    if (req.files?.cnicFront?.[0]) {
-      if (school.images.cnicFront) await deleteFileFromS3(school.images.cnicFront);
-      const file = req.files.cnicFront[0];
-      const uploaded = await uploadFileToS3({
-        fileBuffer: file.buffer,
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-      });
-      school.images.cnicFront = uploaded;
+    if (updates.name && updates.name !== school.name) {
+      const nameError = await validateSchoolNameUniqueness(
+        updates.name.trim(),
+        id
+      );
+      if (nameError)
+        return res.status(400).json({ message: nameError });
+
+      school.name = updates.name.trim();
     }
 
-    if (req.files?.cnicBack?.[0]) {
-      if (school.images.cnicBack) await deleteFileFromS3(school.images.cnicBack);
-      const file = req.files.cnicBack[0];
-      const uploaded = await uploadFileToS3({
-        fileBuffer: file.buffer,
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-      });
-      school.images.cnicBack = uploaded;
+    if (updates.email && updates.email !== school.email) {
+      const emailError = await validateEmail(updates.email, id);
+      if (emailError)
+        return res.status(400).json({ message: emailError });
+
+      school.email = updates.email.trim().toLowerCase();
     }
 
-    if (req.files?.nocDoc?.[0]) {
-      if (school.images.nocDoc) await deleteFileFromS3(school.images.nocDoc);
-      const file = req.files.nocDoc[0];
-      const uploaded = await uploadFileToS3({
-        fileBuffer: file.buffer,
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-      });
-      school.images.nocDoc = uploaded;
+    if (updates.phone) {
+      const phoneError = validatePhone(updates.phone);
+      if (phoneError)
+        return res.status(400).json({ message: phoneError });
+
+      school.phone = updates.phone;
     }
 
-    const fields = [
-      "name",
-      "email",
-      "phone",
-      "address",
-      "cnic",
-      "noOfStudents",
-      "verified",
-      "location.lat",
-      "location.lon",
-    ];
+    /* ================= OTHER FIELDS ================= */
+    if (updates.address !== undefined) school.address = updates.address;
+    if (updates.cnic !== undefined) school.cnic = updates.cnic;
+    if (updates.noOfStudents !== undefined)
+      school.noOfStudents = updates.noOfStudents;
+    if (updates.verified !== undefined) school.verified = updates.verified;
 
-    fields.forEach((field) => {
-      const keys = field.split(".");
-      if (keys.length === 1 && updates[keys[0]] !== undefined) {
-        school[keys[0]] = updates[keys[0]];
-      } else if (keys.length === 2 && updates[keys[0]]?.[keys[1]] !== undefined) {
-        school[keys[0]][keys[1]] = updates[keys[0]][keys[1]];
-      }
-    });
+    if (updates.location?.lat !== undefined)
+      school.location.lat = updates.location.lat;
+    if (updates.location?.lon !== undefined)
+      school.location.lon = updates.location.lon;
 
     await school.save();
 
@@ -153,7 +146,6 @@ const editSchoolBySuperAdmin = async (req, res) => {
     console.error("Error updating school:", err);
     return res.status(500).json({
       message: "Server error while updating school",
-      error: err.message,
     });
   }
 };

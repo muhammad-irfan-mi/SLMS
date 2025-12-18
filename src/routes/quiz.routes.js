@@ -7,7 +7,7 @@ const { createQuizGroup, updateQuizGroup, deleteQuizGroup, getGroups, getGroupBy
 router.post("/", protect, isAdminOffice, createQuizGroup);
 router.put("/:id", protect, isAdminOffice, updateQuizGroup);
 router.delete("/:id", protect, isAdminOffice, deleteQuizGroup);
-router.get("/admin", protect, isAdminOffice, getGroups);
+router.get("/", protect, allowedRoles, getGroups);
 
 // Student/public
 router.get("/:id", protect, allowedRoles, getGroupById);

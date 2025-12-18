@@ -3,33 +3,19 @@ const mongoose = require("mongoose");
 const diarySchema = new mongoose.Schema({
     school: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "School",
-        required: true
+        ref: "School", required: true
     },
     classId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "ClassSection",
-        required: true
-    },
-    className: {
-        type: String,
-        required: true
+        ref: "ClassSection", required: true
     },
     sectionId: {
         type: mongoose.Schema.Types.ObjectId,
         required: true
     },
-    sectionName: {
-        type: String,
-        required: true
-    },
     subjectId: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "Subject",
-        required: true
-    },
-    subjectName: {
-        type: String,
         required: true
     },
 

@@ -2,6 +2,7 @@ const School = require("../models/School");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const { validateEmail, validatePassword } = require("../validators/common.validation");
 
 const superAdminLogin = async (req, res) => {
   try {
@@ -46,15 +47,11 @@ const setPassword = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password)
-      return res.status(400).json({ message: "Email and password are required" });
+    const emailError = validateEmail(email);
+    if (emailError) return res.status(400).json({ message: emailError });
 
-    if (!passwordRegex.test(password)) {
-      return res.status(400).json({
-        message:
-          "Password must be at least 8 characters long, contain one uppercase letter, one number, and one special character.",
-      });
-    }
+    const passError = validatePassword(password);
+    if (passError) return res.status(400).json({ message: passError });
 
     const school = await School.findOne({ email });
     if (!school) return res.status(404).json({ message: "School not found" });
@@ -114,15 +111,11 @@ const setPasswordForUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password)
-      return res.status(400).json({ message: "Email and password are required" });
+    if (validateEmail(email))
+      return res.status(400).json({ message: validateEmail(email) });
 
-    if (!passwordRegex.test(password)) {
-      return res.status(400).json({
-        message:
-          "Password must be at least 8 characters long, contain one uppercase letter, one number, and one special character.",
-      });
-    }
+    const passError = validatePassword(password);
+    if (passError) return res.status(400).json({ message: passError });
 
     const user = await User.findOne({ email });
     if (!user)

@@ -17,9 +17,7 @@ async function validateStudentClassSection(student, classIds = [], sectionIds = 
     return true;
 }
 
-/**
- * CREATE quiz group
- */
+// CREATE quiz group
 const createQuizGroup = async (req, res) => {
     try {
         const user = req.user;
@@ -69,9 +67,7 @@ const createQuizGroup = async (req, res) => {
     }
 };
 
-/**
- * UPDATE quiz group
- */
+// UPDATE quiz group
 const updateQuizGroup = async (req, res) => {
     try {
         const user = req.user;
@@ -115,9 +111,7 @@ const updateQuizGroup = async (req, res) => {
     }
 };
 
-/**
- * DELETE quiz group
- */
+//  DELETE quiz group
 const deleteQuizGroup = async (req, res) => {
     try {
         const user = req.user;
@@ -137,10 +131,7 @@ const deleteQuizGroup = async (req, res) => {
     }
 };
 
-/**
- * GET groups for admin (filters & pagination)
- */
-
+//  GET groups for admin (filters & pagination)
 const getGroups = async (req, res) => {
     try {
         const user = req.user;
@@ -218,9 +209,7 @@ const getGroups = async (req, res) => {
 };
 
 
-/**
- * GET group by ID (student view)
- */
+// GET group by ID (student view)
 const getGroupById = async (req, res) => {
     try {
         const user = req.user;
@@ -304,9 +293,7 @@ const getGroupById = async (req, res) => {
 };
 
 
-/**
- * SUBMIT quiz (student)
- */
+// SUBMIT quiz (student)
 const submitQuiz = async (req, res) => {
     try {
         const user = req.user;
@@ -469,9 +456,7 @@ const submitQuiz = async (req, res) => {
 };
 
 
-/**
- * GET leaderboard
- */
+// GET leaderboard
 const getLeaderboard = async (req, res) => {
     try {
         const { groupId } = req.query;
