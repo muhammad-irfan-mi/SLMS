@@ -77,11 +77,8 @@ const createDiary = async (req, res) => {
         const diary = await Diary.create({
             school,
             classId,
-            className: classDoc.class,
             sectionId,
-            sectionName: section.name,
             subjectId,
-            subjectName: subjectDoc.name,
             date: formatDate(date),
             dueDate: formatDate(dueDate),
             title,
