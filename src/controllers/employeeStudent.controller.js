@@ -27,7 +27,7 @@ async function getClassAndSection(classId, sectionId) {
     const classDoc = await ClassSection.findById(classId);
     if (!classDoc) return { error: "Invalid class ID" };
 
-    const classInfo = { id: classDoc._id, name: classDoc.class };
+    const classInfo = { id: classDoc._id, };
     let sectionInfo = null;
 
     if (sectionId) {
@@ -36,7 +36,7 @@ async function getClassAndSection(classId, sectionId) {
         );
         if (!sectionObj) return { error: "Invalid section ID for this class" };
 
-        sectionInfo = { id: sectionObj._id, name: sectionObj.name };
+        sectionInfo = { id: sectionObj._id, };
     }
 
     return { classInfo, sectionInfo };

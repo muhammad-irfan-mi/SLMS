@@ -28,11 +28,9 @@ const UserSchema = new Schema({
 
   classInfo: {
     id: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection" },
-    name: String,
   },
   sectionInfo: {
     id: { type: mongoose.Schema.Types.ObjectId },
-    name: String,
   },
 
   rollNo: String,

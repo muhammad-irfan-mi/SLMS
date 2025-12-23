@@ -13,6 +13,17 @@ const formatDate = (date) => {
     return `${y}-${m}-${day}`;
 };
 
+const extractSection = (classObj, sectionId) => {
+    if (!classObj?.sections) return null;
+
+    const section = classObj.sections.find(
+        (s) => s._id.toString() === sectionId.toString()
+    );
+
+    return section ? { _id: section._id, name: section.name } : null;
+};
+
+
 const createDiary = async (req, res) => {
     try {
         const {
@@ -160,63 +171,107 @@ const getDiaryBySection = async (req, res) => {
         const school = req.user.school;
         const user = req.user;
 
+        const page = Math.max(Number(req.query.page) || 1, 1);
+        const limit = Math.max(Number(req.query.limit) || 10, 1);
+        const skip = (page - 1) * limit;
+
         let filter = { school, sectionId };
 
-        if (date) {
-            filter.date = date;
-        } else if (startDate && endDate) {
+        if (date) filter.date = date;
+        else if (startDate && endDate)
             filter.date = { $gte: startDate, $lte: endDate };
-        }
 
         if (user.role === "student") {
-            filter.$or = [
-                { forAll: true },
-                { studentIds: user._id }
-            ];
+            filter.$or = [{ forAll: true }, { studentIds: user._id }];
         }
 
+        const total = await Diary.countDocuments(filter);
+
         let diaries = await Diary.find(filter)
+            .populate("classId", "class sections")
+            .populate("subjectId", "name code")
+            .populate("createdBy", "name email")
             .sort({ date: -1 })
+            .skip(skip)
+            .limit(limit)
             .lean();
+
+        diaries = diaries.map((d) => ({
+            ...d,
+            class: d.classId?.class || null,
+            section: extractSection(d.classId, sectionId),
+            subject: d.subjectId || null,
+            teacher: d.createdBy || null,
+            classId: undefined,
+            subjectId: undefined,
+            createdBy: undefined
+        }));
 
         if (active === "true") {
             const today = new Date();
-            diaries = diaries.filter(d => new Date(d.dueDate) >= today);
+            diaries = diaries.filter(
+                (d) => d.dueDate && new Date(d.dueDate) >= today
+            );
         }
 
         res.status(200).json({
-            total: diaries.length,
-            from: startDate || date || null,
-            to: endDate || null,
-            activeOnly: active === "true",
-            diaries,
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+            diaries
         });
     } catch (err) {
-        console.error("getDiaryBySection error:", err);
-        res.status(500).json({ message: err.message || "Server error" });
+        res.status(500).json({ message: err.message });
     }
 };
 
 const getStudentDiary = async (req, res) => {
     try {
-        const studentId = req.user._id;
-        const school = req.user.school;
-        const classId = req.user.classInfo?.id;
-        const sectionId = req.user.sectionInfo?.id;
+        const student = req.user;
+        const sectionId = student.sectionInfo?.id;
 
-        const diaries = await Diary.find({
-            school,
+        const page = Math.max(Number(req.query.page) || 1, 1);
+        const limit = Math.max(Number(req.query.limit) || 10, 1);
+        const skip = (page - 1) * limit;
+
+        const filter = {
+            school: student.school,
             $or: [
-                { classId, sectionId, forAll: true },
-                { studentIds: studentId },
-            ],
-        })
+                { classId: student.classInfo.id, sectionId, forAll: true },
+                { studentIds: student._id }
+            ]
+        };
+
+        const total = await Diary.countDocuments(filter);
+
+        let diaries = await Diary.find(filter)
+            .populate("classId", "class sections")
+            .populate("subjectId", "name code")
+            .populate("createdBy", "name email")
             .sort({ date: -1 })
+            .skip(skip)
+            .limit(limit)
             .lean();
 
-        res.status(200).json({ total: diaries.length, diaries });
+        diaries = diaries.map((d) => ({
+            ...d,
+            class: d.classId?.class || null,
+            section: extractSection(d.classId, sectionId),
+            subject: d.subjectId || null,
+            teacher: d.createdBy || null,
+            classId: undefined
+        }));
+
+        res.status(200).json({
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+            diaries
+        });
     } catch (err) {
-        res.status(500).json({ message: err.message || "Server error" });
+        res.status(500).json({ message: err.message });
     }
 };
 
