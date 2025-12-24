@@ -58,7 +58,7 @@ const addSubject = async (req, res) => {
 const getSubjects = async (req, res) => {
   try {
     const schoolId = req.user.school;
-    const { classId, sectionId, page = 1, limit = 2 } = req.query;
+    const { classId, sectionId, page = 1, limit = 10 } = req.query;
 
     const filter = { school: schoolId };
     if (classId) filter.class = classId;

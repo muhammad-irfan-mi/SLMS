@@ -8,6 +8,17 @@ const formatDate = (d) => {
     return `${D.getFullYear()}-${String(D.getMonth() + 1).padStart(2, "0")}-${String(D.getDate()).padStart(2, "0")}`;
 };
 
+const extractSection = (classObj, sectionId) => {
+    if (!classObj?.sections) return null;
+
+    const sec = classObj.sections.find(
+        s => s._id.toString() === sectionId.toString()
+    );
+
+    return sec ? { _id: sec._id, name: sec.name } : null;
+};
+
+
 // create syllabus (teacher/admin)
 const createSyllabus = async (req, res) => {
     try {
@@ -60,7 +71,17 @@ const createSyllabus = async (req, res) => {
 const getSyllabus = async (req, res) => {
     try {
         const school = req.user.school;
-        const { classId, sectionId, subjectId, status } = req.query;
+        let {
+            classId,
+            sectionId,
+            subjectId,
+            status,
+            page = 1,
+            limit = 10
+        } = req.query;
+
+        page = Number(page);
+        limit = Number(limit);
 
         const filter = { school };
         if (classId) filter.classId = classId;
@@ -68,49 +89,48 @@ const getSyllabus = async (req, res) => {
         if (subjectId) filter.subjectId = subjectId;
         if (status) filter.status = status;
 
-        // Load class with all sections
+        const total = await Syllabus.countDocuments(filter);
+
         const items = await Syllabus.find(filter)
             .populate("subjectId", "name code")
             .populate("uploadedBy", "name email")
-            .populate("classId")   // Load full class (sections + class name)
+            .populate("classId", "class sections")
             .sort({ createdAt: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit)
             .lean();
 
-        const formatted = items.map(item => {
-            let sectionObj = { _id: item.sectionId, name: "Unknown" };
+        const formatted = items.map(item => ({
+            _id: item._id,
+            title: item.title,
+            description: item.description,
+            detail: item.detail,
+            publishDate: item.publishDate,
+            expireDate: item.expireDate,
+            status: item.status,
 
-            // find correct section from class.sections
-            if (item.classId && Array.isArray(item.classId.sections)) {
-                const found = item.classId.sections.find(
-                    s => s._id.toString() === item.sectionId.toString()
-                );
-                if (found) sectionObj = { _id: found._id, name: found.name };
-            }
+            class: item.classId
+                ? { _id: item.classId._id, name: item.classId.class }
+                : null,
 
-            return {
-                ...item,
+            section: extractSection(item.classId, item.sectionId),
 
-                // only class id + name, no sections included
-                class: item.classId
-                    ? { _id: item.classId._id, name: item.classId.class }
-                    : null,
+            subject: item.subjectId,
+            uploadedBy: item.uploadedBy,
+            createdAt: item.createdAt
+        }));
 
-                // add only matched section
-                section: sectionObj,
-
-                // remove large classId object with sections
-                classId: undefined
-            };
-        });
-
-        return res.status(200).json({
-            total: formatted.length,
+        res.status(200).json({
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
             syllabus: formatted
         });
 
     } catch (err) {
         console.error("getSyllabus error:", err);
-        return res.status(500).json({ message: "Server error", error: err.message });
+        res.status(500).json({ message: err.message });
     }
 };
 
@@ -118,18 +138,60 @@ const getSyllabus = async (req, res) => {
 const getSyllabusBySection = async (req, res) => {
     try {
         const school = req.user.school;
-        const { sectionId } = req.params; // e.g. /syllabus/section/:sectionId
-        if (!sectionId) return res.status(400).json({ message: "sectionId required" });
+        const { sectionId } = req.params;
 
-        const items = await Syllabus.find({ school, sectionId, status: "published" })
+        let { page = 1, limit = 10, status } = req.query;
+        page = Number(page);
+        limit = Number(limit);
+
+        if (!sectionId)
+            return res.status(400).json({ message: "sectionId required" });
+
+        const filter = { school, sectionId };
+        if (status) filter.status = status;
+
+        const total = await Syllabus.countDocuments(filter);
+
+        const items = await Syllabus.find(filter)
             .populate("subjectId", "name code")
+            .populate("uploadedBy", "name email")
+            .populate("classId", "class sections")
             .sort({ publishDate: -1 })
+            .skip((page - 1) * limit)
+            .limit(limit)
             .lean();
 
-        return res.status(200).json({ total: items.length, syllabus: items });
+        const formatted = items.map(item => ({
+            _id: item._id,
+            title: item.title,
+            description: item.description,
+            detail: item.detail,
+            publishDate: item.publishDate,
+            expireDate: item.expireDate,
+            status: item.status,
+
+            class: item.classId
+                ? { _id: item.classId._id, name: item.classId.class }
+                : null,
+
+            section: extractSection(item.classId, item.sectionId),
+
+            subject: item.subjectId,
+            uploadedBy: item.uploadedBy,
+            createdAt: item.createdAt
+        }));
+
+        res.status(200).json({
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+            syllabus: formatted
+        });
+
     } catch (err) {
         console.error("getSyllabusBySection error:", err);
-        return res.status(500).json({ message: "Server error", error: err.message });
+        res.status(500).json({ message: err.message });
     }
 };
 

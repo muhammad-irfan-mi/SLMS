@@ -3,180 +3,315 @@ const Subject = require("../models/Subject");
 const ClassSection = require("../models/ClassSection");
 const User = require("../models/User");
 
-// Helper
-function isTimeOverlap(start1, end1, start2, end2) {
-  const toMinutes = (t) => {
-    const [h, m] = t.split(":").map(Number);
-    return h * 60 + m;
-  };
-  const s1 = toMinutes(start1), e1 = toMinutes(end1);
-  const s2 = toMinutes(start2), e2 = toMinutes(end2);
-  return s1 < e2 && s2 < e1;
-}
+// HELPER 
+const toMinutes = (t) => {
+  const [h, m] = t.split(":").map(Number);
+  return h * 60 + m;
+};
 
+const isOverlap = (s1, e1, s2, e2) =>
+  toMinutes(s1) < toMinutes(e2) && toMinutes(s2) < toMinutes(e1);
+
+const extractSection = (classObj, sectionId) => {
+  const sec = classObj?.sections?.find(
+    (s) => s._id.toString() === sectionId.toString()
+  );
+  return sec ? { _id: sec._id, name: sec.name } : null;
+};
+
+// ADD MULTIPLE EXAMS
 const addExamSchedule = async (req, res) => {
   try {
-    const { classId, sectionId, day, subjectId, startTime, endTime, teacherId, type, year } = req.body;
-    const schoolId = req.user.school;
+    const school = req.user.school;
+    const { type, year, schedules } = req.body;
 
-    if (!classId || !sectionId || !subjectId || !teacherId || !day || !startTime || !endTime || !type || !year) {
-      return res.status(400).json({ message: "Missing required fields" });
+    if (!type || !year || !Array.isArray(schedules) || !schedules.length) {
+      return res.status(400).json({ message: "Invalid payload" });
     }
 
-    const [classExists, subjectExists, teacherExists] = await Promise.all([
-      ClassSection.findById(classId),
-      Subject.findById(subjectId),
-      User.findById(teacherId),
-    ]);
-
-    if (!classExists) return res.status(404).json({ message: "Class not found" });
-    if (!subjectExists) return res.status(404).json({ message: "Subject not found" });
-    if (!teacherExists) return res.status(404).json({ message: "Teacher not found" });
-
-    // Check subject belongs to class & section
-    if (subjectExists.class.toString() !== classId.toString() ||
-      (subjectExists.sectionId && subjectExists.sectionId.toString() !== sectionId.toString())) {
-      return res.status(400).json({ message: "Subject does not belong to the given class and section." });
-    }
-
-    const existingSchedules = await ExamSchedule.find({ school: schoolId, teacherId, day });
-    for (const sched of existingSchedules) {
-      if (isTimeOverlap(startTime, endTime, sched.startTime, sched.endTime)) {
-        return res.status(400).json({ message: "Teacher already assigned another exam at this time.", conflict: sched });
-      }
-    }
-
-    const subjectConflict = await ExamSchedule.findOne({
-      school: schoolId,
-      classId,
-      sectionId,
-      subjectId,
-      type,
-      year,
-    });
-    if (subjectConflict) {
-      return res.status(400).json({
-        message: `This subject already scheduled for ${type} in ${year} for this class & section.`,
-      });
-    }
-
-    const newSchedule = await ExamSchedule.create({ school: schoolId, classId, sectionId, subjectId, teacherId, day, startTime, endTime, type, year });
-    res.status(201).json({ message: "Exam schedule added successfully.", schedule: newSchedule });
-
-  } catch (error) {
-    console.error("Add exam schedule error:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
-  }
-};
-
-const getSchedule = async (req, res) => {
-  try {
-    const { classId, sectionId, teacherId, type, year, day } = req.query;
-    const schoolId = req.user.school;
-
-    const filter = { school: schoolId };
-    if (classId) filter.classId = classId;
-    if (sectionId) filter.sectionId = sectionId;
-    if (teacherId) filter.teacherId = teacherId;
-    if (type) filter.type = type;
-    if (year) filter.year = year;
-    if (day) filter.day = day;
-
-    const schedules = await ExamSchedule.find(filter)
-      .populate("subjectId", "name code")
-      .populate("teacherId", "name email")
-      .populate("classId", "class sections");
-
-    const formatted = [];
+    const created = [];
 
     for (const item of schedules) {
-      const classDoc = item.classId;
-      let sectionObj = null;
+      const {
+        classId,
+        sectionId,
+        subjectId,
+        teacherId,
+        day,
+        startTime,
+        endTime,
+      } = item;
 
-      if (classDoc && Array.isArray(classDoc.sections)) {
-        const foundSection = classDoc.sections.find(
-          (sec) => sec._id.toString() === item.sectionId.toString()
-        );
-        if (foundSection) sectionObj = foundSection;
+      if (
+        !classId ||
+        !sectionId ||
+        !subjectId ||
+        !teacherId ||
+        !day ||
+        !startTime ||
+        !endTime
+      ) {
+        return res.status(400).json({ message: "Missing fields in schedule" });
       }
 
-      formatted.push({
-        _id: item._id,
-        school: item.school,
-        class: {
-          _id: classDoc?._id,
-          name: classDoc?.class || "Unknown",
-        },
-        section: sectionObj
-          ? { _id: sectionObj._id, name: sectionObj.name }
-          : { _id: item.sectionId, name: "Unknown" },
-        subject: item.subjectId,
-        teacher: item.teacherId,
-        day: item.day,
-        startTime: item.startTime,
-        endTime: item.endTime,
-        type: item.type,
-        year: item.year,
-        createdAt: item.createdAt,
-        updatedAt: item.updatedAt,
+      const [cls, subject, teacher] = await Promise.all([
+        ClassSection.findById(classId),
+        Subject.findById(subjectId),
+        User.findById(teacherId),
+      ]);
+
+      if (!cls || !subject || !teacher)
+        return res.status(404).json({ message: "Invalid class/subject/teacher" });
+
+      /** Subject belongs to class + section */
+      if (
+        subject.class.toString() !== classId.toString() ||
+        (subject.sectionId &&
+          subject.sectionId.toString() !== sectionId.toString())
+      ) {
+        return res.status(400).json({
+          message: "Subject does not belong to class/section",
+        });
+      }
+
+      /** Teacher time clash */
+      const teacherClash = await ExamSchedule.find({
+        school,
+        teacherId,
+        day,
+        type,
+        year,
       });
+
+      for (const t of teacherClash) {
+        if (isOverlap(startTime, endTime, t.startTime, t.endTime)) {
+          return res.status(400).json({
+            message: "Teacher exam time conflict",
+            conflict: t,
+          });
+        }
+      }
+
+      /** Class + section time clash */
+      const classClash = await ExamSchedule.find({
+        school,
+        classId,
+        sectionId,
+        day,
+        type,
+        year,
+      });
+
+      for (const c of classClash) {
+        if (isOverlap(startTime, endTime, c.startTime, c.endTime)) {
+          return res.status(400).json({
+            message: "Class exam time conflict",
+            conflict: c,
+          });
+        }
+      }
+
+      /** Subject once per exam */
+      const subjectExists = await ExamSchedule.findOne({
+        school,
+        classId,
+        sectionId,
+        subjectId,
+        type,
+        year,
+      });
+
+      if (subjectExists) {
+        return res.status(400).json({
+          message: "Subject already scheduled for this exam",
+        });
+      }
+
+      const exam = await ExamSchedule.create({
+        school,
+        classId,
+        sectionId,
+        subjectId,
+        teacherId,
+        day,
+        startTime,
+        endTime,
+        type,
+        year,
+      });
+
+      created.push(exam);
     }
 
-    res.status(200).json({
-      total: formatted.length,
+    res.status(201).json({
+      message: "Exam schedules created successfully",
+      count: created.length,
+      schedules: created,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// GET ADMIN
+const getSchedule = async (req, res) => {
+  try {
+    let { page = 1, limit = 10, classId, sectionId, type, year } = req.query;
+    page = Number(page);
+    limit = Number(limit);
+
+    const filter = { school: req.user.school };
+    if (classId) filter.classId = classId;
+    if (sectionId) filter.sectionId = sectionId;
+    if (type) filter.type = type;
+    if (year) filter.year = year;
+
+    const total = await ExamSchedule.countDocuments(filter);
+
+    const data = await ExamSchedule.find(filter)
+      .populate("classId", "class sections")
+      .populate("subjectId", "name code")
+      .populate("teacherId", "name email")
+      .sort({ day: 1, startTime: 1 })
+      .skip((page - 1) * limit)
+      .limit(limit);
+
+    const formatted = data.map((d) => ({
+      _id: d._id,
+      class: d.classId.class,
+      section: extractSection(d.classId, d.sectionId),
+      subject: d.subjectId,
+      teacher: d.teacherId,
+      day: d.day,
+      startTime: d.startTime,
+      endTime: d.endTime,
+      type: d.type,
+      year: d.year,
+    }));
+
+    res.json({
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
       schedule: formatted,
     });
-  } catch (error) {
-    console.error("Get schedule error:", error);
-    res
-      .status(500)
-      .json({ message: "Server error", error: error.message });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
+// GET BY TEACHER
 const getScheduleByTeacher = async (req, res) => {
   try {
-    const teacherId = req.user._id;
-    const schedule = await ExamSchedule.find({ teacherId })
-      .populate("classId", "class sections")
-      .populate("subjectId", "name code");
+    let { page = 1, limit = 10 } = req.query;
+    page = Number(page);
+    limit = Number(limit);
 
-    res.status(200).json({ total: schedule.length, schedule });
-  } catch (error) {
-    console.error("Teacher schedule error:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    const filter = { teacherId: req.user._id };
+
+    const total = await ExamSchedule.countDocuments(filter);
+
+    const data = await ExamSchedule.find(filter)
+      .populate("classId", "class sections")
+      .populate("subjectId", "name code")
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .sort({ day: 1, startTime: 1 });
+
+    const formatted = data.map((d) => ({
+      _id: d._id,
+      class: {
+        _id: d.classId._id,
+        name: d.classId.class,
+      },
+      section: extractSection(d.classId, d.sectionId),
+      subject: {
+        _id: d.subjectId._id,
+        name: d.subjectId.name,
+        code: d.subjectId.code,
+      },
+      day: d.day,
+      startTime: d.startTime,
+      endTime: d.endTime,
+      type: d.type,
+      year: d.year,
+    }));
+
+    res.status(200).json({
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      schedule: formatted,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
+// GET BY STUDENT 
 const getScheduleByStudent = async (req, res) => {
   try {
     const student = req.user;
 
-    if (student.role !== "student")
-      return res.status(403).json({ message: "Access denied: Student only" });
+    let { page = 1, limit = 10 } = req.query;
+    page = Number(page);
+    limit = Number(limit);
 
-    const classId = student.classId || student.classInfo?.id;
-    const sectionId = student.sectionId || student.sectionInfo?.id;
-
-    if (!classId || !sectionId)
-      return res.status(400).json({ message: "Student not assigned to class/section" });
-
-    const schedule = await ExamSchedule.find({
-      classId,
-      sectionId,
+    const filter = {
       school: student.school,
-    })
+      classId: student.classInfo.id,
+      sectionId: student.sectionInfo.id,
+    };
+
+    const total = await ExamSchedule.countDocuments(filter);
+
+    const data = await ExamSchedule.find(filter)
+      .populate("classId", "class sections")
       .populate("subjectId", "name code")
       .populate("teacherId", "name email")
-      .populate("classId", "class");
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .sort({ day: 1, startTime: 1 });
 
-    res.status(200).json({ total: schedule.length, schedule });
-  } catch (error) {
-    console.error("Get student schedule error:", error);
-    res.status(500).json({ message: "Server error", error: error.message });
+    const formatted = data.map((d) => ({
+      _id: d._id,
+      class: {
+        _id: d.classId._id,
+        name: d.classId.class,
+      },
+      section: extractSection(d.classId, d.sectionId),
+      subject: {
+        _id: d.subjectId._id,
+        name: d.subjectId.name,
+        code: d.subjectId.code,
+      },
+      teacher: {
+        _id: d.teacherId._id,
+        name: d.teacherId.name,
+        email: d.teacherId.email,
+      },
+      day: d.day,
+      startTime: d.startTime,
+      endTime: d.endTime,
+      type: d.type,
+      year: d.year,
+    }));
+
+    res.status(200).json({
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      schedule: formatted,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
+// UPDATE EXAM SCHEDULE
 const updateExamSchedule = async (req, res) => {
   try {
     const { id } = req.params;
@@ -236,6 +371,7 @@ const updateExamSchedule = async (req, res) => {
   }
 };
 
+// DELETE EXAM SCHEDULE
 const deleteSchedule = async (req, res) => {
   try {
     const { id } = req.params;
