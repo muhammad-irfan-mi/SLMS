@@ -2,10 +2,42 @@ const Syllabus = require("../models/Syllabus");
 const ClassSection = require("../models/ClassSection");
 const Subject = require("../models/Subject");
 const User = require("../models/User");
+const School = require("../models/School");
 
 const formatDate = (d) => {
     const D = new Date(d);
     return `${D.getFullYear()}-${String(D.getMonth() + 1).padStart(2, "0")}-${String(D.getDate()).padStart(2, "0")}`;
+};
+
+const resolveUploader = async (uploadedBy) => {
+    if (!uploadedBy) return null;
+
+    const user = await User.findById(uploadedBy)
+        .select("name role")
+        .lean();
+
+    if (user) {
+        return {
+            _id: user._id,
+            name: user.name,
+            type: "user",
+            role: user.role
+        };
+    }
+
+    const school = await School.findById(uploadedBy)
+        .select("name")
+        .lean();
+
+    if (school) {
+        return {
+            _id: school._id,
+            name: school.name,
+            type: "school"
+        };
+    }
+
+    return null;
 };
 
 const extractSection = (classObj, sectionId) => {
@@ -78,12 +110,10 @@ const createSyllabus = async (req, res) => {
 const getSyllabus = async (req, res) => {
     try {
         const school = req.user.school;
-
         const { classId, sectionId, subjectId, status } = req.query;
         const { page, limit, skip } = normalizePagination(req.query);
 
         const filter = { school };
-
         if (classId) filter.classId = classId;
         if (sectionId) filter.sectionId = sectionId;
         if (subjectId) filter.subjectId = subjectId;
@@ -93,7 +123,6 @@ const getSyllabus = async (req, res) => {
             Syllabus.countDocuments(filter),
             Syllabus.find(filter)
                 .populate("subjectId", "name code")
-                .populate("uploadedBy", "name") // 🔒 hide email
                 .populate("classId", "class sections")
                 .sort({ createdAt: -1 })
                 .skip(skip)
@@ -101,26 +130,32 @@ const getSyllabus = async (req, res) => {
                 .lean()
         ]);
 
-        const syllabus = rows.map(item => {
-            const classInfo = item.classId
-                ? { _id: item.classId._id, name: item.classId.class }
-                : null;
+        // resolve uploader for each row
+        const syllabus = await Promise.all(
+            rows.map(async (item) => {
+                const uploader = await resolveUploader(item.uploadedBy);
 
-            return {
-                _id: item._id,
-                title: item.title,
-                description: item.description,
-                detail: item.detail,
-                publishDate: item.publishDate,
-                expireDate: item.expireDate,
-                status: item.status,
-                subject: item.subjectId,
-                uploadedBy: item.uploadedBy,
-                class: classInfo,
-                section: extractSection(item.classId, item.sectionId),
-                createdAt: item.createdAt
-            };
-        });
+                return {
+                    _id: item._id,
+                    title: item.title,
+                    description: item.description,
+                    detail: item.detail,
+                    publishDate: item.publishDate,
+                    expireDate: item.expireDate,
+                    status: item.status,
+                    subject: item.subjectId,
+
+                    uploadedBy: uploader,
+
+                    class: item.classId
+                        ? { _id: item.classId._id, name: item.classId.class }
+                        : null,
+
+                    section: extractSection(item.classId, item.sectionId),
+                    createdAt: item.createdAt
+                };
+            })
+        );
 
         res.status(200).json({
             page,
@@ -142,7 +177,6 @@ const getSyllabusBySection = async (req, res) => {
         const school = req.user.school;
         const { sectionId } = req.params;
         const { status } = req.query;
-
         const { page, limit, skip } = normalizePagination(req.query);
 
         const filter = {
@@ -162,19 +196,29 @@ const getSyllabusBySection = async (req, res) => {
                 .lean()
         ]);
 
-        const syllabus = rows.map(item => ({
-            _id: item._id,
-            title: item.title,
-            description: item.description,
-            detail: item.detail,
-            publishDate: item.publishDate,
-            expireDate: item.expireDate,
-            subject: item.subjectId,
-            class: item.classId
-                ? { _id: item.classId._id, name: item.classId.class }
-                : null,
-            section: extractSection(item.classId, item.sectionId)
-        }));
+        const syllabus = await Promise.all(
+            rows.map(async (item) => {
+                const uploader = await resolveUploader(item.uploadedBy);
+
+                return {
+                    _id: item._id,
+                    title: item.title,
+                    description: item.description,
+                    detail: item.detail,
+                    publishDate: item.publishDate,
+                    expireDate: item.expireDate,
+                    subject: item.subjectId,
+
+                    uploadedBy: uploader,
+
+                    class: item.classId
+                        ? { _id: item.classId._id, name: item.classId.class }
+                        : null,
+
+                    section: extractSection(item.classId, item.sectionId)
+                };
+            })
+        );
 
         res.status(200).json({
             page,
