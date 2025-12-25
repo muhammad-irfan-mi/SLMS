@@ -197,59 +197,63 @@ const assignSectionIncharge = async (req, res) => {
         const { classId, sectionId, teacherId } = req.body;
 
         if (!classId || !sectionId || !teacherId) {
-            return res.status(400).json({ message: "All fields are required" });
+            return res.status(400).json({ message: "classId, sectionId and teacherId are required" });
         }
 
-        // const school = await School.findById(schoolId);
-        // if (!school) return res.status(404).json({ message: "School not found" });
-
         const classDoc = await ClassSection.findById(classId);
-        if (!classDoc) return res.status(404).json({ message: "Class not found" });
+        if (!classDoc) {
+            return res.status(404).json({ message: "Class not found" });
+        }
 
         const section = classDoc.sections.find(
-            (sec) => sec._id.toString() === sectionId
+            sec => sec._id.toString() === sectionId.toString()
         );
-        if (!section)
+        if (!section) {
             return res.status(404).json({ message: "Section not found in this class" });
+        }
 
         const teacher = await User.findById(teacherId);
         if (!teacher || teacher.role !== "teacher") {
             return res.status(400).json({ message: "Invalid teacher ID" });
         }
 
-        const existingIncharge = await User.findOne({
-            _id: { $ne: teacherId },
-            role: "teacher",
-            isIncharge: true,
-            "sectionInfo.id": { $exists: true },
-        });
-
         if (
             teacher.isIncharge &&
-            teacher.sectionInfo?.id?.toString() !== sectionId.toString()
+            teacher.sectionInfo?.id &&
+            teacher.sectionInfo.id.toString() !== sectionId.toString()
         ) {
             return res.status(400).json({
-                message: "This teacher is already incharge of another section.",
+                message: "Teacher is already incharge of another section",
             });
         }
 
         await User.updateMany(
             {
                 role: "teacher",
-                "sectionInfo.id": sectionId,
                 isIncharge: true,
+                "sectionInfo.id": sectionId,
             },
-            { $set: { isIncharge: false, classInfo: null, sectionInfo: null } }
+            {
+                $set: {
+                    isIncharge: false,
+                    classInfo: null,
+                    sectionInfo: null,
+                },
+            }
         );
 
         teacher.isIncharge = true;
-        teacher.classInfo = { id: classDoc._id, name: classDoc.class };
-        teacher.sectionInfo = { id: section._id, name: section.name };
+        teacher.classInfo = {
+            id: classDoc._id,
+        };
+        teacher.sectionInfo = {
+            id: section._id,
+        };
 
         await teacher.save();
 
         return res.status(200).json({
-            message: "Teacher assigned as incharge successfully",
+            message: "Section incharge assigned successfully",
             incharge: {
                 teacherId: teacher._id,
                 teacherName: teacher.name,
@@ -257,9 +261,13 @@ const assignSectionIncharge = async (req, res) => {
                 section: section.name,
             },
         });
+
     } catch (err) {
-        console.error("Error assigning incharge:", err);
-        res.status(500).json({ message: "Server error", error: err.message });
+        console.error("assignSectionIncharge error:", err);
+        res.status(500).json({
+            message: "Server error",
+            error: err.message,
+        });
     }
 };
 
