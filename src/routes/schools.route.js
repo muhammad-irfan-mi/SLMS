@@ -1,38 +1,75 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
+const { validationSchemas } = require('../validators/school.validation');
+const validate = require('../middlewares/validate');
+const multer = require('multer');
+const { verifySchoolOTP, resendSchoolOTP, setSchoolPassword, addSchoolBySuperAdmin, editSchoolBySuperAdmin, deleteSchoolBySuperAdmin, getAllSchools, getPendingRegistrations, getSchoolById } = require('../controllers/schoolController');
 const { upload } = require("../utils/multer");
-const { addSchoolBySuperAdmin, deleteSchoolBySuperAdmin, editSchoolBySuperAdmin, getAllSchools, getSchoolById } = require('../controllers/schoolController')
-const { setPassword, schoolLogin } = require("../controllers/authController");
-const { protect, isSuperAdmin, isAdminOffice } = require("../middlewares/auth");
+
+// OTP Verification Routes
+router.post(
+    '/verify-otp',
+    validate(validationSchemas.verifyOTP),
+    verifySchoolOTP
+);
 
 router.post(
-    "/add-school",
-    protect,
-    isSuperAdmin,
+    '/resend-otp',
+    validate(validationSchemas.resendOTP),
+    resendSchoolOTP
+);
+
+router.post(
+    '/set-password',
+    validate(validationSchemas.setPassword),
+    setSchoolPassword
+);
+
+// Existing routes with validation
+router.post(
+    '/add-school',
     upload.fields([
-        { name: "cnicFront", maxCount: 1 },
-        { name: "cnicBack", maxCount: 1 },
-        { name: "nocDoc", maxCount: 1 },
+        { name: 'cnicFront', maxCount: 1 },
+        { name: 'cnicBack', maxCount: 1 },
+        { name: 'nocDoc', maxCount: 1 }
     ]),
+    validate(validationSchemas.addSchool),
     addSchoolBySuperAdmin
 );
+
 router.put(
-    "/edit-school/:id",
-    protect,
-    isSuperAdmin,
+    '/edit/:id',
     upload.fields([
-        { name: "cnicFront", maxCount: 1 },
-        { name: "cnicBack", maxCount: 1 },
-        { name: "nocDoc", maxCount: 1 },
+        { name: 'cnicFront', maxCount: 1 },
+        { name: 'cnicBack', maxCount: 1 },
+        { name: 'nocDoc', maxCount: 1 }
     ]),
+    validate(validationSchemas.idParam, 'params'),
+    validate(validationSchemas.updateSchool),
     editSchoolBySuperAdmin
 );
 
-router.delete("/delete-school/:id", protect, isSuperAdmin, deleteSchoolBySuperAdmin);
-router.post("/set-school-password", setPassword);
-router.post("/school-login", schoolLogin);
-router.get("/all", protect, isSuperAdmin, getAllSchools);
-router.get("/:id", protect, isAdminOffice, getSchoolById);
+router.delete(
+    '/delete/:id',
+    validate(validationSchemas.idParam, 'params'),
+    deleteSchoolBySuperAdmin
+);
 
+router.get(
+    '/',
+    validate(validationSchemas.paginationQuery, 'query'),
+    getAllSchools
+);
+
+router.get(
+    '/pending',
+    getPendingRegistrations
+);
+
+router.get(
+    '/:id',
+    validate(validationSchemas.idParam, 'params'),
+    getSchoolById
+);
 
 module.exports = router;

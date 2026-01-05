@@ -1,28 +1,44 @@
 const School = require("../models/School");
+const emailService = require("../services/email.service");
+const otpService = require("../services/otp.service");
 const { uploadFileToS3, deleteFileFromS3 } = require("../services/s3.service");
-const { validateEmail, validatePhone, validateSchoolName } = require("../validators/common.validation");
-const { validateSchoolNameUniqueness } = require("../validators/school.validator");
+const crypto = require('crypto');
+const bcrypt = require("bcryptjs");
+
 
 const addSchoolBySuperAdmin = async (req, res) => {
   try {
     const { name, email, phone, address, cnic, lat, lon, noOfStudents } = req.body;
-
-    const nameError = await validateSchoolNameUniqueness(name);
-    if (nameError) { return res.status(400).json({ message: nameError }); }
-
-    const emailError = validateEmail(email);
-    if (emailError) return res.status(400).json({ message: emailError });
-
-    const phoneError = validatePhone(phone);
-    if (phoneError) return res.status(400).json({ message: phoneError });
-
-
-    const existingSchool = await School.findOne({ email });
+    const existingSchool = await School.findOne({
+      $or: [
+        { email },
+        {
+          name: { $regex: `^${name}$`, $options: "i" },
+          verified: true
+        }
+      ]
+    });
     if (existingSchool) {
-      return res.status(400).json({ message: "A school with this email already exists" });
+      if (existingSchool.email === email) {
+        return res.status(400).json({
+          message: existingSchool.verified
+            ? "A school with this email already exists"
+            : "A verification is already pending for this email. Please verify the OTP or wait for it to expire."
+        });
+      }
+      if (existingSchool.name.toLowerCase() === name.toLowerCase() && existingSchool.verified) {
+        return res.status(400).json({ message: "School name already exists" });
+      }
     }
 
-    // Upload files manually to S3
+    // const existingByEmail = await School.findOne({ email });
+    // if (existingByEmail) {
+    //   return res.status(400).json({ message: "A school with this email already exists" });
+    // }
+
+    const otpCode = otpService.generateOTP();
+    const otpExpiry = otpService.calculateExpiry(10);
+
     let cnicFront = null, cnicBack = null, nocDoc = null;
 
     if (req.files?.cnicFront?.[0]) {
@@ -52,36 +68,250 @@ const addSchoolBySuperAdmin = async (req, res) => {
       });
     }
 
-    const schoolId = "SCH-" + Date.now().toString().slice(-6);
+    const tempSchoolId = "SCH-" + Date.now().toString().slice(-6);
+    const pendingSchool = await School.findOne({ email, verified: false });
 
-    const newSchool = new School({
-      name,
-      email,
-      phone,
-      address,
-      cnic,
-      images: { cnicFront, cnicBack, nocDoc },
-      schoolId,
-      location: { lat, lon },
-      noOfStudents: noOfStudents || 0,
-      verified: false,
-    });
+    if (pendingSchool) {
+      // Update existing pending registration
+      pendingSchool.tempData = {
+        name,
+        email,
+        phone: phone || null,
+        address: address || null,
+        cnic: cnic || null,
+        images: { cnicFront, cnicBack, nocDoc },
+        location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
+        noOfStudents: Number(noOfStudents) || 0,
+      };
+      pendingSchool.otp = {
+        code: otpCode,
+        expiresAt: otpExpiry,
+        attempts: 0,
+        lastAttempt: new Date()
+      };
+      await pendingSchool.save();
+    } else {
+      // Create new pending registration
+      const newSchool = new School({
+        name,
+        email,
+        phone: phone || null,
+        address: address || null,
+        cnic: cnic || null,
+        images: { cnicFront, cnicBack, nocDoc },
+        schoolId: tempSchoolId,
+        location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
+        noOfStudents: Number(noOfStudents) || 0,
+        verified: false,
+        tempData: {
+          name,
+          email,
+          phone: phone || null,
+          address: address || null,
+          cnic: cnic || null,
+          images: { cnicFront, cnicBack, nocDoc },
+          location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
+          noOfStudents: Number(noOfStudents) || 0,
+        },
+        otp: {
+          code: otpCode,
+          expiresAt: otpExpiry,
+          attempts: 0,
+          lastAttempt: new Date()
+        }
+      });
+      await newSchool.save();
+    }
 
-    await newSchool.save();
+    // Send OTP email
+    await emailService.sendOTPEmail(email, otpCode, name);
 
     return res.status(201).json({
-      message: "School added successfully. Ask school to set its password.",
-      school: {
-        id: newSchool._id,
-        name: newSchool.name,
-        email: newSchool.email,
-        schoolId: newSchool.schoolId,
-      },
+      message: "OTP sent to school email. Please verify to complete registration.",
+      email,
+      otpExpiry: otpExpiry,
+      note: "OTP is valid for 10 minutes"
     });
   } catch (err) {
     console.error("Error adding school:", err);
+
+    try {
+    } catch (cleanupError) {
+      console.error("Error cleaning up files:", cleanupError);
+    }
+
     return res.status(500).json({
       message: "Server error while adding school",
+      error: err.message,
+    });
+  }
+};
+
+const verifySchoolOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    // Find pending school registration
+    const school = await School.findOne({ email, verified: false });
+
+    if (!school) {
+      return res.status(404).json({
+        message: "No pending registration found for this email"
+      });
+    }
+
+    // Check OTP attempts
+    if (school.otp.attempts >= 5) {
+      return res.status(429).json({
+        message: "Too many OTP attempts. Please request a new OTP."
+      });
+    }
+
+    // Validate OTP
+    const validation = otpService.validateOTP(
+      otp,
+      school.otp.code,
+      school.otp.expiresAt
+    );
+
+    if (!validation.valid) {
+      // Increment attempt counter
+      school.otp.attempts += 1;
+      school.otp.lastAttempt = new Date();
+      await school.save();
+
+      return res.status(400).json({
+        message: validation.message,
+        attemptsRemaining: 5 - school.otp.attempts
+      });
+    }
+
+    // OTP verified successfully - complete registration
+    const finalSchoolId = "SCH-" + crypto.randomBytes(3).toString('hex').toUpperCase();
+
+    // Apply temp data to actual fields
+    school.name = school.tempData.name;
+    school.email = school.tempData.email;
+    school.phone = school.tempData.phone;
+    school.address = school.tempData.address;
+    school.cnic = school.tempData.cnic;
+    school.images = school.tempData.images;
+    school.location = school.tempData.location;
+    school.noOfStudents = school.tempData.noOfStudents;
+    school.schoolId = finalSchoolId;
+    school.verified = true;
+    school.otp = undefined; // Remove OTP data
+    school.tempData = undefined; // Clear temp data
+
+    await school.save();
+
+    // Send password setup email
+    // await emailService.sendPasswordSetupEmail(email, school.name, finalSchoolId);
+
+    return res.status(200).json({
+      message: "School verified successfully! Password setup link sent to email.",
+      school: {
+        id: school._id,
+        name: school.name,
+        email: school.email,
+        schoolId: finalSchoolId,
+      }
+    });
+  } catch (err) {
+    console.error("Error verifying OTP:", err);
+    return res.status(500).json({
+      message: "Server error while verifying OTP",
+      error: err.message,
+    });
+  }
+};
+
+const resendSchoolOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    const school = await School.findOne({ email, verified: false });
+
+    if (!school) {
+      return res.status(404).json({
+        message: "No pending registration found for this email"
+      });
+    }
+
+    // Check if resend is allowed (cool down period)
+    if (!otpService.canResendOTP(school.otp.lastAttempt)) {
+      const waitTime = Math.ceil((new Date(school.otp.lastAttempt.getTime() + 60000) - new Date()) / 1000);
+      return res.status(429).json({
+        message: `Please wait ${waitTime} seconds before requesting a new OTP`
+      });
+    }
+
+    // Generate new OTP
+    const newOTP = otpService.generateOTP();
+    const newExpiry = otpService.calculateExpiry(10);
+
+    // Update OTP
+    school.otp.code = newOTP;
+    school.otp.expiresAt = newExpiry;
+    school.otp.attempts = 0;
+    school.otp.lastAttempt = new Date();
+    await school.save();
+
+    // Send new OTP email
+    await emailService.sendOTPEmail(email, newOTP, school.tempData.name);
+
+    return res.status(200).json({
+      message: "New OTP sent successfully",
+      email,
+      otpExpiry: newExpiry,
+      note: "OTP is valid for 10 minutes"
+    });
+  } catch (err) {
+    console.error("Error resending OTP:", err);
+    return res.status(500).json({
+      message: "Server error while resending OTP",
+      error: err.message,
+    });
+  }
+};
+
+const setSchoolPassword = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    const school = await School.findOne({ email, verified: true, password: { $exists: false } });
+
+    if (!school) {
+      return res.status(404).json({
+        message: "School not found or not verified"
+      });
+    }
+
+    if (school.password) {
+      return res.status(400).json({
+        message: "Password already set. Please use login instead."
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Set password
+    school.password = hashedPassword;
+    await school.save();
+
+    return res.status(200).json({
+      message: "Password set successfully. You can now login.",
+      school: {
+        id: school._id,
+        name: school.name,
+        email: school.email,
+        schoolId: school.schoolId,
+      }
+    });
+  } catch (err) {
+    console.error("Error setting password:", err);
+    return res.status(500).json({
+      message: "Server error while setting password",
       error: err.message,
     });
   }
@@ -98,54 +328,88 @@ const editSchoolBySuperAdmin = async (req, res) => {
     }
 
     if (updates.name && updates.name !== school.name) {
-      const nameError = await validateSchoolNameUniqueness(
-        updates.name.trim(),
-        id
-      );
-      if (nameError)
-        return res.status(400).json({ message: nameError });
-
-      school.name = updates.name.trim();
+      const existingByName = await School.findOne({
+        name: { $regex: `^${updates.name}$`, $options: "i" },
+        _id: { $ne: id }
+      });
+      if (existingByName) {
+        return res.status(400).json({ message: "School name already exists" });
+      }
+      school.name = updates.name;
     }
 
     if (updates.email && updates.email !== school.email) {
-      const emailError = await validateEmail(updates.email, id);
-      if (emailError)
-        return res.status(400).json({ message: emailError });
-
-      school.email = updates.email.trim().toLowerCase();
+      const existingByEmail = await School.findOne({
+        email: updates.email,
+        _id: { $ne: id }
+      });
+      if (existingByEmail) {
+        return res.status(400).json({ message: "A school with this email already exists" });
+      }
+      school.email = updates.email;
     }
 
-    if (updates.phone) {
-      const phoneError = validatePhone(updates.phone);
-      if (phoneError)
-        return res.status(400).json({ message: phoneError });
+    if (updates.phone !== undefined) school.phone = updates.phone || null;
+    if (updates.address !== undefined) school.address = updates.address || null;
+    if (updates.cnic !== undefined) school.cnic = updates.cnic || null;
+    if (updates.noOfStudents !== undefined) school.noOfStudents = Number(updates.noOfStudents) || 0;
 
-      school.phone = updates.phone;
+    if (updates.lat !== undefined) school.location.lat = Number(updates.lat) || null;
+    if (updates.lon !== undefined) school.location.lon = Number(updates.lon) || null;
+
+    if (req.files?.cnicFront?.[0]) {
+      if (school.images?.cnicFront) {
+        await deleteFileFromS3(school.images.cnicFront);
+      }
+      const file = req.files.cnicFront[0];
+      school.images.cnicFront = await uploadFileToS3({
+        fileBuffer: file.buffer,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+      });
     }
 
-    /* ================= OTHER FIELDS ================= */
-    if (updates.address !== undefined) school.address = updates.address;
-    if (updates.cnic !== undefined) school.cnic = updates.cnic;
-    if (updates.noOfStudents !== undefined)
-      school.noOfStudents = updates.noOfStudents;
-    if (updates.verified !== undefined) school.verified = updates.verified;
+    if (req.files?.cnicBack?.[0]) {
+      if (school.images?.cnicBack) {
+        await deleteFileFromS3(school.images.cnicBack);
+      }
+      const file = req.files.cnicBack[0];
+      school.images.cnicBack = await uploadFileToS3({
+        fileBuffer: file.buffer,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+      });
+    }
 
-    if (updates.location?.lat !== undefined)
-      school.location.lat = updates.location.lat;
-    if (updates.location?.lon !== undefined)
-      school.location.lon = updates.location.lon;
+    if (req.files?.nocDoc?.[0]) {
+      if (school.images?.nocDoc) {
+        await deleteFileFromS3(school.images.nocDoc);
+      }
+      const file = req.files.nocDoc[0];
+      school.images.nocDoc = await uploadFileToS3({
+        fileBuffer: file.buffer,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+      });
+    }
 
     await school.save();
 
     return res.status(200).json({
       message: "School updated successfully",
-      school,
+      school: {
+        id: school._id,
+        name: school.name,
+        email: school.email,
+        schoolId: school.schoolId,
+        verified: school.verified,
+      },
     });
   } catch (err) {
     console.error("Error updating school:", err);
     return res.status(500).json({
       message: "Server error while updating school",
+      error: err.message,
     });
   }
 };
@@ -178,17 +442,15 @@ const deleteSchoolBySuperAdmin = async (req, res) => {
   }
 };
 
-// Get all schools (Super Admin only)
 const getAllSchools = async (req, res) => {
   try {
     let { page = 1, limit = 20 } = req.query;
 
-    page = parseInt(page);
-    limit = parseInt(limit);
+    page = Number(page) || 1;
+    limit = Number(limit) || 20;
     const skip = (page - 1) * limit;
 
     const total = await School.countDocuments();
-
     const schools = await School.find()
       .select("-password -otp")
       .skip(skip)
@@ -213,7 +475,26 @@ const getAllSchools = async (req, res) => {
 };
 
 
-// Get single school by ID
+const getPendingRegistrations = async (req, res) => {
+  try {
+    const pendingSchools = await School.find({ verified: false })
+      .select("name email createdAt otp.expiresAt tempData.phone tempData.address")
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      message: "Pending registrations fetched successfully",
+      count: pendingSchools.length,
+      pendingSchools,
+    });
+  } catch (err) {
+    console.error("Error fetching pending registrations:", err);
+    return res.status(500).json({
+      message: "Server error while fetching pending registrations",
+      error: err.message,
+    });
+  }
+};
+
 const getSchoolById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -236,12 +517,14 @@ const getSchoolById = async (req, res) => {
   }
 };
 
-
-
 module.exports = {
   addSchoolBySuperAdmin,
+  verifySchoolOTP,
+  resendSchoolOTP,
+  setSchoolPassword,
   deleteSchoolBySuperAdmin,
   editSchoolBySuperAdmin,
   getAllSchools,
-  getSchoolById
+  getSchoolById,
+  getPendingRegistrations
 };

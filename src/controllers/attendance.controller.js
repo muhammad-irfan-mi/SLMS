@@ -1,3 +1,473 @@
+// const mongoose = require("mongoose");
+// const AttendanceImported = require("../models/Attendance");
+// const UserImported = require("../models/User");
+// const ClassSectionImported = require("../models/ClassSection");
+// const Leave = require("../models/Leave");
+
+// const Attendance = AttendanceImported.default || AttendanceImported;
+// const User = UserImported.default || UserImported;
+// const ClassSection = ClassSectionImported.default || ClassSectionImported;
+
+// const formatDate = (date) => {
+//     const d = date ? new Date(date) : new Date();
+//     return d.toISOString().split("T")[0];
+// };
+
+// const normalizePagination = ({ page = 1, limit = 20 }) => {
+//     page = Number(page);
+//     limit = Number(limit);
+//     return {
+//         page,
+//         limit,
+//         skip: (page - 1) * limit
+//     };
+// };
+
+
+// const markAttendance = async (req, res) => {
+//     try {
+//         const { classId, sectionId, students, date } = req.body;
+//         const teacherId = req.user._id;
+//         const school = req.user.school;
+
+//         const classDoc = await ClassSection.findById(classId);
+//         if (!classDoc) return res.status(404).json({ message: "Class not found" });
+
+//         const teacher = await User.findById(teacherId);
+//         if (!teacher?.isIncharge)
+//             return res.status(403).json({ message: "Only incharge teacher can mark attendance" });
+
+//         if (
+//             String(teacher.classInfo?.id) !== String(classId) ||
+//             String(teacher.sectionInfo?.id) !== String(sectionId)
+//         )
+//             return res.status(403).json({ message: "Teacher not assigned to this section" });
+
+//         const attendanceDate = formatDate(date);
+
+//         const exists = await Attendance.findOne({
+//             school,
+//             classId,
+//             sectionId,
+//             date: attendanceDate
+//         });
+
+//         if (exists)
+//             return res.status(409).json({ message: "Attendance already marked for this date" });
+
+//         const studentIds = students.map(s => s.studentId);
+
+//         const [users, leaves] = await Promise.all([
+//             User.find({ _id: { $in: studentIds } })
+//                 .select("name email")
+//                 .lean(),
+
+//             Leave.find({
+//                 school,
+//                 studentId: { $in: studentIds },
+//                 date: attendanceDate,
+//                 status: "approved"
+//             }).lean()
+//         ]);
+
+//         const leaveSet = new Set(leaves.map(l => String(l.studentId)));
+
+//         const finalStudents = students.map(s => {
+//             const u = users.find(x => String(x._id) === String(s.studentId));
+
+//             return {
+//                 studentId: s.studentId,
+//                 name: u?.name || "Unknown",
+//                 email: u?.email || "N/A",
+
+//                 // AUTO leave if approved leave exists
+//                 status: leaveSet.has(String(s.studentId))
+//                     ? "leave"
+//                     : (s.status || "present")
+//             };
+//         });
+
+//         const attendance = await Attendance.create({
+//             school,
+//             classId,
+//             sectionId,
+//             teacherId,
+//             date: attendanceDate,
+//             students: finalStudents
+//         });
+
+//         return res.status(201).json({
+//             message: "Attendance marked successfully",
+//             attendance
+//         });
+
+//     } catch (err) {
+//         console.error("markAttendance error:", err);
+//         return res.status(500).json({ message: "Server error" });
+//     }
+// };
+
+// const updateAttendance = async (req, res) => {
+//     try {
+//         const { attendanceId } = req.params;
+//         const { students } = req.body;
+//         const school = req.user.school;
+
+//         const attendance = await Attendance.findById(attendanceId);
+//         if (!attendance)
+//             return res.status(404).json({ message: "Attendance not found" });
+
+//         if (String(attendance.school) !== String(school))
+//             return res.status(403).json({ message: "Access denied" });
+
+//         const studentMap = new Map(
+//             attendance.students.map(s => [String(s.studentId), s])
+//         );
+
+//         const updatedStudents = [];
+
+//         const incomingIds = students.map(s => s.studentId);
+
+//         const missingIds = incomingIds.filter(
+//             id => !studentMap.has(String(id))
+//         );
+
+//         let missingUsers = [];
+//         if (missingIds.length) {
+//             missingUsers = await User.find({
+//                 _id: { $in: missingIds },
+//                 school
+//             }).select("name email").lean();
+//         }
+
+//         const missingUserMap = new Map(
+//             missingUsers.map(u => [String(u._id), u])
+//         );
+
+//         for (const s of students) {
+//             const key = String(s.studentId);
+
+//             if (studentMap.has(key)) {
+//                 const student = studentMap.get(key);
+//                 student.status = s.status;
+
+//                 updatedStudents.push({
+//                     studentId: student.studentId,
+//                     name: student.name,
+//                     email: student.email,
+//                     status: student.status
+//                 });
+
+//             } else {
+//                 const u = missingUserMap.get(key);
+
+//                 const newStudent = {
+//                     studentId: s.studentId,
+//                     name: u?.name || "Unknown",
+//                     email: u?.email || "N/A",
+//                     status: s.status
+//                 };
+
+//                 studentMap.set(key, newStudent);
+//                 updatedStudents.push(newStudent);
+//             }
+//         }
+
+//         attendance.students = [...studentMap.values()];
+//         await attendance.save();
+
+//         return res.status(200).json({
+//             message: "Attendance updated successfully",
+//             updatedStudents
+//         });
+
+//     } catch (err) {
+//         console.error("updateAttendance error:", err);
+//         return res.status(500).json({ message: "Server error" });
+//     }
+// };
+
+// const getAttendanceBySection = async (req, res) => {
+//     try {
+//         const { sectionId } = req.params;
+//         const { date, startDate, endDate, status } = req.query;
+//         const school = req.user.school;
+
+//         const { page, limit, skip } = normalizePagination(req.query);
+
+//         const filter = {
+//             school,
+//             sectionId
+//         };
+
+//         if (date) {
+//             filter.date = date;
+//         } else if (startDate && endDate) {
+//             filter.date = { $gte: startDate, $lte: endDate };
+//         }
+
+//         const [total, records] = await Promise.all([
+//             Attendance.countDocuments(filter),
+
+//             Attendance.find(filter)
+//                 .populate("classId", "class sections")
+//                 .populate("teacherId", "name email")
+//                 .sort({ date: -1 })
+//                 .skip(skip)
+//                 .limit(limit)
+//                 .lean()
+//         ]);
+
+//         const attendance = records.map(att => {
+//             const section =
+//                 att.classId?.sections?.find(
+//                     s => String(s._id) === String(sectionId)
+//                 ) || null;
+
+//             let students = att.students;
+//             if (status) {
+//                 students = students.filter(s => s.status === status);
+//             }
+
+//             return {
+//                 _id: att._id,
+//                 date: att.date,
+
+//                 class: att.classId
+//                     ? { _id: att.classId._id, name: att.classId.class }
+//                     : null,
+
+//                 section: section
+//                     ? { _id: section._id, name: section.name }
+//                     : null,
+
+//                 teacher: att.teacherId
+//                     ? { _id: att.teacherId._id, name: att.teacherId.name }
+//                     : null,
+
+//                 students: students.map(s => ({
+//                     studentId: s.studentId,
+//                     name: s.name,
+//                     email: s.email,
+//                     status: s.status
+//                 })),
+
+//                 totalStudents: students.length,
+//                 present: students.filter(s => s.status === "present").length,
+//                 absent: students.filter(s => s.status === "absent").length,
+//                 leave: students.filter(s => s.status === "leave").length,
+
+//                 createdAt: att.createdAt
+//             };
+//         });
+
+//         return res.status(200).json({
+//             total,
+//             page,
+//             limit,
+//             totalPages: Math.ceil(total / limit),
+//             attendance
+//         });
+
+//     } catch (err) {
+//         console.error("getAttendanceBySection error:", err);
+//         return res.status(500).json({ message: "Server error" });
+//     }
+// };
+
+// const getAttendanceByStudent = async (req, res) => {
+//     try {
+//         const { studentId } = req.params;
+//         const { date, startDate, endDate, status } = req.query;
+//         const school = req.user.school;
+//         const { page, limit, skip } = normalizePagination(req.query);
+
+//         if (!mongoose.Types.ObjectId.isValid(studentId)) {
+//             return res.status(400).json({ message: "Invalid studentId" });
+//         }
+
+//         const filter = {
+//             school,
+//             "students.studentId": new mongoose.Types.ObjectId(studentId)
+//         };
+
+//         if (date) {
+//             filter.date = date;
+//         } else if (startDate && endDate) {
+//             filter.date = { $gte: startDate, $lte: endDate };
+//         }
+
+//         const total = await Attendance.countDocuments(filter);
+
+//         const records = await Attendance.find(filter)
+//             .populate("classId", "class sections")
+//             .sort({ date: -1 })
+//             .skip(skip)
+//             .limit(limit)
+//             .lean();
+
+//         const attendance = records
+//             .map(r => {
+//                 const st = r.students.find(
+//                     s => String(s.studentId) === String(studentId)
+//                 );
+
+//                 if (!st) return null;
+
+//                 if (status && st.status !== status) return null;
+
+//                 const section =
+//                     r.classId?.sections?.find(
+//                         sec => String(sec._id) === String(r.sectionId)
+//                     ) || null;
+
+//                 return {
+//                     date: r.date,
+//                     class: r.classId
+//                         ? { _id: r.classId._id, name: r.classId.class }
+//                         : null,
+//                     section: section
+//                         ? { _id: section._id, name: section.name }
+//                         : null,
+//                     status: st.status
+//                 };
+//             })
+//             .filter(Boolean);
+
+//         return res.status(200).json({
+//             page,
+//             limit,
+//             total,
+//             attendance
+//         });
+
+//     } catch (err) {
+//         console.error("getAttendanceByStudent error:", err);
+//         return res.status(500).json({ message: "Server error" });
+//     }
+// };
+
+// // const getAttendanceByDateOrRange = async (req, res) => {
+// //     try {
+// //         const { sectionId } = req.params;
+// //         const { date, startDate, endDate } = req.query;
+// //         const school = req.user.school;
+
+// //         const { page, limit, skip } = normalizePagination(req.query);
+
+// //         const filter = { school, sectionId };
+
+// //         if (date) {
+// //             filter.date = date;
+// //         } else {
+// //             filter.date = { $gte: startDate, $lte: endDate };
+// //         }
+
+// //         const [total, records] = await Promise.all([
+// //             Attendance.countDocuments(filter),
+// //             Attendance.find(filter)
+// //                 .sort({ date: 1 })
+// //                 .skip(skip)
+// //                 .limit(limit)
+// //                 .lean()
+// //         ]);
+
+// //         return res.status(200).json({
+// //             total,
+// //             page,
+// //             limit,
+// //             totalPages: Math.ceil(total / limit),
+// //             from: date || startDate,
+// //             to: date || endDate,
+// //             records
+// //         });
+
+// //     } catch (err) {
+// //         console.error("getAttendanceByDateOrRange:", err);
+// //         return res.status(500).json({ message: "Server error" });
+// //     }
+// // };
+
+// // const getStudentAttendanceByDateOrRange = async (req, res) => {
+// //     try {
+// //         const { studentId } = req.params;
+// //         const { date, startDate, endDate } = req.query;
+// //         const school = req.user.school;
+
+// //         const { page, limit, skip } = normalizePagination(req.query);
+
+// //         const filter = {
+// //             school,
+// //             "students.studentId": studentId
+// //         };
+
+// //         if (date) {
+// //             filter.date = date;
+// //         } else {
+// //             filter.date = { $gte: startDate, $lte: endDate };
+// //         }
+
+// //         const [total, records] = await Promise.all([
+// //             Attendance.countDocuments(filter),
+// //             Attendance.find(filter)
+// //                 .select("date classId sectionId students")
+// //                 .sort({ date: 1 })
+// //                 .skip(skip)
+// //                 .limit(limit)
+// //                 .lean()
+// //         ]);
+
+// //         const result = records.map(r => {
+// //             const st = r.students.find(s => String(s.studentId) === String(studentId));
+// //             return {
+// //                 date: r.date,
+// //                 classId: r.classId,
+// //                 sectionId: r.sectionId,
+// //                 status: st?.status || "N/A"
+// //             };
+// //         });
+
+// //         return res.status(200).json({
+// //             total,
+// //             page,
+// //             limit,
+// //             totalPages: Math.ceil(total / limit),
+// //             from: date || startDate,
+// //             to: date || endDate,
+// //             records: result
+// //         });
+
+// //     } catch (err) {
+// //         console.error("getStudentAttendanceByDateOrRange:", err);
+// //         return res.status(500).json({ message: "Server error" });
+// //     }
+// // };
+
+
+// module.exports = {
+//     markAttendance,
+//     updateAttendance,
+//     getAttendanceBySection,
+//     getAttendanceByStudent,
+//     // getAttendanceByDateOrRange,
+//     // getStudentAttendanceByDateOrRange
+// };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 const mongoose = require("mongoose");
 const AttendanceImported = require("../models/Attendance");
 const UserImported = require("../models/User");
@@ -9,7 +479,19 @@ const User = UserImported.default || UserImported;
 const ClassSection = ClassSectionImported.default || ClassSectionImported;
 
 const formatDate = (date) => {
-    const d = date ? new Date(date) : new Date();
+    if (!date) return null;
+    
+    // If already in YYYY-MM-DD format, return as is
+    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        return date;
+    }
+    
+    // If ISO string or date object
+    const d = new Date(date);
+    if (isNaN(d.getTime())) {
+        throw new Error("Invalid date");
+    }
+    
     return d.toISOString().split("T")[0];
 };
 
@@ -23,6 +505,69 @@ const normalizePagination = ({ page = 1, limit = 20 }) => {
     };
 };
 
+// Helper function to validate teacher assignment
+const validateTeacherAssignment = async (teacherId, classId, sectionId, school) => {
+    try {
+        const teacher = await User.findOne({
+            _id: teacherId,
+            school,
+            role: 'teacher',
+        }).select('isIncharge classInfo sectionInfo').lean();
+
+        if (!teacher) {
+            return { valid: false, message: "Teacher not found" };
+        }
+
+        // Check if teacher is incharge
+        if (!teacher.isIncharge) {
+            return { valid: false, message: "Only incharge teachers can mark attendance" };
+        }
+
+        // Check if teacher is assigned to the specified class/section
+        if (String(teacher.classInfo?.id) !== String(classId)) {
+            return { valid: false, message: "Teacher is not assigned to this class" };
+        }
+
+        if (String(teacher.sectionInfo?.id) !== String(sectionId)) {
+            return { valid: false, message: "Teacher is not assigned to this section" };
+        }
+
+        return { valid: true };
+    } catch (error) {
+        return { valid: false, message: "Error validating teacher assignment" };
+    }
+};
+
+// Helper function to validate student enrollment
+const validateStudentEnrollment = async (studentIds, classId, sectionId, school) => {
+    try {
+        const enrolledStudents = await User.find({
+            _id: { $in: studentIds },
+            school,
+            role: 'student',
+            // status: 'active',
+            'classInfo.id': classId,
+            'sectionInfo.id': sectionId
+        }).select('_id').lean();
+
+        const enrolledIds = new Set(enrolledStudents.map(s => String(s._id)));
+        
+        // Check for non-enrolled students
+        const nonEnrolled = studentIds.filter(id => !enrolledIds.has(String(id)));
+        
+        if (nonEnrolled.length > 0) {
+            return {
+                valid: false,
+                message: "Some students are not enrolled in this class/section",
+                nonEnrolled
+            };
+        }
+
+        return { valid: true };
+    } catch (error) {
+        return { valid: false, message: "Error validating student enrollment" };
+    }
+};
 
 const markAttendance = async (req, res) => {
     try {
@@ -30,21 +575,40 @@ const markAttendance = async (req, res) => {
         const teacherId = req.user._id;
         const school = req.user.school;
 
+        // Validate class existence
         const classDoc = await ClassSection.findById(classId);
-        if (!classDoc) return res.status(404).json({ message: "Class not found" });
+        if (!classDoc) {
+            return res.status(404).json({ message: "Class not found" });
+        }
 
-        const teacher = await User.findById(teacherId);
-        if (!teacher?.isIncharge)
-            return res.status(403).json({ message: "Only incharge teacher can mark attendance" });
+        // Verify teacher is assigned to this class/section
+        const teacherCheck = await validateTeacherAssignment(teacherId, classId, sectionId, school);
+        if (!teacherCheck.valid) {
+            return res.status(403).json({ 
+                message: teacherCheck.message 
+            });
+        }
 
-        if (
-            String(teacher.classInfo?.id) !== String(classId) ||
-            String(teacher.sectionInfo?.id) !== String(sectionId)
-        )
-            return res.status(403).json({ message: "Teacher not assigned to this section" });
+        // Format date
+        let attendanceDate;
+        try {
+            attendanceDate = formatDate(date);
+        } catch (error) {
+            return res.status(400).json({
+                message: "Invalid date format",
+                error: error.message
+            });
+        }
 
-        const attendanceDate = formatDate(date);
+        // Check if date is in the future
+        const today = formatDate(new Date());
+        if (attendanceDate > today) {
+            return res.status(400).json({ 
+                message: "Cannot mark attendance for future dates" 
+            });
+        }
 
+        // Check if attendance already exists for this date
         const exists = await Attendance.findOne({
             school,
             classId,
@@ -52,15 +616,32 @@ const markAttendance = async (req, res) => {
             date: attendanceDate
         });
 
-        if (exists)
-            return res.status(409).json({ message: "Attendance already marked for this date" });
+        if (exists) {
+            return res.status(409).json({ 
+                message: "Attendance already marked for this date" 
+            });
+        }
 
+        // Extract student IDs
         const studentIds = students.map(s => s.studentId);
 
+        // Validate student enrollment
+        const enrollmentCheck = await validateStudentEnrollment(studentIds, classId, sectionId, school);
+        if (!enrollmentCheck.valid) {
+            return res.status(400).json({
+                message: enrollmentCheck.message,
+                nonEnrolledStudents: enrollmentCheck.nonEnrolled
+            });
+        }
+
+        // Fetch student details and approved leaves in parallel
         const [users, leaves] = await Promise.all([
-            User.find({ _id: { $in: studentIds } })
-                .select("name email")
-                .lean(),
+            User.find({ 
+                _id: { $in: studentIds },
+                school 
+            })
+            .select("name email")
+            .lean(),
 
             Leave.find({
                 school,
@@ -70,23 +651,24 @@ const markAttendance = async (req, res) => {
             }).lean()
         ]);
 
+        // Create maps for quick lookups
         const leaveSet = new Set(leaves.map(l => String(l.studentId)));
+        const userMap = new Map(users.map(u => [String(u._id), u]));
 
+        // Prepare final student records with automatic leave status
         const finalStudents = students.map(s => {
-            const u = users.find(x => String(x._id) === String(s.studentId));
-
+            const user = userMap.get(String(s.studentId));
+            const hasApprovedLeave = leaveSet.has(String(s.studentId));
+            
             return {
                 studentId: s.studentId,
-                name: u?.name || "Unknown",
-                email: u?.email || "N/A",
-
-                // AUTO leave if approved leave exists
-                status: leaveSet.has(String(s.studentId))
-                    ? "leave"
-                    : (s.status || "present")
+                name: user?.name || "Unknown",
+                email: user?.email || "N/A",
+                status: hasApprovedLeave ? "leave" : (s.status || "present")
             };
         });
 
+        // Create attendance record
         const attendance = await Attendance.create({
             school,
             classId,
@@ -98,12 +680,27 @@ const markAttendance = async (req, res) => {
 
         return res.status(201).json({
             message: "Attendance marked successfully",
-            attendance
+            attendance: {
+                _id: attendance._id,
+                date: attendance.date,
+                classId: attendance.classId,
+                sectionId: attendance.sectionId,
+                teacherId: attendance.teacherId,
+                totalStudents: finalStudents.length,
+                present: finalStudents.filter(s => s.status === "present").length,
+                absent: finalStudents.filter(s => s.status === "absent").length,
+                leave: finalStudents.filter(s => s.status === "leave").length,
+                students: finalStudents,
+                createdAt: attendance.createdAt
+            }
         });
 
     } catch (err) {
         console.error("markAttendance error:", err);
-        return res.status(500).json({ message: "Server error" });
+        return res.status(500).json({ 
+            message: "Server error",
+            error: err.message 
+        });
     }
 };
 
@@ -112,78 +709,151 @@ const updateAttendance = async (req, res) => {
         const { attendanceId } = req.params;
         const { students } = req.body;
         const school = req.user.school;
+        const userId = req.user._id;
+        const userRole = req.user.role;
 
+        // Validate attendanceId
+        if (!mongoose.Types.ObjectId.isValid(attendanceId)) {
+            return res.status(400).json({ message: "Invalid attendance ID" });
+        }
+
+        // Find attendance record
         const attendance = await Attendance.findById(attendanceId);
-        if (!attendance)
+        if (!attendance) {
             return res.status(404).json({ message: "Attendance not found" });
+        }
 
-        if (String(attendance.school) !== String(school))
+        // Check school access
+        if (String(attendance.school) !== String(school)) {
             return res.status(403).json({ message: "Access denied" });
+        }
 
-        const studentMap = new Map(
+        // Check if user has permission to update
+        if (userRole === 'teacher') {
+            // Teacher can only update their own attendance records
+            if (String(attendance.teacherId) !== String(userId)) {
+                return res.status(403).json({ 
+                    message: "You can only update attendance records you created" 
+                });
+            }
+
+            // Check if attendance date is in the past (teachers can't update future attendance)
+            const today = formatDate(new Date());
+            if (attendance.date > today) {
+                return res.status(400).json({ 
+                    message: "Cannot update attendance for future dates" 
+                });
+            }
+        }
+
+        // Validate student IDs in request
+        const studentIds = students.map(s => s.studentId);
+        const uniqueIds = [...new Set(studentIds.map(id => String(id)))];
+        
+        if (studentIds.length !== uniqueIds.length) {
+            return res.status(400).json({ 
+                message: "Duplicate student IDs in request" 
+            });
+        }
+
+        // Validate that all students belong to the same class/section as the attendance record
+        const enrollmentCheck = await validateStudentEnrollment(
+            studentIds, 
+            attendance.classId, 
+            attendance.sectionId, 
+            school
+        );
+        
+        if (!enrollmentCheck.valid) {
+            return res.status(400).json({
+                message: enrollmentCheck.message,
+                nonEnrolledStudents: enrollmentCheck.nonEnrolled
+            });
+        }
+
+        // Fetch approved leaves for this date
+        const leaves = await Leave.find({
+            school,
+            studentId: { $in: studentIds },
+            date: attendance.date,
+            status: "approved"
+        }).lean();
+
+        const leaveSet = new Set(leaves.map(l => String(l.studentId)));
+
+        // Create a map of existing students
+        const existingStudentMap = new Map(
             attendance.students.map(s => [String(s.studentId), s])
         );
 
-        const updatedStudents = [];
-
-        const incomingIds = students.map(s => s.studentId);
-
-        const missingIds = incomingIds.filter(
-            id => !studentMap.has(String(id))
-        );
-
-        let missingUsers = [];
-        if (missingIds.length) {
-            missingUsers = await User.find({
-                _id: { $in: missingIds },
+        // Fetch details for new students
+        const newStudentIds = studentIds.filter(id => !existingStudentMap.has(String(id)));
+        let newUsers = [];
+        
+        if (newStudentIds.length > 0) {
+            newUsers = await User.find({
+                _id: { $in: newStudentIds },
                 school
             }).select("name email").lean();
         }
 
-        const missingUserMap = new Map(
-            missingUsers.map(u => [String(u._id), u])
-        );
+        const newUserMap = new Map(newUsers.map(u => [String(u._id), u]));
+
+        // Update attendance records
+        const updatedStudents = [];
 
         for (const s of students) {
-            const key = String(s.studentId);
-
-            if (studentMap.has(key)) {
-                const student = studentMap.get(key);
-                student.status = s.status;
-
-                updatedStudents.push({
-                    studentId: student.studentId,
-                    name: student.name,
-                    email: student.email,
-                    status: student.status
-                });
-
+            const studentIdStr = String(s.studentId);
+            const hasApprovedLeave = leaveSet.has(studentIdStr);
+            
+            // Determine final status (respect approved leaves)
+            const finalStatus = hasApprovedLeave ? "leave" : s.status;
+            
+            if (existingStudentMap.has(studentIdStr)) {
+                // Update existing student
+                const existingStudent = existingStudentMap.get(studentIdStr);
+                existingStudent.status = finalStatus;
+                updatedStudents.push(existingStudent);
             } else {
-                const u = missingUserMap.get(key);
-
+                // Add new student
+                const user = newUserMap.get(studentIdStr);
                 const newStudent = {
                     studentId: s.studentId,
-                    name: u?.name || "Unknown",
-                    email: u?.email || "N/A",
-                    status: s.status
+                    name: user?.name || "Unknown",
+                    email: user?.email || "N/A",
+                    status: finalStatus
                 };
-
-                studentMap.set(key, newStudent);
+                existingStudentMap.set(studentIdStr, newStudent);
                 updatedStudents.push(newStudent);
             }
         }
 
-        attendance.students = [...studentMap.values()];
+        // Save updated attendance
+        attendance.students = updatedStudents;
         await attendance.save();
 
         return res.status(200).json({
             message: "Attendance updated successfully",
-            updatedStudents
+            attendance: {
+                _id: attendance._id,
+                date: attendance.date,
+                classId: attendance.classId,
+                sectionId: attendance.sectionId,
+                totalStudents: updatedStudents.length,
+                present: updatedStudents.filter(s => s.status === "present").length,
+                absent: updatedStudents.filter(s => s.status === "absent").length,
+                leave: updatedStudents.filter(s => s.status === "leave").length,
+                students: updatedStudents,
+                updatedAt: attendance.updatedAt
+            }
         });
 
     } catch (err) {
         console.error("updateAttendance error:", err);
-        return res.status(500).json({ message: "Server error" });
+        return res.status(500).json({ 
+            message: "Server error",
+            error: err.message 
+        });
     }
 };
 
@@ -192,23 +862,72 @@ const getAttendanceBySection = async (req, res) => {
         const { sectionId } = req.params;
         const { date, startDate, endDate, status } = req.query;
         const school = req.user.school;
+        const userId = req.user._id;
+        const userRole = req.user.role;
+
+        // Validate sectionId
+        if (!mongoose.Types.ObjectId.isValid(sectionId)) {
+            return res.status(400).json({ message: "Invalid section ID" });
+        }
+
+        // For teachers, check if they're assigned to this section
+        if (userRole === 'teacher') {
+            // Get teacher's assigned section
+            const teacher = await User.findOne({
+                _id: userId,
+                school,
+                role: 'teacher',
+                status: 'active'
+            }).select('sectionInfo').lean();
+
+            if (!teacher) {
+                return res.status(403).json({ 
+                    message: "Teacher not found or inactive" 
+                });
+            }
+
+            if (String(teacher.sectionInfo?.id) !== String(sectionId)) {
+                return res.status(403).json({ 
+                    message: "You can only view attendance for your assigned section" 
+                });
+            }
+        }
 
         const { page, limit, skip } = normalizePagination(req.query);
 
+        // Build filter
         const filter = {
             school,
             sectionId
         };
 
+        // Handle date filtering
         if (date) {
-            filter.date = date;
+            try {
+                filter.date = formatDate(date);
+            } catch (error) {
+                return res.status(400).json({
+                    message: "Invalid date format",
+                    error: error.message
+                });
+            }
         } else if (startDate && endDate) {
-            filter.date = { $gte: startDate, $lte: endDate };
+            try {
+                filter.date = { 
+                    $gte: formatDate(startDate), 
+                    $lte: formatDate(endDate) 
+                };
+            } catch (error) {
+                return res.status(400).json({
+                    message: "Invalid date range format",
+                    error: error.message
+                });
+            }
         }
 
+        // Get total count and records
         const [total, records] = await Promise.all([
             Attendance.countDocuments(filter),
-
             Attendance.find(filter)
                 .populate("classId", "class sections")
                 .populate("teacherId", "name email")
@@ -218,11 +937,11 @@ const getAttendanceBySection = async (req, res) => {
                 .lean()
         ]);
 
+        // Format response
         const attendance = records.map(att => {
-            const section =
-                att.classId?.sections?.find(
-                    s => String(s._id) === String(sectionId)
-                ) || null;
+            const section = att.classId?.sections?.find(
+                s => String(s._id) === String(sectionId)
+            ) || null;
 
             let students = att.students;
             if (status) {
@@ -232,32 +951,31 @@ const getAttendanceBySection = async (req, res) => {
             return {
                 _id: att._id,
                 date: att.date,
-
-                class: att.classId
-                    ? { _id: att.classId._id, name: att.classId.class }
-                    : null,
-
-                section: section
-                    ? { _id: section._id, name: section.name }
-                    : null,
-
-                teacher: att.teacherId
-                    ? { _id: att.teacherId._id, name: att.teacherId.name }
-                    : null,
-
+                class: att.classId ? { 
+                    _id: att.classId._id, 
+                    name: att.classId.class 
+                } : null,
+                section: section ? { 
+                    _id: section._id, 
+                    name: section.name 
+                } : null,
+                teacher: att.teacherId ? { 
+                    _id: att.teacherId._id, 
+                    name: att.teacherId.name,
+                    email: att.teacherId.email
+                } : null,
                 students: students.map(s => ({
                     studentId: s.studentId,
                     name: s.name,
                     email: s.email,
                     status: s.status
                 })),
-
                 totalStudents: students.length,
                 present: students.filter(s => s.status === "present").length,
                 absent: students.filter(s => s.status === "absent").length,
                 leave: students.filter(s => s.status === "leave").length,
-
-                createdAt: att.createdAt
+                createdAt: att.createdAt,
+                updatedAt: att.updatedAt
             };
         });
 
@@ -271,7 +989,10 @@ const getAttendanceBySection = async (req, res) => {
 
     } catch (err) {
         console.error("getAttendanceBySection error:", err);
-        return res.status(500).json({ message: "Server error" });
+        return res.status(500).json({ 
+            message: "Server error",
+            error: err.message 
+        });
     }
 };
 
@@ -280,23 +1001,87 @@ const getAttendanceByStudent = async (req, res) => {
         const { studentId } = req.params;
         const { date, startDate, endDate, status } = req.query;
         const school = req.user.school;
+        const userId = req.user._id;
+        const userRole = req.user.role;
+        
         const { page, limit, skip } = normalizePagination(req.query);
 
+        // Validate studentId
         if (!mongoose.Types.ObjectId.isValid(studentId)) {
-            return res.status(400).json({ message: "Invalid studentId" });
+            return res.status(400).json({ message: "Invalid student ID" });
         }
 
+        // Check permissions
+        if (userRole === 'student') {
+            // Students can only view their own attendance
+            if (String(studentId) !== String(userId)) {
+                return res.status(403).json({ 
+                    message: "You can only view your own attendance" 
+                });
+            }
+        } else if (userRole === 'teacher') {
+            // Teachers can only view attendance of students in their class/section
+            const teacher = await User.findOne({
+                _id: userId,
+                school,
+                role: 'teacher',
+                status: 'active'
+            }).select('classInfo sectionInfo').lean();
+
+            if (!teacher) {
+                return res.status(403).json({ 
+                    message: "Teacher not found or inactive" 
+                });
+            }
+
+            // Check if student belongs to teacher's class/section
+            const student = await User.findOne({
+                _id: studentId,
+                school,
+                role: 'student',
+                status: 'active',
+                'classInfo.id': teacher.classInfo?.id,
+                'sectionInfo.id': teacher.sectionInfo?.id
+            });
+
+            if (!student) {
+                return res.status(403).json({ 
+                    message: "Student not found in your class/section" 
+                });
+            }
+        }
+
+        // Build filter
         const filter = {
             school,
             "students.studentId": new mongoose.Types.ObjectId(studentId)
         };
 
+        // Handle date filtering
         if (date) {
-            filter.date = date;
+            try {
+                filter.date = formatDate(date);
+            } catch (error) {
+                return res.status(400).json({
+                    message: "Invalid date format",
+                    error: error.message
+                });
+            }
         } else if (startDate && endDate) {
-            filter.date = { $gte: startDate, $lte: endDate };
+            try {
+                filter.date = { 
+                    $gte: formatDate(startDate), 
+                    $lte: formatDate(endDate) 
+                };
+            } catch (error) {
+                return res.status(400).json({
+                    message: "Invalid date range format",
+                    error: error.message
+                });
+            }
         }
 
+        // Get total count and records
         const total = await Attendance.countDocuments(filter);
 
         const records = await Attendance.find(filter)
@@ -306,149 +1091,57 @@ const getAttendanceByStudent = async (req, res) => {
             .limit(limit)
             .lean();
 
+        // Format response
         const attendance = records
             .map(r => {
-                const st = r.students.find(
+                const student = r.students.find(
                     s => String(s.studentId) === String(studentId)
                 );
 
-                if (!st) return null;
+                if (!student) return null;
+                if (status && student.status !== status) return null;
 
-                if (status && st.status !== status) return null;
-
-                const section =
-                    r.classId?.sections?.find(
-                        sec => String(sec._id) === String(r.sectionId)
-                    ) || null;
+                const section = r.classId?.sections?.find(
+                    sec => String(sec._id) === String(r.sectionId)
+                ) || null;
 
                 return {
+                    _id: r._id,
                     date: r.date,
-                    class: r.classId
-                        ? { _id: r.classId._id, name: r.classId.class }
-                        : null,
-                    section: section
-                        ? { _id: section._id, name: section.name }
-                        : null,
-                    status: st.status
+                    class: r.classId ? { 
+                        _id: r.classId._id, 
+                        name: r.classId.class 
+                    } : null,
+                    section: section ? { 
+                        _id: section._id, 
+                        name: section.name 
+                    } : null,
+                    status: student.status,
+                    createdAt: r.createdAt
                 };
             })
             .filter(Boolean);
 
         return res.status(200).json({
+            total,
             page,
             limit,
-            total,
+            totalPages: Math.ceil(total / limit),
             attendance
         });
 
     } catch (err) {
         console.error("getAttendanceByStudent error:", err);
-        return res.status(500).json({ message: "Server error" });
+        return res.status(500).json({ 
+            message: "Server error",
+            error: err.message 
+        });
     }
 };
-
-// const getAttendanceByDateOrRange = async (req, res) => {
-//     try {
-//         const { sectionId } = req.params;
-//         const { date, startDate, endDate } = req.query;
-//         const school = req.user.school;
-
-//         const { page, limit, skip } = normalizePagination(req.query);
-
-//         const filter = { school, sectionId };
-
-//         if (date) {
-//             filter.date = date;
-//         } else {
-//             filter.date = { $gte: startDate, $lte: endDate };
-//         }
-
-//         const [total, records] = await Promise.all([
-//             Attendance.countDocuments(filter),
-//             Attendance.find(filter)
-//                 .sort({ date: 1 })
-//                 .skip(skip)
-//                 .limit(limit)
-//                 .lean()
-//         ]);
-
-//         return res.status(200).json({
-//             total,
-//             page,
-//             limit,
-//             totalPages: Math.ceil(total / limit),
-//             from: date || startDate,
-//             to: date || endDate,
-//             records
-//         });
-
-//     } catch (err) {
-//         console.error("getAttendanceByDateOrRange:", err);
-//         return res.status(500).json({ message: "Server error" });
-//     }
-// };
-
-// const getStudentAttendanceByDateOrRange = async (req, res) => {
-//     try {
-//         const { studentId } = req.params;
-//         const { date, startDate, endDate } = req.query;
-//         const school = req.user.school;
-
-//         const { page, limit, skip } = normalizePagination(req.query);
-
-//         const filter = {
-//             school,
-//             "students.studentId": studentId
-//         };
-
-//         if (date) {
-//             filter.date = date;
-//         } else {
-//             filter.date = { $gte: startDate, $lte: endDate };
-//         }
-
-//         const [total, records] = await Promise.all([
-//             Attendance.countDocuments(filter),
-//             Attendance.find(filter)
-//                 .select("date classId sectionId students")
-//                 .sort({ date: 1 })
-//                 .skip(skip)
-//                 .limit(limit)
-//                 .lean()
-//         ]);
-
-//         const result = records.map(r => {
-//             const st = r.students.find(s => String(s.studentId) === String(studentId));
-//             return {
-//                 date: r.date,
-//                 classId: r.classId,
-//                 sectionId: r.sectionId,
-//                 status: st?.status || "N/A"
-//             };
-//         });
-
-//         return res.status(200).json({
-//             total,
-//             page,
-//             limit,
-//             totalPages: Math.ceil(total / limit),
-//             from: date || startDate,
-//             to: date || endDate,
-//             records: result
-//         });
-
-//     } catch (err) {
-//         console.error("getStudentAttendanceByDateOrRange:", err);
-//         return res.status(500).json({ message: "Server error" });
-//     }
-// };
-
 
 module.exports = {
     markAttendance,
     updateAttendance,
     getAttendanceBySection,
     getAttendanceByStudent,
-    // getAttendanceByDateOrRange,
-    // getStudentAttendanceByDateOrRange
 };

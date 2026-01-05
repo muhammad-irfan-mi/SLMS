@@ -9,33 +9,54 @@ const {
     assignSectionIncharge,
 } = require("../controllers/classSection.controller");
 const { protect, isAdminOffice } = require("../middlewares/auth");
+const validate = require("../middlewares/validate");
+const {
+    addMultipleClassesValidation,
+    updateAllClassesValidation,
+    deleteSectionValidation,
+    assignInchargeValidation,
+    paginationQueryValidation,
+    idParamValidation,
+    schoolIdParamValidation,
+} = require("../validators/classSection.validation");
 
-router.post("/add",
-    protect,
-    isAdminOffice,
+router.use(protect, isAdminOffice);
+
+router.post(
+    "/add",
+    validate(addMultipleClassesValidation),
     addMultipleClassesWithSections
 );
-router.put("/update-all",
-    protect,
-    isAdminOffice,
+
+router.put(
+    "/update-all",
+    validate(updateAllClassesValidation),
     updateAllClassesAndSections
 );
-router.delete("/delete-section",
-    protect,
-    isAdminOffice,
+
+router.delete(
+    "/delete-section",
+    validate(deleteSectionValidation),
     deleteSectionFromClass
 );
-router.delete("/:id",
-    protect,
-    isAdminOffice,
+
+router.delete(
+    "/:id",
+    validate(idParamValidation, 'params'),
     deleteClass
 );
-router.get("/:schoolId",
-    protect,
-    isAdminOffice,
+
+router.get(
+    "/:schoolId",
+    validate(schoolIdParamValidation, 'params'),
+    validate(paginationQueryValidation, 'query'),
     getClassesBySchool
 );
 
-router.post('/assing-incharge', protect, isAdminOffice, assignSectionIncharge)
+router.post(
+    '/assign-incharge',
+    validate(assignInchargeValidation),
+    assignSectionIncharge
+);
 
 module.exports = router;

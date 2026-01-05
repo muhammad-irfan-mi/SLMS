@@ -23,11 +23,40 @@ const SchoolSchema = new Schema({
   otp: {
     code: String,
     expiresAt: Date,
+    attempts: { type: Number, default: 0 },
+    lastAttempt: Date
   },
-
+  tempData: {
+    name: String,
+    email: String,
+    phone: String,
+    address: String,
+    cnic: String,
+    images: {
+      cnicFront: String,
+      cnicBack: String,
+      nocDoc: String,
+    },
+    location: {
+      lat: Number,
+      lon: Number,
+    },
+    noOfStudents: Number,
+  },
   createdAt: { type: Date, default: Date.now },
 });
 
-SchoolSchema.index({ createdAt: 1 }, { expireAfterSeconds: 24 * 60 * 60, partialFilterExpression: { verified: false } });
+SchoolSchema.index({ createdAt: 1 }, {
+  expireAfterSeconds: 24 * 60 * 60,
+  partialFilterExpression: { verified: false }
+});
+
+SchoolSchema.index({ "otp.expiresAt": 1 }, {
+  expireAfterSeconds: 0,
+  partialFilterExpression: {
+    "otp.expiresAt": { $exists: true },
+    verified: false
+  }
+});
 
 module.exports = mongoose.model("School", SchoolSchema);

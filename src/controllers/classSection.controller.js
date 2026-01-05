@@ -1,13 +1,20 @@
+const mongoose = require("mongoose");
 const ClassSection = require("../models/ClassSection");
 const School = require("../models/School");
 const User = require("../models/User");
 
+
+
 const addMultipleClassesWithSections = async (req, res) => {
     try {
         const { schoolId, classes } = req.body;
+        console.log(req.user)
 
-        if (!schoolId || !Array.isArray(classes) || classes.length === 0) {
-            return res.status(400).json({ message: "School ID and classes are required" });
+        // Check if user is authorized for this school
+        if (req.user.school.toString() !== schoolId) {
+            return res.status(403).json({
+                message: "Unauthorized access to this school"
+            });
         }
 
         const school = await School.findById(schoolId);
@@ -16,12 +23,10 @@ const addMultipleClassesWithSections = async (req, res) => {
         const results = [];
 
         for (const c of classes) {
-            if (!c.className || !Array.isArray(c.sections) || c.sections.length === 0) {
-                results.push({ className: c.className || "Unknown", status: "Failed", reason: "Invalid data" });
-                continue;
-            }
-
-            const exists = await ClassSection.findOne({ school: schoolId, class: c.className });
+            const exists = await ClassSection.findOne({
+                school: schoolId,
+                class: c.className
+            });
             if (exists) {
                 results.push({ className: c.className, status: "Skipped", reason: "Class already exists" });
                 continue;
@@ -51,8 +56,11 @@ const updateAllClassesAndSections = async (req, res) => {
     try {
         const { schoolId, classes } = req.body;
 
-        if (!schoolId || !Array.isArray(classes) || classes.length === 0) {
-            return res.status(400).json({ message: "School ID and classes are required" });
+        // Check if user is authorized for this school
+        if (req.user.school.toString() !== schoolId) {
+            return res.status(403).json({
+                message: "Unauthorized access to this school"
+            });
         }
 
         const school = await School.findById(schoolId);
@@ -77,15 +85,6 @@ const updateAllClassesAndSections = async (req, res) => {
 
         // Step 2: Add new or update existing classes
         for (const c of classes) {
-            if (!c.className || !Array.isArray(c.sections)) {
-                results.push({
-                    className: c.className || "Unknown",
-                    status: "Failed",
-                    reason: "Invalid data",
-                });
-                continue;
-            }
-
             const existingClass = await ClassSection.findOne({
                 school: schoolId,
                 class: c.className,
@@ -131,6 +130,13 @@ const deleteSectionFromClass = async (req, res) => {
         const classDoc = await ClassSection.findById(classId);
         if (!classDoc) return res.status(404).json({ message: "Class not found" });
 
+        // Check if user is authorized for this school
+        if (req.user.school.toString() !== classDoc.school.toString()) {
+            return res.status(403).json({
+                message: "Unauthorized access to this school"
+            });
+        }
+
         const updatedSections = classDoc.sections.filter(
             (s) => s.name.toLowerCase() !== sectionName.toLowerCase()
         );
@@ -154,6 +160,13 @@ const deleteClass = async (req, res) => {
         const classDoc = await ClassSection.findById(id);
         if (!classDoc) return res.status(404).json({ message: "Class not found" });
 
+        // Check if user is authorized for this school
+        if (req.user.school.toString() !== classDoc.school.toString()) {
+            return res.status(403).json({
+                message: "Unauthorized access to this school"
+            });
+        }
+
         await classDoc.deleteOne();
         res.status(200).json({ message: "Class and all its sections deleted successfully" });
     } catch (err) {
@@ -165,17 +178,33 @@ const deleteClass = async (req, res) => {
 const getClassesBySchool = async (req, res) => {
     try {
         const { schoolId } = req.params;
-
         let { page = 1, limit = 20 } = req.query;
+
+        // Convert to numbers
         page = parseInt(page);
         limit = parseInt(limit);
+
+        // Check if user is authorized for this school
+        if (req.user.school.toString() !== schoolId) {
+            return res.status(403).json({
+                message: "Unauthorized access to this school"
+            });
+        }
+
+        // Validate school exists
+        const schoolExists = await School.findById(schoolId);
+        if (!schoolExists) {
+            return res.status(404).json({ message: "School not found" });
+        }
+
         const skip = (page - 1) * limit;
 
         const total = await ClassSection.countDocuments({ school: schoolId });
 
         const classes = await ClassSection.find({ school: schoolId })
             .skip(skip)
-            .limit(limit);
+            .limit(limit)
+            .sort({ class: 1 });
 
         res.status(200).json({
             total,
@@ -187,6 +216,7 @@ const getClassesBySchool = async (req, res) => {
         });
 
     } catch (err) {
+        console.error("Error fetching classes:", err);
         res.status(500).json({ message: "Error fetching classes", error: err.message });
     }
 };
@@ -196,13 +226,17 @@ const assignSectionIncharge = async (req, res) => {
     try {
         const { classId, sectionId, teacherId } = req.body;
 
-        if (!classId || !sectionId || !teacherId) {
-            return res.status(400).json({ message: "classId, sectionId and teacherId are required" });
-        }
-
+        // Find the class first to get school information
         const classDoc = await ClassSection.findById(classId);
         if (!classDoc) {
             return res.status(404).json({ message: "Class not found" });
+        }
+
+        // Check if user is authorized for this school
+        if (req.user.school.toString() !== classDoc.school.toString()) {
+            return res.status(403).json({
+                message: "Unauthorized access to this school"
+            });
         }
 
         const section = classDoc.sections.find(
@@ -217,6 +251,13 @@ const assignSectionIncharge = async (req, res) => {
             return res.status(400).json({ message: "Invalid teacher ID" });
         }
 
+        // Check if teacher belongs to the same school
+        if (teacher.school.toString() !== classDoc.school.toString()) {
+            return res.status(400).json({
+                message: "Teacher does not belong to this school",
+            });
+        }
+
         if (
             teacher.isIncharge &&
             teacher.sectionInfo?.id &&
@@ -227,11 +268,13 @@ const assignSectionIncharge = async (req, res) => {
             });
         }
 
+        // Remove current incharge from this section if exists
         await User.updateMany(
             {
                 role: "teacher",
                 isIncharge: true,
                 "sectionInfo.id": sectionId,
+                school: classDoc.school,
             },
             {
                 $set: {
@@ -242,12 +285,15 @@ const assignSectionIncharge = async (req, res) => {
             }
         );
 
+        // Assign new incharge
         teacher.isIncharge = true;
         teacher.classInfo = {
             id: classDoc._id,
+            name: classDoc.class,
         };
         teacher.sectionInfo = {
             id: section._id,
+            name: section.name,
         };
 
         await teacher.save();
@@ -271,12 +317,11 @@ const assignSectionIncharge = async (req, res) => {
     }
 };
 
-
 module.exports = {
     addMultipleClassesWithSections,
     updateAllClassesAndSections,
     deleteSectionFromClass,
-    deleteClass,
+    assignSectionIncharge,
     getClassesBySchool,
-    assignSectionIncharge
+    deleteClass,
 };

@@ -2,7 +2,7 @@ const School = require("../models/School");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
-const { validateEmail, validatePassword } = require("../validators/common.validation");
+const { validationSchemas } = require("../validators/school.validation");
 
 const superAdminLogin = async (req, res) => {
   try {
@@ -41,17 +41,9 @@ const superAdminLogin = async (req, res) => {
   }
 };
 
-// Password policy: 8+ chars, 1 uppercase, 1 number, 1 special
-const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 const setPassword = async (req, res) => {
   try {
     const { email, password } = req.body;
-
-    const emailError = validateEmail(email);
-    if (emailError) return res.status(400).json({ message: emailError });
-
-    const passError = validatePassword(password);
-    if (passError) return res.status(400).json({ message: passError });
 
     const school = await School.findOne({ email });
     if (!school) return res.status(404).json({ message: "School not found" });
@@ -107,57 +99,200 @@ const schoolLogin = async (req, res) => {
   }
 };
 
-const setPasswordForUser = async (req, res) => {
+const setPasswordForStudent = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, username, password } = req.body;
 
-    if (validateEmail(email))
-      return res.status(400).json({ message: validateEmail(email) });
+    if (!email || !username || !password) {
+      return res.status(400).json({
+        message: "Please provide email, username, and password"
+      });
+    }
 
-    const passError = validatePassword(password);
-    if (passError) return res.status(400).json({ message: passError });
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+      username: username.toLowerCase(),
+      role: "student"
+    });
 
-    const user = await User.findOne({ email });
-    if (!user)
-      return res.status(404).json({ message: "User not found" });
+    if (!user) {
+      return res.status(404).json({
+        message: "Student not found. Please check email and username."
+      });
+    }
 
-    // if (user.verified)
-    //   return res.status(400).json({ message: "Password already set, please login instead." });
+    if (!user.verified) {
+      return res.status(400).json({
+        message: "Please verify OTP first before setting password."
+      });
+    }
 
-    const hashedPassword = await bcrypt.hash(password, 8);
+    if (user.password) {
+      return res.status(400).json({
+        message: "Password already set. Please login instead."
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
     user.password = hashedPassword;
-    user.verified = true;
     await user.save();
 
+    // Generate JWT token
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        school: user.school
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
     return res.status(200).json({
-      message: "Password set successfully. You can now log in.",
+      message: `Password set successfully for student ${user.name}`,
+      token: token,
+      user: {
+        id: user._id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        school: user.school,
+        classInfo: user.classInfo,
+        sectionInfo: user.sectionInfo
+      }
     });
   } catch (err) {
-    console.error("Error setting user password:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
+    console.error("Error setting student password:", err);
+    res.status(500).json({
+      message: "Server error",
+      error: err.message
+    });
   }
 };
 
-const userLogin = async (req, res) => {
+const setPasswordForStaff = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    if (!email || !password)
-      return res.status(400).json({ message: "Email and password are required" });
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Please provide email and password"
+      });
+    }
 
-    const user = await User.findOne({ email });
-    if (!user)
-      return res.status(404).json({ message: "User not found" });
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+      role: { $in: ["teacher", "admin_office", "superadmin"] }
+    });
 
-    if (!user.verified)
-      return res.status(401).json({ message: "Please set your password first." });
+    if (!user) {
+      return res.status(404).json({
+        message: "Staff member not found. Please check email."
+      });
+    }
+
+    if (!user.verified) {
+      return res.status(400).json({
+        message: "Please verify OTP first before setting password."
+      });
+    }
+
+    if (user.password) {
+      return res.status(400).json({
+        message: "Password already set. Please login instead."
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    // Generate JWT token
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign(
+      {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        school: user.school
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    return res.status(200).json({
+      message: `Password set successfully for ${user.role} ${user.name}`,
+      token: token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        school: user.school,
+        isIncharge: user.isIncharge,
+        ...(user.classInfo?.id && { classInfo: user.classInfo })
+      }
+    });
+  } catch (err) {
+    console.error("Error setting staff password:", err);
+    res.status(500).json({
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+const staffLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        message: "Email is required for staff login"
+      });
+    }
+
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+      role: { $in: ["teacher", "admin_office", "superadmin"] }
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "Staff member not found"
+      });
+    }
+
+    if (!user.verified) {
+      return res.status(401).json({
+        message: "Please verify OTP and set password first",
+        needsVerification: true
+      });
+    }
+
+    if (!user.password) {
+      return res.status(401).json({
+        message: "Please set your password first",
+        needsPassword: true
+      });
+    }
 
     const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword)
+    if (!validPassword) {
       return res.status(401).json({ message: "Invalid password" });
+    }
 
     const token = jwt.sign(
-      { id: user._id, role: user.role },
+      {
+        id: user._id,
+        email: user.email,
+        role: user.role,
+        school: user.school
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -171,13 +306,105 @@ const userLogin = async (req, res) => {
         email: user.email,
         role: user.role,
         school: user.school,
-      },
+        isIncharge: user.isIncharge,
+        ...(user.classInfo?.id && { classInfo: user.classInfo })
+      }
     });
   } catch (err) {
-    console.error("Error logging in user:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
+    console.error("Error in staff login:", err);
+    res.status(500).json({
+      message: "Server error",
+      error: err.message
+    });
   }
 };
 
-module.exports = { superAdminLogin, setPassword, schoolLogin, setPasswordForUser, userLogin };
+const studentLogin = async (req, res) => {
+  try {
+    const { email, username, password } = req.body;
 
+    if (!email || !username) {
+      return res.status(400).json({
+        message: "Both email and username are required for student login"
+      });
+    }
+
+    const user = await User.findOne({
+      email: email.toLowerCase(),
+      username: username.toLowerCase(),
+      role: "student"
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        message: "Student not found with provided email and username combination"
+      });
+    }
+
+    if (!user.verified) {
+      return res.status(401).json({
+        message: "Please verify OTP and set password first",
+        needsVerification: true
+      });
+    }
+
+    if (!user.password) {
+      return res.status(401).json({
+        message: "Please set your password first",
+        needsPassword: true
+      });
+    }
+
+    const validPassword = await bcrypt.compare(password, user.password);
+    if (!validPassword) {
+      return res.status(401).json({ message: "Invalid password" });
+    }
+
+    const token = jwt.sign(
+      {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        school: user.school
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    return res.status(200).json({
+      message: "Login successful",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        school: user.school,
+        classInfo: user.classInfo,
+        sectionInfo: user.sectionInfo,
+        rollNo: user.rollNo
+      }
+    });
+  } catch (err) {
+    console.error("Error in student login:", err);
+    res.status(500).json({
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+
+module.exports = {
+  superAdminLogin,
+  setPassword,
+  schoolLogin,
+  // setPasswordForUser,
+  setPasswordForStudent,
+  setPasswordForStaff,
+  // userLogin
+  staffLogin,
+  studentLogin
+};

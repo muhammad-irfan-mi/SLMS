@@ -3,11 +3,13 @@ const mongoose = require("mongoose");
 const diarySchema = new mongoose.Schema({
     school: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "School", required: true
+        ref: "School",
+        required: true
     },
     classId: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "ClassSection", required: true
+        ref: "ClassSection",
+        required: true
     },
     sectionId: {
         type: mongoose.Schema.Types.ObjectId,
@@ -18,7 +20,6 @@ const diarySchema = new mongoose.Schema({
         ref: "Subject",
         required: true
     },
-
     date: {
         type: String,
         required: true
@@ -34,7 +35,6 @@ const diarySchema = new mongoose.Schema({
     description: {
         type: String
     },
-
     forAll: {
         type: Boolean,
         default: true
@@ -43,7 +43,6 @@ const diarySchema = new mongoose.Schema({
         type: mongoose.Schema.Types.ObjectId,
         ref: "User"
     }],
-
     createdBy: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "User",
@@ -53,11 +52,17 @@ const diarySchema = new mongoose.Schema({
         type: String,
         required: true
     },
-
+    // Add image support like in Project model
+    images: [{
+        type: String
+    }],
+    pdf: {
+        type: String
+    },
     createdAt: {
         type: Date,
         default: Date.now
-    },
-});
+    }
+}, { timestamps: true });
 
 module.exports = mongoose.model("Diary", diarySchema);

@@ -6,14 +6,52 @@ const {
     updateDiary,
     deleteDiary,
 } = require("../controllers/diary.controller");
-const { protect, isTeacher, isTeacherOrStudent } = require("../middlewares/auth");
+const { protect, isTeacherOrAdminOfficeOrSchool, isTeacherOrStudent } = require("../middlewares/auth");
+const { upload } = require("../utils/multer");
 
 const router = express.Router();
 
-router.post("/", protect, isTeacher, createDiary);
-router.patch("/:diaryId", protect, isTeacher, updateDiary);
-router.delete("/:diaryId", protect, isTeacher, deleteDiary);
-router.get("/section/:sectionId", protect, isTeacherOrStudent, getDiaryBySection);
-router.get("/student", protect, isTeacherOrStudent, getStudentDiary);
+router.post(
+    "/",
+    protect,
+    isTeacherOrAdminOfficeOrSchool,
+    upload.fields([
+        { name: "images", maxCount: 2 },
+        { name: "pdf", maxCount: 1 }
+    ]),
+    createDiary
+);
+
+router.patch(
+    "/:diaryId",
+    protect,
+    isTeacherOrAdminOfficeOrSchool,
+    upload.fields([
+        { name: "images", maxCount: 2 },
+        { name: "pdf", maxCount: 1 }
+    ]),
+    updateDiary
+);
+
+router.delete(
+    "/:diaryId",
+    protect,
+    isTeacherOrAdminOfficeOrSchool,
+    deleteDiary
+);
+
+router.get(
+    "/section/:sectionId",
+    protect,
+    isTeacherOrStudent,
+    getDiaryBySection
+);
+
+router.get(
+    "/student",
+    protect,
+    isTeacherOrStudent,
+    getStudentDiary
+);
 
 module.exports = router;

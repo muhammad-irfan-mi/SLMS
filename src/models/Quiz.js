@@ -1,22 +1,17 @@
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
-/**
- * Question (embedded in QuizGroup)
- */
+
 const QuestionSchema = new Schema({
   type: { type: String, enum: ["mcq", "fill"], required: true },
   title: { type: String, required: true },
-  options: [{ type: String }], // MCQ only
-  correctOptionIndex: { type: Number }, // MCQ only
-  correctAnswer: { type: String }, // Fill only
+  options: [{ type: String }],
+  correctOptionIndex: { type: Number }, 
+  correctAnswer: { type: String }, 
   marks: { type: Number, default: 1 },
   order: { type: Number, default: 0 }
 });
 
-/**
- * Quiz Group
- */
 const QuizGroupSchema = new Schema(
   {
     school: { type: Schema.Types.ObjectId, ref: "School", required: true },
@@ -33,9 +28,7 @@ const QuizGroupSchema = new Schema(
   { timestamps: true }
 );
 
-/**
- * Submission
- */
+
 const QuizSubmissionSchema = new Schema(
   {
     school: { type: Schema.Types.ObjectId, ref: "School", required: true },

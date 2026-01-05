@@ -2,24 +2,125 @@ const Subject = require("../models/Subject");
 const ClassSection = require("../models/ClassSection");
 const Schedule = require("../models/Schedule");
 
+// const extractClassSection = (subject) => {
+//   const response = subject.toObject ? subject.toObject() : { ...subject };
+
+//   // Ensure we have proper nested objects
+//   if (!response.class || typeof response.class === 'string') {
+//     response.class = {
+//       _id: response.class,
+//       name: '',
+//       sections: []
+//     };
+//   }
+
+//   if (!response.section || typeof response.section === 'string') {
+//     if (response.sectionId) {
+//       response.section = {
+//         _id: response.sectionId,
+//         name: ''
+//       };
+//     } else {
+//       response.section = null;
+//     }
+//   }
+
+//   // Remove duplicate sectionId if we have section object
+//   if (response.section && response.sectionId) {
+//     delete response.sectionId;
+//   }
+
+//   return response;
+// };
+
+//   Get class and section data with validation
+const getClassSectionData = async (classId, schoolId, sectionId = null) => {
+  try {
+    const classDoc = await ClassSection.findOne({
+      _id: classId,
+      school: schoolId
+    }).lean();
+
+    if (!classDoc) {
+      return {
+        error: {
+          status: 400,
+          message: "Class not found in your school"
+        }
+      };
+    }
+
+    const response = {
+      class: {
+        _id: classDoc._id,
+        name: classDoc.class
+      },
+      section: null
+    };
+
+    if (sectionId) {
+      const foundSection = classDoc.sections.find(
+        section => section._id.toString() === sectionId.toString()
+      );
+
+      if (!foundSection) {
+        return {
+          error: {
+            status: 400,
+            message: "Section does not belong to this class"
+          }
+        };
+      }
+
+      response.section = {
+        _id: foundSection._id,
+        name: foundSection.name
+      };
+    }
+
+    return { data: response, classDoc };
+  } catch (error) {
+    console.error("Error in getClassSectionData:", error);
+    return {
+      error: {
+        status: 500,
+        message: "Error fetching class/section data"
+      }
+    };
+  }
+};
+
 const addSubject = async (req, res) => {
   try {
     const schoolId = req.user.school;
     const { name, code, description, classId, sectionId } = req.body;
 
-    console.log("req.body", req.body);
+    // Validate class belongs to the user's school
+    const classDoc = await ClassSection.findOne({
+      _id: classId,
+      school: schoolId
+    });
 
-    if (!name || !classId) {
+    if (!classDoc) {
       return res.status(400).json({
-        message: "Subject name and classId are required",
+        message: "Class not found in your school"
       });
     }
 
-    const classDoc = await ClassSection.findById(classId);
-    if (!classDoc) {
-      return res.status(400).json({ message: "Invalid classId" });
+    // Validate section belongs to the class if provided
+    if (sectionId) {
+      const sectionExists = classDoc.sections.some(
+        section => section._id.toString() === sectionId
+      );
+
+      if (!sectionExists) {
+        return res.status(400).json({
+          message: "Section does not belong to this class"
+        });
+      }
     }
 
+    // Check for duplicate subject name (case-insensitive)
     const existing = await Subject.findOne({
       school: schoolId,
       name: { $regex: new RegExp(`^${name}$`, "i") },
@@ -60,30 +161,132 @@ const getSubjects = async (req, res) => {
     const schoolId = req.user.school;
     const { classId, sectionId, page = 1, limit = 10 } = req.query;
 
+    // Build filter based on user's school
     const filter = { school: schoolId };
-    if (classId) filter.class = classId;
-    if (sectionId) filter.sectionId = sectionId;
+    
+    // Validate class if classId is provided
+    if (classId) {
+      filter.class = classId;
+      
+      // Validate section if sectionId is provided
+      if (sectionId) {
+        filter.sectionId = sectionId;
+      }
+    }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
-
     const total = await Subject.countDocuments(filter);
 
+    // Get subjects
     const subjects = await Subject.find(filter)
-      .populate("class", "class")
+      .populate({
+        path: "class",
+        select: "class",
+      })
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .lean();
+
+    // Format subjects with class and section data
+    const formattedSubjects = await Promise.all(
+      subjects.map(async (subject) => {
+        // Get class and section data using helper
+        const classSectionResult = await getClassSectionData(
+          subject.class._id || subject.class,
+          schoolId,
+          subject.sectionId
+        );
+
+        const response = {
+          _id: subject._id,
+          name: subject.name,
+          code: subject.code || null,
+          description: subject.description || null,
+          school: subject.school,
+          createdAt: subject.createdAt,
+          updatedAt: subject.updatedAt,
+          __v: subject.__v || 0
+        };
+
+        // Add class and section data if no error
+        if (!classSectionResult.error) {
+          response.class = classSectionResult.data.class;
+          response.section = classSectionResult.data.section;
+        }
+
+        return response;
+      })
+    );
 
     res.status(200).json({
       total,
       page: parseInt(page),
       limit: parseInt(limit),
       totalPages: Math.ceil(total / limit),
-      count: subjects.length,
-      subjects,
+      count: formattedSubjects.length,
+      subjects: formattedSubjects,
     });
 
   } catch (err) {
+    console.error("Error fetching subjects:", err);
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+const getSubjectById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const schoolId = req.user.school;
+
+    const subject = await Subject.findOne({
+      _id: id,
+      school: schoolId
+    })
+      .populate({
+        path: "class",
+        select: "class",
+      })
+      .lean();
+
+    if (!subject) {
+      return res.status(404).json({ 
+        message: "Subject not found in your school" 
+      });
+    }
+
+    const classSectionResult = await getClassSectionData(
+      subject.class._id || subject.class,
+      schoolId,
+      subject.sectionId
+    );
+
+    if (classSectionResult.error) {
+      return res.status(classSectionResult.error.status).json({ 
+        message: classSectionResult.error.message 
+      });
+    }
+
+    // Format response
+    const response = {
+      _id: subject._id,
+      name: subject.name,
+      code: subject.code || null,
+      description: subject.description || null,
+      school: subject.school,
+      createdAt: subject.createdAt,
+      updatedAt: subject.updatedAt,
+      __v: subject.__v || 0,
+      class: classSectionResult.data.class,
+      section: classSectionResult.data.section
+    };
+
+    res.status(200).json({
+      message: "Subject retrieved successfully",
+      subject: response,
+    });
+  } catch (err) {
+    console.error("Error fetching subject by ID:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
@@ -92,25 +295,31 @@ const getSubjectsByTeacher = async (req, res) => {
   try {
     const teacherId = req.user._id;
     const schoolId = req.user.school;
+    const { page = 1, limit = 20 } = req.query;
 
-    let { page = 1, limit = 20 } = req.query;
-    page = parseInt(page);
-    limit = parseInt(limit);
-    const skip = (page - 1) * limit;
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
 
-    const schedules = await Schedule.find({ school: schoolId, teacherId })
+    const schedules = await Schedule.find({ 
+      school: schoolId, 
+      teacherId 
+    })
       .populate({
         path: "subjectId",
         select: "name code description class sectionId",
         populate: {
           path: "class",
-          select: "class sections",
+          select: "class",
         },
       })
-      .populate("classId", "class sections");
+      .populate("classId", "class")
+      .lean();
 
     if (!schedules.length) {
-      return res.status(404).json({ message: "No subjects found for this teacher" });
+      return res.status(404).json({ 
+        message: "No subjects found for this teacher" 
+      });
     }
 
     const uniqueSubjects = [];
@@ -120,44 +329,48 @@ const getSubjectsByTeacher = async (req, res) => {
       const subject = schedule.subjectId;
       const classDoc = schedule.classId;
 
-      let sectionName = "Unknown";
-      if (classDoc && Array.isArray(classDoc.sections)) {
-        const foundSection = classDoc.sections.find(
-          (sec) => sec._id.toString() === schedule.sectionId.toString()
-        );
-        if (foundSection) sectionName = foundSection.name;
-      }
+      // Skip if subject or class doesn't exist
+      if (!subject || !classDoc) continue;
 
-      if (subject && !seen.has(subject._id.toString())) {
+      if (!seen.has(subject._id.toString())) {
         seen.add(subject._id.toString());
-        uniqueSubjects.push({
+        
+        // Get class and section data using helper
+        const classSectionResult = await getClassSectionData(
+          classDoc._id,
+          schoolId,
+          subject.sectionId || schedule.sectionId
+        );
+
+        if (classSectionResult.error) continue;
+
+        // Format the subject data
+        const formattedSubject = {
           _id: subject._id,
           name: subject.name,
-          code: subject.code,
-          description: subject.description,
-          class: classDoc
-            ? {
-              _id: classDoc._id,
-              name: classDoc.class,
-            }
-            : null,
-          section: {
-            _id: schedule.sectionId,
-            name: sectionName,
-          },
-        });
+          code: subject.code || null,
+          description: subject.description || null,
+          school: subject.school,
+          createdAt: subject.createdAt,
+          updatedAt: subject.updatedAt,
+          __v: subject.__v || 0,
+          class: classSectionResult.data.class,
+          section: classSectionResult.data.section
+        };
+
+        uniqueSubjects.push(formattedSubject);
       }
     }
 
-    // Apply pagination safely
+    // Apply pagination
     const total = uniqueSubjects.length;
-    const paginated = uniqueSubjects.slice(skip, skip + limit);
+    const paginated = uniqueSubjects.slice(skip, skip + limitNum);
 
     res.status(200).json({
       total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum),
       count: paginated.length,
       subjects: paginated,
     });
@@ -170,10 +383,98 @@ const getSubjectsByTeacher = async (req, res) => {
 const updateSubject = async (req, res) => {
   try {
     const { id } = req.params;
-    const updated = await Subject.findByIdAndUpdate(id, req.body, { new: true });
-    if (!updated) return res.status(404).json({ message: "Subject not found" });
-    res.status(200).json({ message: "Subject updated successfully", subject: updated });
+    const schoolId = req.user.school;
+    const updateData = req.body;
+
+    // Find the subject and ensure it belongs to user's school
+    const subject = await Subject.findOne({
+      _id: id,
+      school: schoolId
+    });
+
+    if (!subject) {
+      return res.status(404).json({
+        message: "Subject not found in your school"
+      });
+    }
+
+    // If classId is being updated, validate it belongs to user's school
+    if (updateData.classId && updateData.classId !== subject.class.toString()) {
+      const classDoc = await ClassSection.findOne({
+        _id: updateData.classId,
+        school: schoolId
+      });
+
+      if (!classDoc) {
+        return res.status(400).json({
+          message: "Class not found in your school"
+        });
+      }
+
+      // Validate section belongs to new class if sectionId is provided
+      if (updateData.sectionId) {
+        const sectionExists = classDoc.sections.some(
+          section => section._id.toString() === updateData.sectionId
+        );
+
+        if (!sectionExists) {
+          return res.status(400).json({
+            message: "Section does not belong to this class"
+          });
+        }
+      }
+    }
+
+    // If only sectionId is being updated, validate it belongs to the current class
+    if (updateData.sectionId && (!updateData.classId || updateData.classId === subject.class.toString())) {
+      const currentClass = await ClassSection.findOne({
+        _id: subject.class,
+        school: schoolId
+      });
+
+      if (currentClass) {
+        const sectionExists = currentClass.sections.some(
+          section => section._id.toString() === updateData.sectionId
+        );
+
+        if (!sectionExists) {
+          return res.status(400).json({
+            message: "Section does not belong to this class"
+          });
+        }
+      }
+    }
+
+    // Check for duplicate subject name if name is being updated
+    if (updateData.name && updateData.name !== subject.name) {
+      const duplicate = await Subject.findOne({
+        school: schoolId,
+        name: { $regex: new RegExp(`^${updateData.name}$`, "i") },
+        class: updateData.classId || subject.class,
+        sectionId: updateData.sectionId || subject.sectionId,
+        _id: { $ne: id }
+      });
+
+      if (duplicate) {
+        return res.status(400).json({
+          message: "Subject with this name already exists in this class and section",
+        });
+      }
+    }
+
+    // Update the subject
+    const updatedSubject = await Subject.findByIdAndUpdate(
+      id,
+      updateData,
+      { new: true, runValidators: true }
+    ).populate("class", "class");
+
+    res.status(200).json({
+      message: "Subject updated successfully",
+      subject: updatedSubject
+    });
   } catch (err) {
+    console.error("Error updating subject:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
@@ -181,12 +482,34 @@ const updateSubject = async (req, res) => {
 const deleteSubject = async (req, res) => {
   try {
     const { id } = req.params;
-    const deleted = await Subject.findByIdAndDelete(id);
-    if (!deleted) return res.status(404).json({ message: "Subject not found" });
-    res.status(200).json({ message: "Subject deleted successfully" });
+    const schoolId = req.user.school;
+
+    // Find and delete subject, ensuring it belongs to user's school
+    const deleted = await Subject.findOneAndDelete({
+      _id: id,
+      school: schoolId
+    });
+
+    if (!deleted) {
+      return res.status(404).json({
+        message: "Subject not found in your school"
+      });
+    }
+
+    res.status(200).json({
+      message: "Subject deleted successfully"
+    });
   } catch (err) {
+    console.error("Error deleting subject:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
-module.exports = { addSubject, getSubjects, getSubjectsByTeacher, updateSubject, deleteSubject };
+module.exports = {
+  addSubject,
+  getSubjects,
+  getSubjectById,
+  getSubjectsByTeacher,
+  updateSubject,
+  deleteSubject
+};

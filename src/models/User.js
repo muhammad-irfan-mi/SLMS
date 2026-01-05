@@ -2,7 +2,16 @@ const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
 const UserSchema = new Schema({
-  email: { type: String, required: true },
+  username: {
+    type: String,
+    lowercase: true,
+    index: true
+  },
+  email: {
+    type: String,
+    required: true,
+    index: true
+  },
   cnic: { type: String },
   name: { type: String, required: true },
   fatherName: String,
@@ -23,16 +32,13 @@ const UserSchema = new Schema({
   password: String,
   salary: Number,
   joiningDate: Date,
-
   isIncharge: { type: Boolean, default: false },
-
   classInfo: {
     id: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection" },
   },
   sectionInfo: {
     id: { type: mongoose.Schema.Types.ObjectId },
   },
-
   rollNo: String,
   images: {
     cnicFront: String,
@@ -46,12 +52,87 @@ const UserSchema = new Schema({
   otp: {
     code: String,
     expiresAt: Date,
+    attempts: { type: Number, default: 0 },
+    lastAttempt: Date
+  },
+  forgotPasswordOTP: {
+    code: String,
+    expiresAt: Date,
+    attempts: { type: Number, default: 0 },
+    lastAttempt: Date,
+    verified: { type: Boolean, default: false }
   },
   verified: { type: Boolean, default: false },
+  parentEmail: { type: String },
+  siblingGroupId: {
+    type: Schema.Types.ObjectId,
+    ref: "User",
+    default: null
+  },
+  // tempData: { 
+  //   name: String,
+  //   username: String,
+  //   email: String,
+  //   phone: String,
+  //   address: String,
+  //   cnic: String,
+  //   fatherName: String,
+  //   role: String,
+  //   salary: Number,
+  //   joiningDate: Date,
+  //   isIncharge: Boolean,
+  //   classInfo: Object,
+  //   sectionInfo: Object,
+  //   rollNo: String,
+  //   school: Schema.Types.ObjectId,
+  //   images: Object,
+  //   siblingGroupId: Schema.Types.ObjectId
+  // },
   createdAt: { type: Date, default: Date.now },
 });
 
-// Delete unverified users after 7 days
+UserSchema.index({ "otp.expiresAt": 1 }, {
+  expireAfterSeconds: 0,
+  partialFilterExpression: {
+    "otp.expiresAt": { $exists: true },
+    verified: false
+  }
+});
+
+UserSchema.index(
+  { email: 1, school: 1, role: 1 },
+  {
+    unique: true,
+    sparse: true,
+    name: "unique_email_per_school_role",
+    partialFilterExpression: {
+      role: { $in: ["superadmin", "admin_office", "teacher"] }
+    }
+  }
+);
+
+UserSchema.index(
+  { username: 1, email: 1, school: 1 },
+  {
+    unique: true,
+    sparse: true,
+    name: "unique_username_per_email_school",
+    partialFilterExpression: {
+      role: "student",
+      username: { $exists: true, $ne: null }
+    }
+  }
+);
+// UserSchema.index(
+//   { email: 1, role: 1 },
+//   {
+//     unique: true,
+//     partialFilterExpression: {
+//       role: { $in: ["superadmin", "admin_office", "teacher"] }
+//     }
+//   }
+// );
+
 UserSchema.index(
   { createdAt: 1 },
   {

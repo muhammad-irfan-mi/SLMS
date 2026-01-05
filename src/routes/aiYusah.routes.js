@@ -1,16 +1,70 @@
 const router = require("express").Router();
-const { createAiVideo, updateAiVideo, deleteAiVideo, getVideosForSuperadmin, getVideosBySchool, getVideoById } = require("../controllers/aiYusahVideo.controller");
-const { protect, isSuperAdmin, allowedRoles } = require("../middlewares/auth");
+const { 
+  createAiVideo, 
+  updateAiVideo, 
+  deleteAiVideo, 
+  getVideosForSuperadmin, 
+  getVideosForAll, 
+  getVideoById,
+  toggleVideoStatus
+} = require("../controllers/aiYusahVideo.controller");
+const { validateVideo, validateFilter } = require("../validators/aiYusahVideo.validation");
+const { protect, isSuperAdmin } = require("../middlewares/auth");
 
+const attachUserRole = (req, res, next) => {
+  if (!req.user.role && req.user.schoolId) {
+    req.user.role = 'school';
+  }
+  else if (!req.user.role && req.user.verified !== undefined && req.user.email) {
+    req.user.role = 'school';
+  }
+  next();
+};
 
-router.post("/", protect, isSuperAdmin, createAiVideo);
-router.put("/:id", protect, isSuperAdmin, updateAiVideo);
-router.delete("/:id", protect, isSuperAdmin, deleteAiVideo);
-router.get("/", protect, isSuperAdmin, getVideosForSuperadmin);
+router.post("/",
+  protect,
+  isSuperAdmin,
+  validateVideo,
+  createAiVideo
+);
 
-router.get("/school/:id", protect, allowedRoles, getVideoById);
-router.get("/school", protect, allowedRoles, getVideosBySchool);
+router.put("/:id",
+  protect,
+  isSuperAdmin,
+  validateVideo,
+  updateAiVideo
+);
 
-router.get("/:id", protect, allowedRoles, getVideoById);
+router.delete("/:id",
+  protect,
+  isSuperAdmin,
+  deleteAiVideo
+);
+
+router.patch("/:id/status",
+  protect,
+  isSuperAdmin,
+  toggleVideoStatus
+);
+
+router.get("/admin",
+  protect,
+  isSuperAdmin,
+  validateFilter,
+  getVideosForSuperadmin
+);
+
+router.get("/",
+  protect,
+  attachUserRole,
+  validateFilter,
+  getVideosForAll
+);
+
+router.get("/:id",
+  protect,
+  attachUserRole,
+  getVideoById
+);
 
 module.exports = router;

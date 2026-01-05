@@ -1,12 +1,66 @@
 const express = require("express");
 const router = express.Router();
-const { createNotice, getNoticesForStudent, updateNotice, deleteNotice, getNotices } = require("../controllers/noticeController");
-const { isTeacherOrAdminOfficeOrSchool, protect, isStudent } = require("../middlewares/auth");
+const {
+    createNotice,
+    getNoticesForStudent,
+    updateNotice,
+    deleteNotice,
+    getNotices
+} = require("../controllers/noticeController");
 
-router.post("/", protect, isTeacherOrAdminOfficeOrSchool, createNotice);
-router.get("/", protect, isTeacherOrAdminOfficeOrSchool, getNotices);
-router.get("/student", protect, isStudent, getNoticesForStudent);
-router.put("/:id", protect, isTeacherOrAdminOfficeOrSchool, updateNotice);
-router.delete("/:id", protect, isTeacherOrAdminOfficeOrSchool, deleteNotice);
+const {
+    validate,
+    validateQuery,
+    createNoticeSchema,
+    updateNoticeSchema,
+    getNoticesQuerySchema,
+    getNoticesForStudentQuerySchema
+} = require("../validators/notice.validator");
+
+const {
+    isTeacherOrAdminOfficeOrSchool,
+    protect,
+    isStudent
+} = require("../middlewares/auth");
+
+router.post(
+    "/",
+    protect,
+    isTeacherOrAdminOfficeOrSchool,
+    validate(createNoticeSchema),
+    createNotice
+);
+
+router.get(
+    "/",
+    protect,
+    isTeacherOrAdminOfficeOrSchool,
+    validateQuery(getNoticesQuerySchema),
+    getNotices
+);
+
+// Get notices for student
+router.get(
+    "/student",
+    protect,
+    isStudent,
+    validateQuery(getNoticesForStudentQuerySchema),
+    getNoticesForStudent
+);
+
+router.put(
+    "/:id",
+    protect,
+    isTeacherOrAdminOfficeOrSchool,
+    validate(updateNoticeSchema),
+    updateNotice
+);
+
+router.delete(
+    "/:id",
+    protect,
+    isTeacherOrAdminOfficeOrSchool,
+    deleteNotice
+);
 
 module.exports = router;
