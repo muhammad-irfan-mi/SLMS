@@ -2,7 +2,7 @@ const SchoolMedia = require('../models/SchoolMedia');
 const User = require('../models/User');
 const School = require('../models/School');
 const { uploadFileToS3, deleteFileFromS3 } = require('../services/s3.service');
-const { validateCreateMedia, validateUpdateMedia, validateFilter, validateFile } = require('../validators/schoolMedia.validation');
+const { validateCreateMedia, validateUpdateMedia, validateFilter, validateFile } = require('../validators/schoolMedia.validator');
 
 // Helper to detect user role
 const detectUserRole = (user) => {

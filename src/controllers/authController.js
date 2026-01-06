@@ -2,7 +2,7 @@ const School = require("../models/School");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
-const { validationSchemas } = require("../validators/school.validation");
+const { validationSchemas } = require("../validators/school.validator");
 
 const superAdminLogin = async (req, res) => {
   try {

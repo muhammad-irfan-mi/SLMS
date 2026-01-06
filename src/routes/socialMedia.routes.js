@@ -20,7 +20,7 @@ const {
   validateUpdateMedia, 
   validateFilter, 
   validateFile 
-} = require('../validators/schoolMedia.validation');
+} = require('../validators/schoolMedia.validator');
 const { upload } = require('../utils/multer');
 
 // Middleware to detect and attach role
