@@ -137,8 +137,8 @@ class EmailService {
             port: process.env.SMTP_PORT || 587,
             secure: process.env.SMTP_SECURE === 'true',
             auth: {
-                user: process.env.SMTP_USER,
-                pass: process.env.SMTP_PASS,
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS,
             },
         });
     }
@@ -146,7 +146,7 @@ class EmailService {
     // Send OTP email for school verification
     async sendOTPEmail(email, otpCode, schoolName) {
         const mailOptions = {
-            from: `"School Management System" <${process.env.SMTP_USER}>`,
+            from: `"School Management System" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: 'Verify Your School Registration',
             html: `
@@ -178,7 +178,7 @@ class EmailService {
     // Send password setup email for school
     async sendPasswordSetupEmail(email, schoolName, schoolId) {
         const mailOptions = {
-            from: `"School Management System" <${process.env.SMTP_USER}>`,
+            from: `"School Management System" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: 'Set Your School Account Password',
             html: `
@@ -214,7 +214,7 @@ class EmailService {
     // Send OTP email for user verification (employee/student)
     async sendUserOTPEmail(email, otpCode, userName) {
         const mailOptions = {
-            from: `"School Management System" <${process.env.EMAIL_SENDER || process.env.SMTP_USER}>`,
+            from: `"School Management System" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
             to: email,
             subject: 'Verify Your Account',
             html: `
@@ -246,7 +246,7 @@ class EmailService {
     // Send forgot password OTP email
     async sendForgotPasswordOTPEmail(email, otpCode, userName) {
         const mailOptions = {
-            from: `"School Management System" <${process.env.EMAIL_SENDER || process.env.SMTP_USER}>`,
+            from: `"School Management System" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
             to: email,
             subject: 'Password Reset OTP',
             html: `
@@ -278,7 +278,7 @@ class EmailService {
     // Send password changed notification
     async sendPasswordChangedNotification(email, userName) {
         const mailOptions = {
-            from: `"School Management System" <${process.env.EMAIL_SENDER || process.env.SMTP_USER}>`,
+            from: `"School Management System" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
             to: email,
             subject: 'Password Changed Successfully',
             html: `
@@ -309,7 +309,7 @@ class EmailService {
     // Send student registration email
     async sendStudentRegistrationEmail(email, otpCode, userName, username, className, sectionName) {
         const mailOptions = {
-            from: `"School Management System" <${process.env.EMAIL_SENDER || process.env.SMTP_USER}>`,
+            from: `"School Management System" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
             to: email,
             subject: 'Student Account Created',
             html: `
@@ -348,7 +348,7 @@ class EmailService {
     // Send welcome email
     async sendWelcomeEmail(email, userName, role, username = null) {
         const mailOptions = {
-            from: `"School Management System" <${process.env.EMAIL_SENDER || process.env.SMTP_USER}>`,
+            from: `"School Management System" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
             to: email,
             subject: 'Welcome to School Management System',
             html: `

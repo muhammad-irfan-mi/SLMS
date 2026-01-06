@@ -4,14 +4,14 @@ const logger = require('../utils/logger');
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: process.env.EMAIL_SENDER,  
-    pass: process.env.SENDER_PASS   
+    user: process.env.EMAIL_USER,  
+    pass: process.env.EMAIL_PASS   
   } 
 });
 
 const sendMail = async ({ to, subject, html, text }) => {
   const mailOptions = {
-    from: process.env.EMAIL_SENDER,
+    from: process.env.EMAIL_USER,
     to,
     subject,
     text,
