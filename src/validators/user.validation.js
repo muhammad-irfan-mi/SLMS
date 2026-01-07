@@ -205,38 +205,28 @@ const validationSchemas = {
     password: commonValidations.password.optional()
   }),
 
-  // Profile update schema
   updateProfile: Joi.object({
     name: commonValidations.name.optional(),
-    username: commonValidations.username.optional(),
-    email: commonValidations.email.optional(),
-    phone: commonValidations.phone,
-    address: commonValidations.address,
-    cnic: commonValidations.cnic,
-    fatherName: commonValidations.fatherName,
-    salary: Joi.number()
-      .positive()
-      .allow('', null)
-      .optional(),
-    joiningDate: Joi.date()
-      .iso()
-      .max('now')
-      .allow('', null)
-      .optional(),
-    rollNo: commonValidations.rollNo
-  }),
+    phone: commonValidations.phone.optional(),
+    address: commonValidations.address.optional(),
+    fatherName: commonValidations.fatherName.optional(),
+    salary: Joi.number().positive().optional(),
+    joiningDate: Joi.date().iso().max('now').optional()
+
+  })
+    .unknown(false),
 
   sendOTP: Joi.object({
-    email: commonValidations.email,
-    username: Joi.string().optional() // Only for students
-  }).when(Joi.object({ role: Joi.string().valid('student') }).unknown(), {
-    then: Joi.object({
-      username: commonValidations.username.required()
+      email: commonValidations.email,
+      username: Joi.string().optional() // Only for students
+    }).when(Joi.object({ role: Joi.string().valid('student') }).unknown(), {
+      then: Joi.object({
+        username: commonValidations.username.required()
+      }),
+      otherwise: Joi.object({
+        username: Joi.string().optional()
+      })
     }),
-    otherwise: Joi.object({
-      username: Joi.string().optional()
-    })
-  }),
 
   // Verify OTP schema
   verifyOTP: Joi.object({

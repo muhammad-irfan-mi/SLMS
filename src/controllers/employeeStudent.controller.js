@@ -1327,7 +1327,6 @@ const editOwnProfile = async (req, res) => {
             updatableFields.joiningDate = req.body.joiningDate ?? existing.joiningDate;
         } else if (existing.role === "student") {
             updatableFields.fatherName = req.body.fatherName ?? existing.fatherName;
-            updatableFields.rollNo = req.body.rollNo ?? existing.rollNo;
         }
 
         const updated = await User.findByIdAndUpdate(userId, updatableFields, { new: true });

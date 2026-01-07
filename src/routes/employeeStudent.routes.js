@@ -184,8 +184,8 @@ router.put(
     protect,
     allowedRoles,
     upload.fields([
-        { name: "cnicFront", maxCount: 1 },
-        { name: "cnicBack", maxCount: 1 },
+        // { name: "cnicFront", maxCount: 1 },
+        // { name: "cnicBack", maxCount: 1 },
         { name: "recentPic", maxCount: 1 },
     ]),
     validate(validationSchemas.updateProfile),
