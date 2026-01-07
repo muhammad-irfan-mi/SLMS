@@ -19,10 +19,10 @@ const {
     verifyUserOTP,
     resendUserOTP,
     setPasswordAfterOTP,
-    changePassword,
+    // changePassword,
     resendForgotPasswordOTP,
     resetPassword,
-    verifyForgotPasswordOTP,
+    // verifyForgotPasswordOTP,
     forgotPassword,
     resetPasswordWithOTP
 } = require("../controllers/employeeStudent.controller");
@@ -198,20 +198,20 @@ router.post(
     forgotPassword
 );
 
-router.post(
-    "/verify-forgot-password-otp",
-    validate(validationSchemas.verifyForgotPasswordOTP),
-    verifyForgotPasswordOTP
-);
+// router.post(
+//     "/verify-forgot-password-otp",
+//     validate(validationSchemas.verifyForgotPasswordOTP),
+//     verifyForgotPasswordOTP
+// );
 
 router.post(
-    "/reset-password-otp",
+    "/reset-verify-password",
     validate(validationSchemas.resetPasswordWithOTP),
     resetPasswordWithOTP
 );
 
 router.post(
-    "/reset-password",
+    "/change-password",
     validate(validationSchemas.resetPassword),
     resetPassword
 );
@@ -223,11 +223,11 @@ router.post(
 );
 
 // Protected password route
-router.post(
-    "/change-password",
-    protect,
-    validate(validationSchemas.changePassword),
-    changePassword
-);
+// router.post(
+//     "/change-password",
+//     protect,
+//     validate(validationSchemas.changePassword),
+//     changePassword
+// );
 
 module.exports = router;

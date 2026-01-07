@@ -1344,513 +1344,743 @@ const editOwnProfile = async (req, res) => {
 };
 
 // Forgot Password - Send OTP
+// const forgotPassword = async (req, res) => {
+//     try {
+//         const { email, username } = req.body;
+
+//         // Validate input
+//         if (!email && !username) {
+//             return res.status(400).json({
+//                 message: "Please provide either email or username"
+//             });
+//         }
+
+//         // Build query based on identifier
+//         const query = {};
+//         let user = null;
+
+//         if (username) {
+//             // If username is provided, use it (most specific)
+//             query.username = username.toLowerCase();
+//             user = await User.findOne(query);
+
+//             if (!user) {
+//                 return res.status(404).json({
+//                     message: "No user found with this username"
+//                 });
+//             }
+
+//             // If email was also provided, verify it matches
+//             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
+//                 return res.status(400).json({
+//                     message: "Email does not match the provided username"
+//                 });
+//             }
+//         } else if (email) {
+//             // If only email is provided
+//             query.email = email.toLowerCase();
+
+//             // Find user by email
+//             user = await User.findOne(query);
+
+//             if (!user) {
+//                 return res.status(404).json({
+//                     message: "No user found with this email"
+//                 });
+//             }
+
+//             // For students, require username when using email
+//             if (user.role === 'student') {
+//                 return res.status(400).json({
+//                     message: "For students, please provide username along with email. Multiple students may share the same email.",
+//                     suggestion: "Provide username parameter in your request"
+//                 });
+//             }
+//         }
+
+//         // Check if user has password set
+//         if (!user.password) {
+//             return res.status(400).json({
+//                 message: "Password not set. Please use initial setup OTP first."
+//             });
+//         }
+
+//         // Generate OTP for password reset
+//         const otpCode = generateOTP();
+//         const otpExpiry = calculateOTPExpiry(10);
+
+//         // Store OTP for password reset
+//         user.forgotPasswordOTP = {
+//             code: otpCode,
+//             expiresAt: otpExpiry,
+//             attempts: 0,
+//             lastAttempt: new Date(),
+//             verified: false
+//         };
+
+//         await user.save();
+
+//         // Send OTP email
+//         try {
+//             await emailService.sendForgotPasswordOTPEmail(
+//                 user.email,
+//                 otpCode,
+//                 user.name || "User"
+//             );
+//         } catch (emailError) {
+//             console.error('Failed to send email, but OTP is still generated:', emailError);
+//             // Don't fail the request - OTP is still stored
+//         }
+
+//         return res.status(200).json({
+//             message: "Password reset OTP sent to your email",
+//             email: user.email,
+//             username: user.username,
+//             role: user.role,
+//             otpExpiry,
+//             note: "OTP is valid for 10 minutes",
+//             ...(process.env.NODE_ENV === 'development' && { otpCode })
+//         });
+//     } catch (err) {
+//         console.error("Error in forgot password:", err);
+//         return res.status(500).json({
+//             message: "Server error while processing forgot password",
+//             error: err.message,
+//         });
+//     }
+// };
+
 const forgotPassword = async (req, res) => {
-    try {
-        const { email, username } = req.body;
+  try {
+    const { email, username } = req.body;
 
-        // Validate input
-        if (!email && !username) {
-            return res.status(400).json({
-                message: "Please provide either email or username"
-            });
-        }
+    let user;
 
-        // Build query based on identifier
-        const query = {};
-        let user = null;
+    // ---- IDENTIFY USER ----
+    if (username) {
+      user = await User.findOne({ username: username.toLowerCase() });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
 
-        if (username) {
-            // If username is provided, use it (most specific)
-            query.username = username.toLowerCase();
-            user = await User.findOne(query);
+      // If email provided, ensure it matches
+      if (email && user.email.toLowerCase() !== email.toLowerCase()) {
+        return res.status(400).json({ message: "Email does not match username" });
+      }
+    } else if (email) {
+      user = await User.findOne({ email: email.toLowerCase() });
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
 
-            if (!user) {
-                return res.status(404).json({
-                    message: "No user found with this username"
-                });
-            }
-
-            // If email was also provided, verify it matches
-            if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-                return res.status(400).json({
-                    message: "Email does not match the provided username"
-                });
-            }
-        } else if (email) {
-            // If only email is provided
-            query.email = email.toLowerCase();
-
-            // Find user by email
-            user = await User.findOne(query);
-
-            if (!user) {
-                return res.status(404).json({
-                    message: "No user found with this email"
-                });
-            }
-
-            // For students, require username when using email
-            if (user.role === 'student') {
-                return res.status(400).json({
-                    message: "For students, please provide username along with email. Multiple students may share the same email.",
-                    suggestion: "Provide username parameter in your request"
-                });
-            }
-        }
-
-        // Check if user has password set
-        if (!user.password) {
-            return res.status(400).json({
-                message: "Password not set. Please use initial setup OTP first."
-            });
-        }
-
-        // Generate OTP for password reset
-        const otpCode = generateOTP();
-        const otpExpiry = calculateOTPExpiry(10);
-
-        // Store OTP for password reset
-        user.forgotPasswordOTP = {
-            code: otpCode,
-            expiresAt: otpExpiry,
-            attempts: 0,
-            lastAttempt: new Date(),
-            verified: false
-        };
-
-        await user.save();
-
-        // Send OTP email
-        try {
-            await emailService.sendForgotPasswordOTPEmail(
-                user.email,
-                otpCode,
-                user.name || "User"
-            );
-        } catch (emailError) {
-            console.error('Failed to send email, but OTP is still generated:', emailError);
-            // Don't fail the request - OTP is still stored
-        }
-
-        return res.status(200).json({
-            message: "Password reset OTP sent to your email",
-            email: user.email,
-            username: user.username,
-            role: user.role,
-            otpExpiry,
-            note: "OTP is valid for 10 minutes",
-            ...(process.env.NODE_ENV === 'development' && { otpCode })
+      // Students MUST provide username
+      if (user.role === "student") {
+        return res.status(400).json({
+          message: "Students must provide username with email"
         });
-    } catch (err) {
-        console.error("Error in forgot password:", err);
-        return res.status(500).json({
-            message: "Server error while processing forgot password",
-            error: err.message,
-        });
+      }
+    } else {
+      return res.status(400).json({
+        message: "Please provide email or username"
+      });
     }
+
+    if (!user.password) {
+      return res.status(400).json({
+        message: "Password not set. Use initial setup flow."
+      });
+    }
+
+    // ---- GENERATE OTP ----
+    const otpCode = generateOTP();
+    const otpExpiry = calculateOTPExpiry(10);
+
+    user.forgotPasswordOTP = {
+      code: otpCode,
+      expiresAt: otpExpiry,
+      attempts: 0
+    };
+
+    await user.save();
+
+    // ---- SEND EMAIL ----
+    await emailService.sendForgotPasswordOTPEmail(
+      user.email,
+      otpCode,
+      user.name || "User"
+    );
+
+    return res.status(200).json({
+      message: "OTP sent to registered email",
+      email: user.email,
+      username: user.username,
+      role: user.role,
+      otpExpiry
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Server error" });
+  }
 };
 
 // Verify Forgot Password OTP
-const verifyForgotPasswordOTP = async (req, res) => {
-    try {
-        const { email, otp, username } = req.body;
+// const verifyForgotPasswordOTP = async (req, res) => {
+//     try {
+//         const { email, otp, username } = req.body;
 
-        if (!email && !username) {
-            return res.status(400).json({
-                message: "Please provide either email or username"
-            });
-        }
+//         if (!email && !username) {
+//             return res.status(400).json({
+//                 message: "Please provide either email or username"
+//             });
+//         }
 
-        const query = {};
-        let user = null;
+//         const query = {};
+//         let user = null;
 
-        if (username) {
-            query.username = username.toLowerCase();
-            user = await User.findOne(query);
+//         if (username) {
+//             query.username = username.toLowerCase();
+//             user = await User.findOne(query);
 
-            if (!user) {
-                return res.status(404).json({
-                    message: "No user found with this username"
-                });
-            }
+//             if (!user) {
+//                 return res.status(404).json({
+//                     message: "No user found with this username"
+//                 });
+//             }
 
-            if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-                return res.status(400).json({
-                    message: "Email does not match the provided username"
-                });
-            }
-        } else if (email) {
-            // If only email is provided
-            query.email = email.toLowerCase();
+//             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
+//                 return res.status(400).json({
+//                     message: "Email does not match the provided username"
+//                 });
+//             }
+//         } else if (email) {
+//             // If only email is provided
+//             query.email = email.toLowerCase();
 
-            // Find user by email
-            user = await User.findOne(query);
+//             // Find user by email
+//             user = await User.findOne(query);
 
-            if (!user) {
-                return res.status(404).json({
-                    message: "No user found with this email"
-                });
-            }
+//             if (!user) {
+//                 return res.status(404).json({
+//                     message: "No user found with this email"
+//                 });
+//             }
 
-            // For students, require username when using email
-            if (user.role === 'student') {
-                return res.status(400).json({
-                    message: "For students, please provide username along with email. Multiple students may share the same email.",
-                    suggestion: "Provide username parameter in your request"
-                });
-            }
-        }
+//             // For students, require username when using email
+//             if (user.role === 'student') {
+//                 return res.status(400).json({
+//                     message: "For students, please provide username along with email. Multiple students may share the same email.",
+//                     suggestion: "Provide username parameter in your request"
+//                 });
+//             }
+//         }
 
-        // Check if forgotPasswordOTP exists
-        if (!user.forgotPasswordOTP) {
-            return res.status(400).json({
-                message: "No password reset request found. Please request a new OTP."
-            });
-        }
+//         // Check if forgotPasswordOTP exists
+//         if (!user.forgotPasswordOTP) {
+//             return res.status(400).json({
+//                 message: "No password reset request found. Please request a new OTP."
+//             });
+//         }
 
-        // Check OTP attempts
-        if (user.forgotPasswordOTP.attempts >= 5) {
-            return res.status(429).json({
-                message: "Too many OTP attempts. Please request a new OTP."
-            });
-        }
+//         // Check OTP attempts
+//         if (user.forgotPasswordOTP.attempts >= 5) {
+//             return res.status(429).json({
+//                 message: "Too many OTP attempts. Please request a new OTP."
+//             });
+//         }
 
-        // Validate OTP
-        const isExpired = new Date() > new Date(user.forgotPasswordOTP.expiresAt);
-        if (isExpired) {
-            user.forgotPasswordOTP.attempts += 1;
-            user.forgotPasswordOTP.lastAttempt = new Date();
-            await user.save();
+//         // Validate OTP
+//         const isExpired = new Date() > new Date(user.forgotPasswordOTP.expiresAt);
+//         if (isExpired) {
+//             user.forgotPasswordOTP.attempts += 1;
+//             user.forgotPasswordOTP.lastAttempt = new Date();
+//             await user.save();
 
-            return res.status(400).json({
-                message: "OTP has expired. Please request a new OTP.",
-                attemptsRemaining: 5 - user.forgotPasswordOTP.attempts
-            });
-        }
+//             return res.status(400).json({
+//                 message: "OTP has expired. Please request a new OTP.",
+//                 attemptsRemaining: 5 - user.forgotPasswordOTP.attempts
+//             });
+//         }
 
-        if (otp !== user.forgotPasswordOTP.code) {
-            user.forgotPasswordOTP.attempts += 1;
-            user.forgotPasswordOTP.lastAttempt = new Date();
-            await user.save();
+//         if (otp !== user.forgotPasswordOTP.code) {
+//             user.forgotPasswordOTP.attempts += 1;
+//             user.forgotPasswordOTP.lastAttempt = new Date();
+//             await user.save();
 
-            return res.status(400).json({
-                message: "Invalid OTP",
-                attemptsRemaining: 5 - user.forgotPasswordOTP.attempts
-            });
-        }
+//             return res.status(400).json({
+//                 message: "Invalid OTP",
+//                 attemptsRemaining: 5 - user.forgotPasswordOTP.attempts
+//             });
+//         }
 
-        // Mark OTP as verified for password reset
-        user.forgotPasswordOTP.verified = true;
-        await user.save();
+//         // Mark OTP as verified for password reset
+//         user.forgotPasswordOTP.verified = true;
+//         await user.save();
 
-        return res.status(200).json({
-            message: "OTP verified successfully. You can now set new password.",
-            canResetPassword: true,
-            email: user.email,
-            username: user.username,
-            role: user.role
-        });
-    } catch (err) {
-        console.error("Error verifying forgot password OTP:", err);
-        return res.status(500).json({
-            message: "Server error while verifying OTP",
-            error: err.message,
-        });
-    }
-};
+//         return res.status(200).json({
+//             message: "OTP verified successfully. You can now set new password.",
+//             canResetPassword: true,
+//             email: user.email,
+//             username: user.username,
+//             role: user.role
+//         });
+//     } catch (err) {
+//         console.error("Error verifying forgot password OTP:", err);
+//         return res.status(500).json({
+//             message: "Server error while verifying OTP",
+//             error: err.message,
+//         });
+//     }
+// };
 
 // Reset Password with OTP (for forgot password flow)
+// const resetPasswordWithOTP = async (req, res) => {
+//     try {
+//         const { email, otp, newPassword, username } = req.body;
+
+//         // Validate input
+//         if (!email && !username) {
+//             return res.status(400).json({
+//                 message: "Please provide either email or username"
+//             });
+//         }
+
+//         // Build query based on identifier
+//         const query = {};
+//         let user = null;
+
+//         if (username) {
+//             // If username is provided, use it (most specific)
+//             query.username = username.toLowerCase();
+//             user = await User.findOne(query);
+
+//             if (!user) {
+//                 return res.status(404).json({
+//                     message: "No user found with this username"
+//                 });
+//             }
+
+//             // If email was also provided, verify it matches
+//             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
+//                 return res.status(400).json({
+//                     message: "Email does not match the provided username"
+//                 });
+//             }
+//         } else if (email) {
+//             // If only email is provided
+//             query.email = email.toLowerCase();
+
+//             // Find user by email
+//             user = await User.findOne(query);
+
+//             if (!user) {
+//                 return res.status(404).json({
+//                     message: "No user found with this email"
+//                 });
+//             }
+
+//             // For students, require username when using email
+//             if (user.role === 'student') {
+//                 return res.status(400).json({
+//                     message: "For students, please provide username along with email. Multiple students may share the same email.",
+//                     suggestion: "Provide username parameter in your request"
+//                 });
+//             }
+//         }
+
+//         // Check if forgotPasswordOTP is verified
+//         if (!user.forgotPasswordOTP || !user.forgotPasswordOTP.verified) {
+//             return res.status(400).json({
+//                 message: "Please verify OTP first before resetting password."
+//             });
+//         }
+
+//         // Verify OTP again
+//         if (otp !== user.forgotPasswordOTP.code) {
+//             return res.status(400).json({
+//                 message: "Invalid OTP"
+//             });
+//         }
+
+//         // Check if OTP is still valid
+//         const isExpired = new Date() > new Date(user.forgotPasswordOTP.expiresAt);
+//         if (isExpired) {
+//             // Clear the OTP
+//             user.forgotPasswordOTP = undefined;
+//             await user.save();
+
+//             return res.status(400).json({
+//                 message: "OTP has expired. Please request a new password reset."
+//             });
+//         }
+
+//         // Hash and update password
+//         const hashedPassword = await bcrypt.hash(newPassword, 10);
+//         user.password = hashedPassword;
+
+//         // Clear the forgotPasswordOTP
+//         user.forgotPasswordOTP = undefined;
+
+//         await user.save();
+
+//         // Generate JWT token for auto-login
+//         const jwt = require('jsonwebtoken');
+//         const token = jwt.sign(
+//             {
+//                 id: user._id,
+//                 email: user.email,
+//                 role: user.role,
+//                 school: user.school,
+//                 ...(user.username && { username: user.username })
+//             },
+//             process.env.JWT_SECRET,
+//             { expiresIn: "7d" }
+//         );
+
+//         // Send password changed notification email
+//         try {
+//             await emailService.sendPasswordChangedNotification(
+//                 user.email,
+//                 user.name || "User"
+//             );
+//         } catch (emailError) {
+//             console.error('Failed to send password changed notification:', emailError);
+//         }
+
+//         return res.status(200).json({
+//             message: "Password reset successfully!",
+//             data: {
+//                 token: token,
+//                 user: {
+//                     id: user._id,
+//                     name: user.name,
+//                     email: user.email,
+//                     username: user.username,
+//                     role: user.role,
+//                     school: user.school
+//                 }
+//             }
+//         });
+//     } catch (err) {
+//         console.error("Error resetting password with OTP:", err);
+//         return res.status(500).json({
+//             message: "Server error while resetting password",
+//             error: err.message,
+//         });
+//     }
+// };
+
 const resetPasswordWithOTP = async (req, res) => {
-    try {
-        const { email, otp, newPassword, username } = req.body;
+  try {
+    const { email, username, otp, newPassword } = req.body;
 
-        // Validate input
-        if (!email && !username) {
-            return res.status(400).json({
-                message: "Please provide either email or username"
-            });
-        }
+    let user;
 
-        // Build query based on identifier
-        const query = {};
-        let user = null;
+    // ---- IDENTIFY USER ----
+    if (username) {
+      user = await User.findOne({ username: username.toLowerCase() });
+      if (!user) return res.status(404).json({ message: "User not found" });
 
-        if (username) {
-            // If username is provided, use it (most specific)
-            query.username = username.toLowerCase();
-            user = await User.findOne(query);
+      if (email && user.email.toLowerCase() !== email.toLowerCase()) {
+        return res.status(400).json({ message: "Email does not match username" });
+      }
+    } else if (email) {
+      user = await User.findOne({ email: email.toLowerCase() });
+      if (!user) return res.status(404).json({ message: "User not found" });
 
-            if (!user) {
-                return res.status(404).json({
-                    message: "No user found with this username"
-                });
-            }
-
-            // If email was also provided, verify it matches
-            if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-                return res.status(400).json({
-                    message: "Email does not match the provided username"
-                });
-            }
-        } else if (email) {
-            // If only email is provided
-            query.email = email.toLowerCase();
-
-            // Find user by email
-            user = await User.findOne(query);
-
-            if (!user) {
-                return res.status(404).json({
-                    message: "No user found with this email"
-                });
-            }
-
-            // For students, require username when using email
-            if (user.role === 'student') {
-                return res.status(400).json({
-                    message: "For students, please provide username along with email. Multiple students may share the same email.",
-                    suggestion: "Provide username parameter in your request"
-                });
-            }
-        }
-
-        // Check if forgotPasswordOTP is verified
-        if (!user.forgotPasswordOTP || !user.forgotPasswordOTP.verified) {
-            return res.status(400).json({
-                message: "Please verify OTP first before resetting password."
-            });
-        }
-
-        // Verify OTP again
-        if (otp !== user.forgotPasswordOTP.code) {
-            return res.status(400).json({
-                message: "Invalid OTP"
-            });
-        }
-
-        // Check if OTP is still valid
-        const isExpired = new Date() > new Date(user.forgotPasswordOTP.expiresAt);
-        if (isExpired) {
-            // Clear the OTP
-            user.forgotPasswordOTP = undefined;
-            await user.save();
-
-            return res.status(400).json({
-                message: "OTP has expired. Please request a new password reset."
-            });
-        }
-
-        // Hash and update password
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-        user.password = hashedPassword;
-
-        // Clear the forgotPasswordOTP
-        user.forgotPasswordOTP = undefined;
-
-        await user.save();
-
-        // Generate JWT token for auto-login
-        const jwt = require('jsonwebtoken');
-        const token = jwt.sign(
-            {
-                id: user._id,
-                email: user.email,
-                role: user.role,
-                school: user.school,
-                ...(user.username && { username: user.username })
-            },
-            process.env.JWT_SECRET,
-            { expiresIn: "7d" }
-        );
-
-        // Send password changed notification email
-        try {
-            await emailService.sendPasswordChangedNotification(
-                user.email,
-                user.name || "User"
-            );
-        } catch (emailError) {
-            console.error('Failed to send password changed notification:', emailError);
-        }
-
-        return res.status(200).json({
-            message: "Password reset successfully!",
-            data: {
-                token: token,
-                user: {
-                    id: user._id,
-                    name: user.name,
-                    email: user.email,
-                    username: user.username,
-                    role: user.role,
-                    school: user.school
-                }
-            }
+      if (user.role === "student") {
+        return res.status(400).json({
+          message: "Students must provide username"
         });
-    } catch (err) {
-        console.error("Error resetting password with OTP:", err);
-        return res.status(500).json({
-            message: "Server error while resetting password",
-            error: err.message,
-        });
+      }
+    } else {
+      return res.status(400).json({
+        message: "Please provide email or username"
+      });
     }
+
+    const otpData = user.forgotPasswordOTP;
+    if (!otpData) {
+      return res.status(400).json({ message: "OTP not requested" });
+    }
+
+    // ---- VALIDATE OTP ----
+    if (new Date() > otpData.expiresAt) {
+      user.forgotPasswordOTP = undefined;
+      await user.save();
+      return res.status(400).json({ message: "OTP expired" });
+    }
+
+    if (otp !== otpData.code) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+
+    // ---- RESET PASSWORD ----
+    user.password = await bcrypt.hash(newPassword, 10);
+    user.forgotPasswordOTP = undefined;
+    await user.save();
+
+    // ---- SEND CONFIRMATION EMAIL ----
+    await emailService.sendPasswordChangedNotification(
+      user.email,
+      user.name || "User"
+    );
+
+    return res.status(200).json({
+      message: "Password reset successful"
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: "Server error" });
+  }
 };
 
+
 // Reset Password with Old Password (for logged-in users)
+// const resetPassword = async (req, res) => {
+//     try {
+//         const { email, oldPassword, newPassword, username } = req.body;
+
+//         // Validate input
+//         if (!email && !username) {
+//             return res.status(400).json({
+//                 message: "Please provide either email or username"
+//             });
+//         }
+
+//         // Build query based on identifier
+//         const query = {};
+//         let user = null;
+
+//         if (username) {
+//             // If username is provided, use it (most specific)
+//             query.username = username.toLowerCase();
+//             user = await User.findOne(query);
+
+//             if (!user) {
+//                 return res.status(404).json({
+//                     message: "No user found with this username"
+//                 });
+//             }
+
+//             // If email was also provided, verify it matches
+//             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
+//                 return res.status(400).json({
+//                     message: "Email does not match the provided username"
+//                 });
+//             }
+//         } else if (email) {
+//             // If only email is provided
+//             query.email = email.toLowerCase();
+
+//             // Find user by email
+//             user = await User.findOne(query);
+
+//             if (!user) {
+//                 return res.status(404).json({
+//                     message: "No user found with this email"
+//                 });
+//             }
+
+//             // For students, require username when using email
+//             if (user.role === 'student') {
+//                 return res.status(400).json({
+//                     message: "For students, please provide username along with email. Multiple students may share the same email.",
+//                     suggestion: "Provide username parameter in your request"
+//                 });
+//             }
+//         }
+
+//         // Verify old password
+//         const isPasswordValid = await bcrypt.compare(oldPassword, user.password);
+//         if (!isPasswordValid) {
+//             return res.status(400).json({
+//                 message: "Current password is incorrect"
+//             });
+//         }
+
+//         // Check if new password is same as old password
+//         const isSamePassword = await bcrypt.compare(newPassword, user.password);
+//         if (isSamePassword) {
+//             return res.status(400).json({
+//                 message: "New password must be different from current password"
+//             });
+//         }
+
+//         // Hash and update password
+//         const hashedPassword = await bcrypt.hash(newPassword, 10);
+//         user.password = hashedPassword;
+//         await user.save();
+
+//         // Send password changed notification
+//         try {
+//             await emailService.sendPasswordChangedNotification(
+//                 user.email,
+//                 user.name || "User"
+//             );
+//         } catch (emailError) {
+//             console.error('Failed to send password changed notification:', emailError);
+//         }
+
+//         return res.status(200).json({
+//             message: "Password reset successfully!",
+//             data: {
+//                 email: user.email,
+//                 username: user.username,
+//                 role: user.role
+//             }
+//         });
+//     } catch (err) {
+//         console.error("Error resetting password:", err);
+//         return res.status(500).json({
+//             message: "Server error while resetting password",
+//             error: err.message,
+//         });
+//     }
+// };
+
 const resetPassword = async (req, res) => {
-    try {
-        const { email, oldPassword, newPassword, username } = req.body;
+  try {
+    const { email, username, oldPassword, newPassword } = req.body;
 
-        // Validate input
-        if (!email && !username) {
-            return res.status(400).json({
-                message: "Please provide either email or username"
-            });
-        }
+    let user;
 
-        // Build query based on identifier
-        const query = {};
-        let user = null;
+    // ---------------- IDENTIFY USER ----------------
+    if (username) {
+      user = await User.findOne({ username: username.toLowerCase() });
 
-        if (username) {
-            // If username is provided, use it (most specific)
-            query.username = username.toLowerCase();
-            user = await User.findOne(query);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
 
-            if (!user) {
-                return res.status(404).json({
-                    message: "No user found with this username"
-                });
-            }
-
-            // If email was also provided, verify it matches
-            if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-                return res.status(400).json({
-                    message: "Email does not match the provided username"
-                });
-            }
-        } else if (email) {
-            // If only email is provided
-            query.email = email.toLowerCase();
-
-            // Find user by email
-            user = await User.findOne(query);
-
-            if (!user) {
-                return res.status(404).json({
-                    message: "No user found with this email"
-                });
-            }
-
-            // For students, require username when using email
-            if (user.role === 'student') {
-                return res.status(400).json({
-                    message: "For students, please provide username along with email. Multiple students may share the same email.",
-                    suggestion: "Provide username parameter in your request"
-                });
-            }
-        }
-
-        // Verify old password
-        const isPasswordValid = await bcrypt.compare(oldPassword, user.password);
-        if (!isPasswordValid) {
-            return res.status(400).json({
-                message: "Current password is incorrect"
-            });
-        }
-
-        // Check if new password is same as old password
-        const isSamePassword = await bcrypt.compare(newPassword, user.password);
-        if (isSamePassword) {
-            return res.status(400).json({
-                message: "New password must be different from current password"
-            });
-        }
-
-        // Hash and update password
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-        user.password = hashedPassword;
-        await user.save();
-
-        // Send password changed notification
-        try {
-            await emailService.sendPasswordChangedNotification(
-                user.email,
-                user.name || "User"
-            );
-        } catch (emailError) {
-            console.error('Failed to send password changed notification:', emailError);
-        }
-
-        return res.status(200).json({
-            message: "Password reset successfully!",
-            data: {
-                email: user.email,
-                username: user.username,
-                role: user.role
-            }
+      // If email provided, ensure it matches
+      if (email && user.email.toLowerCase() !== email.toLowerCase()) {
+        return res.status(400).json({
+          message: "Email does not match the provided username"
         });
-    } catch (err) {
-        console.error("Error resetting password:", err);
-        return res.status(500).json({
-            message: "Server error while resetting password",
-            error: err.message,
+      }
+    } 
+    else if (email) {
+      user = await User.findOne({ email: email.toLowerCase() });
+
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Students MUST provide username
+      if (user.role === "student") {
+        return res.status(400).json({
+          message: "Students must provide username with email"
         });
+      }
+    } 
+    else {
+      return res.status(400).json({
+        message: "Please provide email or username"
+      });
     }
+
+    // ---------------- VERIFY OLD PASSWORD ----------------
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) {
+      return res.status(400).json({
+        message: "Current password is incorrect"
+      });
+    }
+
+    // Prevent reusing same password
+    const isSame = await bcrypt.compare(newPassword, user.password);
+    if (isSame) {
+      return res.status(400).json({
+        message: "New password must be different from current password"
+      });
+    }
+
+    // ---------------- UPDATE PASSWORD ----------------
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    // ---------------- NOTIFY USER ----------------
+    try {
+      await emailService.sendPasswordChangedNotification(
+        user.email,
+        user.name || "User"
+      );
+    } catch (e) {
+      console.error("Password changed email failed:", e);
+    }
+
+    return res.status(200).json({
+      message: "Password updated successfully",
+      data: {
+        email: user.email,
+        username: user.username,
+        role: user.role
+      }
+    });
+
+  } catch (err) {
+    console.error("Reset password error:", err);
+    return res.status(500).json({
+      message: "Server error while resetting password",
+      error: err.message
+    });
+  }
 };
 
 // Change Password (for logged-in users with JWT token)
-const changePassword = async (req, res) => {
-    try {
-        const { oldPassword, newPassword, confirmPassword } = req.body;
-        const userId = req.user.id;
+// const changePassword = async (req, res) => {
+//     try {
+//         const { oldPassword, newPassword, confirmPassword } = req.body;
+//         const userId = req.user.id;
 
-        // Find user
-        const user = await User.findById(userId);
-        if (!user) {
-            return res.status(404).json({
-                message: "User not found"
-            });
-        }
+//         // Find user
+//         const user = await User.findById(userId);
+//         if (!user) {
+//             return res.status(404).json({
+//                 message: "User not found"
+//             });
+//         }
 
-        // Verify old password
-        const isPasswordValid = await bcrypt.compare(oldPassword, user.password);
-        if (!isPasswordValid) {
-            return res.status(400).json({
-                message: "Current password is incorrect"
-            });
-        }
+//         // Verify old password
+//         const isPasswordValid = await bcrypt.compare(oldPassword, user.password);
+//         if (!isPasswordValid) {
+//             return res.status(400).json({
+//                 message: "Current password is incorrect"
+//             });
+//         }
 
-        // Check if new password is same as old password
-        const isSamePassword = await bcrypt.compare(newPassword, user.password);
-        if (isSamePassword) {
-            return res.status(400).json({
-                message: "New password must be different from current password"
-            });
-        }
+//         // Check if new password is same as old password
+//         const isSamePassword = await bcrypt.compare(newPassword, user.password);
+//         if (isSamePassword) {
+//             return res.status(400).json({
+//                 message: "New password must be different from current password"
+//             });
+//         }
 
-        // Hash and update password
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-        user.password = hashedPassword;
-        await user.save();
+//         // Hash and update password
+//         const hashedPassword = await bcrypt.hash(newPassword, 10);
+//         user.password = hashedPassword;
+//         await user.save();
 
-        // Send password changed notification
-        await emailService.sendPasswordChangedNotification(
-            user.email,
-            user.name || "User"
-        );
+//         // Send password changed notification
+//         await emailService.sendPasswordChangedNotification(
+//             user.email,
+//             user.name || "User"
+//         );
 
-        return res.status(200).json({
-            message: "Password changed successfully!"
-        });
-    } catch (err) {
-        console.error("Error changing password:", err);
-        return res.status(500).json({
-            message: "Server error while changing password",
-            error: err.message,
-        });
-    }
-};
+//         return res.status(200).json({
+//             message: "Password changed successfully!"
+//         });
+//     } catch (err) {
+//         console.error("Error changing password:", err);
+//         return res.status(500).json({
+//             message: "Server error while changing password",
+//             error: err.message,
+//         });
+//     }
+// };
 
 // Resend Forgot Password OTP
 const resendForgotPasswordOTP = async (req, res) => {
@@ -1996,9 +2226,9 @@ module.exports = {
     deleteStudentBySchool,
     editOwnProfile,
     forgotPassword,
-    verifyForgotPasswordOTP,
+    // verifyForgotPasswordOTP,
     resetPasswordWithOTP,
     resetPassword,
-    changePassword,
+    // changePassword,
     resendForgotPasswordOTP
 };

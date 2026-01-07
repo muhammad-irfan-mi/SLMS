@@ -304,29 +304,36 @@ const validationSchemas = {
 
   // In user.validation.js, update the forgotPassword schema:
 
+  // forgotPassword: Joi.object({
+  //   email: Joi.string().email().optional(),
+  //   username: Joi.string().optional()
+  // })
+  //   .custom((value, helpers) => {
+  //     const { email, username } = value;
+
+  //     // For students, if email is provided, username must also be provided
+  //     // This is because students can share emails (siblings)
+  //     if (email && !username) {
+  //       return helpers.error('any.custom', {
+  //         message: 'Username is required for students when using email'
+  //       });
+  //     }
+
+  //     return value;
+  //   })
+  //   .or('email', 'username')
+  //   .messages({
+  //     'object.missing': 'Please provide either email or username',
+  //     'any.custom': 'Username is required for students when using email'
+  //   }),
   forgotPassword: Joi.object({
     email: Joi.string().email().optional(),
     username: Joi.string().optional()
   })
-    .custom((value, helpers) => {
-      const { email, username } = value;
-
-      // For students, if email is provided, username must also be provided
-      // This is because students can share emails (siblings)
-      if (email && !username) {
-        return helpers.error('any.custom', {
-          message: 'Username is required for students when using email'
-        });
-      }
-
-      return value;
-    })
     .or('email', 'username')
     .messages({
-      'object.missing': 'Please provide either email or username',
-      'any.custom': 'Username is required for students when using email'
+      'object.missing': 'Provide email or username'
     }),
-
   // Also add a similar check for verifyForgotPasswordOTP
   verifyForgotPasswordOTP: Joi.object({
     email: Joi.string().email().optional(),
@@ -358,42 +365,37 @@ const validationSchemas = {
   // And for resetPasswordWithOTP
   resetPasswordWithOTP: Joi.object({
     email: Joi.string().email().optional(),
-    otp: Joi.string()
-      .pattern(/^\d{6}$/)
-      .required()
-      .messages({
-        'string.pattern.base': 'OTP must be a 6-digit number'
-      }),
-    newPassword: commonValidations.password,
-    username: Joi.string().optional()
+    username: Joi.string().optional(),
+    otp: Joi.string().pattern(/^\d{6}$/).required(),
+    newPassword: commonValidations.password
   })
-    .custom((value, helpers) => {
-      const { email, username } = value;
-
-      // For students, if email is provided, username must also be provided
-      if (email && !username) {
-        return helpers.error('any.custom', {
-          message: 'Username is required for students when using email'
-        });
-      }
-
-      return value;
-    })
     .or('email', 'username')
     .messages({
-      'object.missing': 'Please provide either email or username',
-      'any.custom': 'Username is required for students when using email'
+      'object.missing': 'Provide email or username'
     }),
 
+  // resetPassword: Joi.object({
+  //   email: Joi.string().email().optional(),
+  //   oldPassword: Joi.string().required(),
+  //   newPassword: commonValidations.password,
+  //   username: Joi.string().optional()
+  // }).or('email', 'username')
+  //   .messages({
+  //     'object.missing': 'Please provide either email or username'
+  //   }),
+
+
   resetPassword: Joi.object({
-      email: Joi.string().email().optional(),
-      oldPassword: Joi.string().required(),
-      newPassword: commonValidations.password,
-      username: Joi.string().optional()
-    }).or('email', 'username')
+    email: Joi.string().email().optional(),
+    username: Joi.string().optional(),
+    oldPassword: Joi.string().required(),
+    newPassword: commonValidations.password
+  })
+    .or('email', 'username')
     .messages({
-      'object.missing': 'Please provide either email or username'
+      'object.missing': 'Please provide email or username'
     }),
+
 
   changePassword: Joi.object({
     oldPassword: Joi.string().required(),
