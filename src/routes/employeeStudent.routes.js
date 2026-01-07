@@ -211,7 +211,7 @@ router.post(
 );
 
 router.post(
-    "/change-password",
+    "/reset-password",
     validate(validationSchemas.resetPassword),
     resetPassword
 );
