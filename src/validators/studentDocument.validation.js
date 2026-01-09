@@ -119,13 +119,13 @@ const updateDocumentRequestSchema = Joi.object({
 
 // Upload document for request validation
 const uploadForRequestSchema = Joi.object({
-  requestId: Joi.string()
-    .pattern(objectIdPattern)
-    .required()
-    .messages({
-      'string.pattern.base': 'Invalid request ID format',
-      'any.required': 'Request ID is required'
-    }),
+  // requestId: Joi.string()
+  //   .pattern(objectIdPattern)
+  //   .required()
+  //   .messages({
+  //     'string.pattern.base': 'Invalid request ID format',
+  //     'any.required': 'Request ID is required'
+  //   }),
 
   text: Joi.string()
     .max(2000)

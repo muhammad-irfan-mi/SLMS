@@ -7,7 +7,7 @@ const {
   getStudentDocumentRequests,
   updateDocumentRequest,
   deleteDocumentRequest,
-  
+
   // Student Document functions
   uploadDocumentForRequest,
   uploadGeneralDocument,
@@ -17,7 +17,7 @@ const {
   getDocuments,
   getDocumentsForRequest,
   updateDocumentStatus,
-  
+
   // Validation functions
   validateBody,
   validateQuery,
@@ -36,57 +36,26 @@ const {
   getStudentDocumentsQuerySchema
 } = require("../validators/studentDocument.validation");
 const { upload } = require("../utils/multer");
-const { 
-  protect, 
-  isStudent, 
-  isTeacherOrAdminOfficeOrSchool 
-} = require("../middlewares/auth");
-
-router.post(
-  "/request",
-  protect,
-  isTeacherOrAdminOfficeOrSchool,
-  validateBody(createDocumentRequestSchema),
-  createDocumentRequest
-);
-
-// Teacher/Admin/School: Get document requests
-router.get(
-  "/request",
-  protect,
-  isTeacherOrAdminOfficeOrSchool,
-  validateQuery(getDocumentRequestsQuerySchema),
-  getDocumentRequests
-);
-
-// Student: Get their document requests
-router.get(
-  "/request/student",
+const {
   protect,
   isStudent,
-  validateQuery(getDocumentRequestsQuerySchema),
-  getStudentDocumentRequests
-);
+  isTeacherOrAdminOfficeOrSchool
+} = require("../middlewares/auth");
 
-// Teacher/Admin/School: Update document request
-router.put(
-  "/request/:id",
-  protect,
-  isTeacherOrAdminOfficeOrSchool,
-  validateBody(updateDocumentRequestSchema),
-  updateDocumentRequest
-);
+router.post("/request", protect, isTeacherOrAdminOfficeOrSchool, validateBody(createDocumentRequestSchema), createDocumentRequest);
 
-// Teacher/Admin/School: Delete document request
-router.delete(
-  "/request/:id",
-  protect,
-  isTeacherOrAdminOfficeOrSchool,
-  deleteDocumentRequest
-);
+router.get("/request", protect, isTeacherOrAdminOfficeOrSchool, validateQuery(getDocumentRequestsQuerySchema), getDocumentRequests);
 
+router.get("/request/student", protect, isStudent, validateQuery(getDocumentRequestsQuerySchema), getStudentDocumentRequests);
+
+router.put("/request/:id", protect, isTeacherOrAdminOfficeOrSchool, validateBody(updateDocumentRequestSchema), updateDocumentRequest);
+
+router.delete("/request/:id", protect, isTeacherOrAdminOfficeOrSchool, deleteDocumentRequest);
+
+
+// upload by student for a specific request
 router.post(
-  "/upload/request",
+  "/upload/request/:requestId",
   protect,
   isStudent,
   upload.array("files", 5),

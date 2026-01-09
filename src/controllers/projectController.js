@@ -951,19 +951,22 @@ const deleteProject = async (req, res) => {
 // Submit project (student)
 const submitProject = async (req, res) => {
   try {
-    const { projectId, submissionText } = req.body;
+    const { projectId } = req.params;
+    const { submissionText } = req.body;
     const studentId = req.user._id;
     const school = req.user.school;
     const classId = req.user.classInfo?.id;
     const sectionId = req.user.sectionInfo?.id;
 
-    // Validate project exists
+    if (!projectId) {
+      return res.status(400).json({ message: "projectId is required" });
+    }
+
     const project = await Project.findById(projectId);
     if (!project) {
       return res.status(404).json({ message: "Project not found" });
     }
 
-    // Check if student is eligible to submit
     const isEligible = (
       (project.targetType === 'section' &&
         String(project.classId) === String(classId) &&
@@ -978,14 +981,12 @@ const submitProject = async (req, res) => {
       });
     }
 
-    // Check if project is still open
     if (project.deadline < new Date()) {
       return res.status(400).json({
         message: "Project submission deadline has passed"
       });
     }
 
-    // Check if already submitted
     const existingSubmission = project.submissions.find(
       sub => String(sub.studentId) === String(studentId)
     );
@@ -998,10 +999,8 @@ const submitProject = async (req, res) => {
       });
     }
 
-    // Handle submission files
     const uploads = await handleSubmissionUploads(req.files);
 
-    // Create submission object
     const newSubmission = {
       studentId,
       submittedAt: new Date(),
@@ -1013,11 +1012,9 @@ const submitProject = async (req, res) => {
       status: 'submitted'
     };
 
-    // Add submission to project
     project.submissions.push(newSubmission);
     await project.save();
 
-    // Get updated project with populated submission
     const updatedProject = await Project.findById(projectId)
       .populate({
         path: 'submissions.studentId',

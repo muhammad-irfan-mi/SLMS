@@ -58,7 +58,6 @@ router.delete(
   deleteProject
 );
 
-// Student routes
 router.get(
   "/student",
   protect,
@@ -68,7 +67,7 @@ router.get(
 );
 
 router.post(
-  "/submit",
+  "/submit/:projectId",
   protect,
   isStudent,
   upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]),
