@@ -631,7 +631,7 @@ const uploadDocumentForRequest = async (req, res) => {
             files = await handleFilesUpload(req.files);
         }
 
-        let uploadedFor = 'admin_office'; 
+        let uploadedFor = 'admin_office';
 
         if (documentRequest.requestedByModel === 'School') {
             uploadedFor = 'school';
@@ -1186,13 +1186,10 @@ const getDocumentsForRequest = async (req, res) => {
                 message: "Document request not found"
             });
         }
-
         let hasPermission = false;
-        const requesterSchoolId = getSchoolId(user);
-        const studentSchoolId = getSchoolId(documentRequest.studentId);
-        console.log("All",requesterSchoolId, studentSchoolId)
+        const requesterSchoolId = req.user.school || getSchoolId(user);
+        const studentSchoolId = documentRequest.studentId?.school || getSchoolId(documentRequest.studentId?.school);
 
-        // Check school access first
         if (requesterSchoolId && studentSchoolId &&
             requesterSchoolId.toString() !== studentSchoolId.toString()) {
             return res.status(403).json({
@@ -1201,9 +1198,7 @@ const getDocumentsForRequest = async (req, res) => {
             });
         }
 
-        // Check specific permissions based on requester type
         if (documentRequest.requestedByModel === 'School') {
-            // School requested: School and all admins can see
             if (!user.role || ['admin_office', 'superadmin'].includes(user.role)) {
                 hasPermission = true;
             }
@@ -1212,12 +1207,10 @@ const getDocumentsForRequest = async (req, res) => {
             const requesterUser = await User.findById(documentRequest.requestedBy);
             if (requesterUser) {
                 if (requesterUser.role === 'teacher') {
-                    // Teacher requested: Only that teacher can see
                     if (user._id.toString() === documentRequest.requestedBy.toString()) {
                         hasPermission = true;
                     }
                 } else if (['admin_office', 'superadmin'].includes(requesterUser.role)) {
-                    // Admin requested: All admins and school can see
                     if (!user.role || ['admin_office', 'superadmin'].includes(user.role)) {
                         hasPermission = true;
                     }
