@@ -307,7 +307,7 @@ const staffLogin = async (req, res) => {
         role: user.role,
         school: user.school,
         isIncharge: user.isIncharge,
-        ...(user.classInfo?.id && { classInfo: user.classInfo })
+        // ...(user.classInfo?.id && { classInfo: user.classInfo })
       }
     });
   } catch (err) {

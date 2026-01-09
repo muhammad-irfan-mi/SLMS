@@ -83,6 +83,11 @@ exports.getLeavesQuerySchema = Joi.object({
         dateFormat,
         Joi.date()
     ).optional(),
+    userType: Joi.string().valid("student", "teacher").required()
+        .messages({
+            'any.only': 'userType must be either student or teacher',
+            'any.required': 'userType is required'
+        }),
     status: Joi.string().valid("pending", "approved", "rejected", "cancelled").optional(),
     startDate: dateFormat.optional(),
     endDate: dateFormat.optional(),

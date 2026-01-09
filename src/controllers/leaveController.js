@@ -4,6 +4,7 @@ const Leave = require("../models/Leave");
 const AttendanceImported = require("../models/Attendance");
 const User = require("../models/User");
 const ClassSection = require("../models/ClassSection");
+const School = require("../models/School");
 const Attendance = AttendanceImported.default || AttendanceImported;
 
 // Date formatter
@@ -340,133 +341,155 @@ const cancelLeave = async (req, res) => {
 // Teacher (incharge) fetches pending leaves for their class/section
 const getLeaves = async (req, res) => {
     try {
-        const school = req.user.school;
-        const userId = req.user._id;
-        const userRole = req.user.role;
-        const { classId, sectionId, status, studentId, date, startDate, endDate, page = 1, limit = 10 } = req.query;
+        const user = req.user;
 
-        // For teachers, they can only see leaves from their assigned class/section
-        let teacherClassId = classId;
-        let teacherSectionId = sectionId;
+        const role = user.role || "school";
+        const isSchool = role === "school";
+        const isAdminOffice = role === "admin_office";
+        const isTeacher = role === "teacher";
 
-        if (userRole === 'teacher') {
-            const teacherCheck = await validateTeacherClassSection(userId, school);
+        const schoolId = isSchool ? user._id : user.school;
+        const userId = user._id;
+
+        const {
+            userType,
+            classId,
+            sectionId,
+            studentId,
+            teacherId,
+            status,
+            date,
+            startDate,
+            endDate,
+            page = 1,
+            limit = 10
+        } = req.query;
+
+
+        if (!userType || !["student", "teacher"].includes(userType)) {
+            return res.status(400).json({
+                message: "userType is required and must be 'student' or 'teacher'"
+            });
+        }
+
+        if (isTeacher && userType === "teacher") {
+            return res.status(403).json({
+                message: "Teachers are not allowed to view teacher leaves"
+            });
+        }
+
+
+        const filter = { school: schoolId, userType };
+
+        if (isTeacher) {
+            const teacherCheck = await validateTeacherClassSection(userId, schoolId);
             if (!teacherCheck.valid) {
                 return res.status(403).json({
                     message: "You are not assigned as an incharge teacher"
                 });
             }
-
-            // Teachers can only filter by their own class/section
-            if (classId && String(classId) !== String(teacherCheck.classId)) {
-                return res.status(403).json({
-                    message: "You can only view leaves from your assigned class"
-                });
-            }
-
-            if (sectionId && String(sectionId) !== String(teacherCheck.sectionId)) {
-                return res.status(403).json({
-                    message: "You can only view leaves from your assigned section"
-                });
-            }
-
-            teacherClassId = teacherCheck.classId;
-            teacherSectionId = teacherCheck.sectionId;
+            filter.classId = teacherCheck.classId;
+            filter.sectionId = teacherCheck.sectionId;
         }
 
-        const skip = (page - 1) * limit;
+        if (isSchool || isAdminOffice) {
+            if (userType === "student") {
+                if (classId) filter.classId = classId;
+                if (sectionId) filter.sectionId = sectionId;
+                if (studentId) filter.studentId = studentId;
+            }
+            if (userType === "teacher" && teacherId) {
+                filter.teacherId = teacherId;
+            }
+        }
 
-        // Build filter
-        const filter = { school };
-
-        if (teacherClassId) filter.classId = teacherClassId;
-        if (teacherSectionId) filter.sectionId = teacherSectionId;
         if (status) filter.status = status;
-        if (studentId) filter.studentId = studentId;
 
         if (date) {
-            try {
-                filter.date = formatDate(date);
-            } catch (error) {
-                return res.status(400).json({
-                    message: "Invalid date format",
-                    error: error.message
-                });
-            }
+            filter.date = formatDate(date);
         } else if (startDate && endDate) {
-            try {
-                filter.date = {
-                    $gte: formatDate(startDate),
-                    $lte: formatDate(endDate)
-                };
-            } catch (error) {
-                return res.status(400).json({
-                    message: "Invalid date range format",
-                    error: error.message
-                });
-            }
+            filter.date = {
+                $gte: formatDate(startDate),
+                $lte: formatDate(endDate)
+            };
         }
 
-        // Count total results
+
+        const skip = (page - 1) * limit;
         const total = await Leave.countDocuments(filter);
 
-        // Fetch paginated results with population
-        const leaves = await Leave.find(filter)
-            .populate("studentId", "name email rollNumber")
+        let leaves = await Leave.find(filter)
+            .populate("studentId", "name email")
+            .populate("teacherId", "name email")
             .populate("classId", "class sections")
-            .populate("reviewedBy", "name email")
             .sort({ createdAt: -1 })
             .skip(skip)
-            .limit(limit)
+            .limit(Number(limit))
             .lean();
 
-        console.log("DEBUG - Raw leaves data:", JSON.stringify(leaves, null, 2));
 
-        // Format response with proper section name extraction
+        for (const leave of leaves) {
+            if (!leave.reviewedBy) continue;
+
+            let reviewer = await User.findById(leave.reviewedBy)
+                .select("name email role")
+                .lean();
+
+            if (!reviewer) {
+                reviewer = await School.findById(leave.reviewedBy)
+                    .select("name email")
+                    .lean();
+
+                if (reviewer) reviewer.role = "school";
+            }
+
+            leave.reviewedBy = reviewer
+                ? {
+                    _id: reviewer._id,
+                    name: reviewer.name,
+                    email: reviewer.email,
+                    role: reviewer.role
+                }
+                : null;
+        }
+
         const formattedLeaves = leaves.map(leave => {
             let sectionInfo = null;
-            
-            // Extract section name from classSections array
-            if (leave.classId && leave.classId.sections && leave.sectionId) {
-                const section = leave.classId.sections.find(
-                    sec => String(sec._id) === String(leave.sectionId)
+
+            if (leave.classId?.sections && leave.sectionId) {
+                const sec = leave.classId.sections.find(
+                    s => String(s._id) === String(leave.sectionId)
                 );
-                
-                if (section) {
-                    sectionInfo = {
-                        _id: section._id,
-                        name: section.name
-                    };
-                }
+                if (sec) sectionInfo = { _id: sec._id, name: sec.name };
             }
 
             return {
                 _id: leave._id,
-                student: leave.studentId ? {
-                    _id: leave.studentId._id,
-                    name: leave.studentId.name,
-                    email: leave.studentId.email,
-                    rollNumber: leave.studentId.rollNumber
-                } : null,
-                class: leave.classId ? {
-                    _id: leave.classId._id,
-                    name: leave.classId.class
-                } : null,
-                section: sectionInfo,
+                school: leave.school,
+                studentId: leave.studentId,
+                studentName: leave.studentName || null,
+                teacherId: leave.teacherId,
+                classId: leave.classId
+                    ? { _id: leave.classId._id, class: leave.classId.class }
+                    : null,
+                sectionId: sectionInfo,
+                userType: leave.userType,
                 date: leave.date,
                 subject: leave.subject,
                 reason: leave.reason,
-                status: leave.status,
                 appliedAt: leave.appliedAt,
+                status: leave.status,
                 reviewedAt: leave.reviewedAt,
-                remark: leave.remark
+                reviewedBy: leave.reviewedBy,
+                createdAt: leave.createdAt,
+                updatedAt: leave.updatedAt
             };
         });
 
         return res.status(200).json({
             total,
-            page: parseInt(page),
-            limit: parseInt(limit),
+            page: Number(page),
+            limit: Number(limit),
             totalPages: Math.ceil(total / limit),
             leaves: formattedLeaves
         });
@@ -480,12 +503,14 @@ const getLeaves = async (req, res) => {
     }
 };
 
+
 // Approve leave (teacher).
 const approveLeave = async (req, res) => {
     try {
+        const user = req.user
         const reviewerId = req.user._id;
-        const reviewerRole = req.user.role;
-        const school = req.user.school;
+        const reviewerRole = user.role || "school";
+        const schoolId = user.role ? user.school : user._id;
         const { id } = req.params;
         const { remark } = req.body;
 
@@ -496,19 +521,24 @@ const approveLeave = async (req, res) => {
         }
 
         // Check school access
-        if (String(leave.school) !== String(school)) {
+        if (String(leave.school) !== String(schoolId)) {
             return res.status(403).json({ message: "Access denied" });
         }
 
         // Check if user has permission to approve this leave
         if (reviewerRole === 'teacher') {
-            const teacherCheck = await validateTeacherClassSection(reviewerId, school);
+            const teacherCheck = await validateTeacherClassSection(reviewerId, schoolId);
             if (!teacherCheck.valid) {
                 return res.status(403).json({
                     message: "You are not authorized to approve leaves"
                 });
             }
 
+            if (leave.userType !== "student") {
+                return res.status(403).json({
+                    message: "Teachers cannot approve teacher leaves"
+                });
+            }
             // Teacher can only approve leaves from their assigned class/section
             if (String(leave.classId) !== String(teacherCheck.classId) ||
                 String(leave.sectionId) !== String(teacherCheck.sectionId)) {
@@ -550,7 +580,7 @@ const approveLeave = async (req, res) => {
 
         // Update attendance if exists for that date/class/section
         const attendance = await Attendance.findOne({
-            school,
+            school: schoolId,
             classId: leave.classId,
             sectionId: leave.sectionId,
             date: leave.date,
@@ -585,6 +615,7 @@ const approveLeave = async (req, res) => {
         });
     }
 };
+
 
 // Reject leave (teacher).
 const rejectLeave = async (req, res) => {
@@ -676,12 +707,6 @@ const getLeavesByStudent = async (req, res) => {
         const { studentId } = req.params;
         const { page = 1, limit = 20, status, startDate, endDate } = req.query;
 
-        console.log("DEBUG - getLeavesByStudent called:", {
-            userId,
-            userRole,
-            school,
-            studentId
-        });
 
         // If user is a student, they can only view their own leaves
         if (userRole === 'student' && String(studentId) !== String(userId)) {
@@ -856,19 +881,21 @@ const getLeavesByStudent = async (req, res) => {
 
 // TEACHER APPLY LEAVE
 const applyTeacherLeave = async (req, res) => {
+    console.log("called")
     try {
         const school = req.user.school;
         const teacherId = req.user._id;
         const teacherName = req.user.name;
         const { dates, subject, reason } = req.body;
+        console.log(req.body)
 
         // Validate teacher assignment
-        const teacherCheck = await validateTeacherClassSection(teacherId, school);
-        if (!teacherCheck.valid) {
-            return res.status(403).json({
-                message: teacherCheck.message
-            });
-        }
+        // const teacherCheck = await validateTeacherClassSection(teacherId, school);
+        // if (!teacherCheck.valid) {
+        //     return res.status(403).json({
+        //         message: teacherCheck.message
+        //     });
+        // }
 
         // Validate dates and format them
         const formattedDates = [];
@@ -915,8 +942,8 @@ const applyTeacherLeave = async (req, res) => {
             userType: "teacher",
             teacherId,
             teacherName,
-            classId: teacherCheck.classId,
-            sectionId: teacherCheck.sectionId,
+            // classId: teacherCheck.classId,
+            // sectionId: teacherCheck.sectionId,
             date,
             subject,
             reason,
@@ -949,70 +976,99 @@ const applyTeacherLeave = async (req, res) => {
 // TEACHER VIEW OWN LEAVES
 const getTeacherLeaves = async (req, res) => {
     try {
-        const school = req.user.school;
-        const teacherId = req.user._id;
-        const { page = 1, limit = 20, status, startDate, endDate } = req.query;
+        const user = req.user;
 
+        const schoolId = user.school;
+        const teacherId = user._id;
+
+        const { page = 1, limit = 20, status, startDate, endDate } = req.query;
         const skip = (page - 1) * limit;
 
-        // Build filter
         const filter = {
-            school,
+            school: schoolId,
             teacherId,
-            userType: "teacher",
+            userType: "teacher"
         };
 
-        if (status) {
-            filter.status = status;
-        }
+        if (status) filter.status = status;
 
         if (startDate && endDate) {
-            try {
-                filter.date = {
-                    $gte: formatDate(startDate),
-                    $lte: formatDate(endDate)
-                };
-            } catch (error) {
-                return res.status(400).json({
-                    message: "Invalid date range format",
-                    error: error.message
-                });
-            }
+            filter.date = {
+                $gte: formatDate(startDate),
+                $lte: formatDate(endDate)
+            };
         }
 
-        // Total leave count
         const total = await Leave.countDocuments(filter);
 
         const leaves = await Leave.find(filter)
-            .populate("reviewedBy", "name email")
             .sort({ createdAt: -1 })
             .skip(skip)
-            .limit(limit)
+            .limit(Number(limit))
             .lean();
 
-        // Format response
-        const formattedLeaves = leaves.map(leave => ({
-            _id: leave._id,
-            date: leave.date,
-            subject: leave.subject,
-            reason: leave.reason,
-            status: leave.status,
-            appliedAt: leave.appliedAt,
-            reviewedAt: leave.reviewedAt,
-            remark: leave.remark
-        }));
+        const reviewerIds = leaves
+            .filter(l => l.reviewedBy)
+            .map(l => l.reviewedBy.toString());
 
-        res.status(200).json({
+        const users = await User.find({ _id: { $in: reviewerIds } })
+            .select("name email role")
+            .lean();
+
+        const schools = await School.find({ _id: { $in: reviewerIds } })
+            .select("name email")
+            .lean();
+
+        const userMap = Object.fromEntries(
+            users.map(u => [u._id.toString(), u])
+        );
+
+        const schoolMap = Object.fromEntries(
+            schools.map(s => [s._id.toString(), s])
+        );
+
+        const formattedLeaves = leaves.map(leave => {
+            let reviewer = null;
+
+            if (leave.reviewedBy) {
+                reviewer =
+                    userMap[leave.reviewedBy.toString()] ||
+                    schoolMap[leave.reviewedBy.toString()] ||
+                    null;
+            }
+
+            return {
+                _id: leave._id,
+                date: leave.date,
+                subject: leave.subject,
+                reason: leave.reason,
+                status: leave.status,
+                appliedAt: leave.appliedAt,
+                reviewedAt: leave.reviewedAt,
+                remark: leave.remark,
+                reviewedBy: reviewer
+                    ? {
+                        _id: reviewer._id,
+                        name: reviewer.name,
+                        email: reviewer.email,
+                        role: reviewer.role || "school"
+                    }
+                    : null
+            };
+        });
+
+
+        return res.status(200).json({
             total,
-            page: parseInt(page),
-            limit: parseInt(limit),
+            page: Number(page),
+            limit: Number(limit),
             totalPages: Math.ceil(total / limit),
-            leaves: formattedLeaves,
+            leaves: formattedLeaves
         });
 
     } catch (err) {
         console.error("getTeacherLeaves error:", err);
-        res.status(500).json({
+        return res.status(500).json({
             message: "Server error",
             error: err.message
         });
@@ -1122,6 +1178,10 @@ const cancelTeacherLeave = async (req, res) => {
             return res.status(400).json({ message: "Leave already cancelled" });
         }
 
+        if (leave.status === "approved") {
+            return res.status(400).json({ message: "Cannot cancel an approved leave" });
+        }
+
         if (leave.status === "rejected") {
             return res.status(400).json({ message: "Cannot cancel a rejected leave" });
         }
@@ -1158,9 +1218,25 @@ const cancelTeacherLeave = async (req, res) => {
 // ADMIN APPROVE TEACHER LEAVE
 const approveTeacherLeave = async (req, res) => {
     try {
-        const school = req.user.school;
-        const reviewer = req.user._id;
+        const user = req.user;
+
+        const reviewerId = user._id;
+        const role = user.role || 'school';
+        const isTeacher = role === 'teacher';
+        const isAdminOffice = role === 'admin_office';
+        const isSchool = role === 'school';
+
+        // Teachers are NOT allowed
+        if (isTeacher) {
+            return res.status(403).json({
+                message: "Teachers are not allowed to approve teacher leaves"
+            });
+        }
+
+        const schoolId = isSchool ? user._id : user.school;
         const { id } = req.params;
+
+        /* ---------------- FIND LEAVE ---------------- */
 
         const leave = await Leave.findById(id);
 
@@ -1168,17 +1244,22 @@ const approveTeacherLeave = async (req, res) => {
             return res.status(404).json({ message: "Leave not found" });
         }
 
-        // Validate leave type
+        /* ---------------- VALIDATE TYPE ---------------- */
+
         if (leave.userType !== "teacher") {
-            return res.status(400).json({ message: "Not a teacher leave record" });
+            return res.status(400).json({
+                message: "This is not a teacher leave record"
+            });
         }
 
-        // Check school access
-        if (String(leave.school) !== String(school)) {
+        /* ---------------- SCHOOL ACCESS ---------------- */
+
+        if (String(leave.school) !== String(schoolId)) {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        // Check leave status
+        /* ---------------- STATUS CHECK ---------------- */
+
         if (leave.status === "approved") {
             return res.status(400).json({ message: "Leave already approved" });
         }
@@ -1191,19 +1272,26 @@ const approveTeacherLeave = async (req, res) => {
             return res.status(400).json({ message: "Cannot approve rejected leave" });
         }
 
-        // Check if it's a past date
+        /* ---------------- DATE CHECK ---------------- */
+
         const today = formatDate(new Date());
         if (leave.date < today) {
-            return res.status(400).json({ message: "Cannot approve leave for past date" });
+            return res.status(400).json({
+                message: "Cannot approve leave for past date"
+            });
         }
+
+        /* ---------------- UPDATE ---------------- */
 
         leave.status = "approved";
         leave.reviewedAt = new Date();
-        leave.reviewedBy = reviewer;
+        leave.reviewedBy = reviewerId;
 
         await leave.save();
 
-        res.status(200).json({
+        /* ---------------- RESPONSE ---------------- */
+
+        return res.status(200).json({
             message: "Teacher leave approved successfully",
             leave: {
                 _id: leave._id,
@@ -1212,9 +1300,10 @@ const approveTeacherLeave = async (req, res) => {
                 reviewedAt: leave.reviewedAt
             }
         });
+
     } catch (err) {
-        console.error("adminApproveTeacherLeave error:", err);
-        res.status(500).json({
+        console.error("approveTeacherLeave error:", err);
+        return res.status(500).json({
             message: "Server error",
             error: err.message
         });
