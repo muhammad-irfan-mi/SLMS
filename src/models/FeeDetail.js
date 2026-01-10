@@ -12,14 +12,12 @@ const FeeDetailSchema = new mongoose.Schema(
       ref: "School",
       required: true,
     },
-
     month: { type: String, required: true },
     amount: { type: Number, required: true },
     title: { type: String, required: true },
     description: { type: String },
     voucherImage: { type: String },
     studentProofImage: { type: String },
-
     status: {
       type: String,
       enum: ["pending", "submitted", "approved", "rejected"],

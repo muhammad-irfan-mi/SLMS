@@ -1370,7 +1370,6 @@ const updateDocumentStatus = async (req, res) => {
 };
 
 module.exports = {
-    // Document Request functions
     createDocumentRequest,
     getDocumentRequests,
     getStudentDocumentRequests,

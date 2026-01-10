@@ -1,8 +1,17 @@
 const express = require('express');
 const { upload } = require('../utils/multer');
 const { protect, isAdminOffice, isStudent } = require('../middlewares/auth');
-const { createFeeDetail, uploadStudentProof, approvePayment, updateFeeDetail, deleteFeeDetail, getMyFeeDetails, getAllFeeDetails } = require('../controllers/fee.controller');
-const router = express.Router()
+const {
+  createFeeDetail,
+  uploadStudentProof,
+  approvePayment,
+  updateFeeDetail,
+  deleteFeeDetail,
+  getMyFeeDetails,
+  getAllFeeDetails,
+} = require('../controllers/feeDetail.controller');
+
+const router = express.Router();
 
 router.post("/", protect, isAdminOffice, upload.fields([{ name: "voucherImage" }]), createFeeDetail);
 router.put("/:id/student-proof", protect, isStudent, upload.fields([{ name: "studentProofImage" }]), uploadStudentProof);
