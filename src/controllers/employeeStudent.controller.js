@@ -1197,7 +1197,7 @@ const getAllEmployeesBySchool = async (req, res) => {
 const getEmployeeById = async (req, res) => {
     try {
         const { id } = req.params;
-        const employee = await User.findById(id).select("-password");
+        const employee = await User.findById(id).select("-password -otp -forgotPasswordOTP");
         if (!employee || !["teacher", "admin_office"].includes(employee.role))
             return res.status(404).json({ message: "Employee not found" });
 
