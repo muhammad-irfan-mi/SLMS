@@ -10,16 +10,16 @@ const ClassSection = ClassSectionImported.default || ClassSectionImported;
 
 const formatDate = (date) => {
     if (!date) return null;
-    
+
     if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return date;
     }
-    
+
     const d = new Date(date);
     if (isNaN(d.getTime())) {
         throw new Error("Invalid date");
     }
-    
+
     return d.toISOString().split("T")[0];
 };
 
@@ -78,10 +78,10 @@ const validateStudentEnrollment = async (studentIds, classId, sectionId, school)
         }).select('_id').lean();
 
         const enrolledIds = new Set(enrolledStudents.map(s => String(s._id)));
-        
+
         // Check for non-enrolled students
         const nonEnrolled = studentIds.filter(id => !enrolledIds.has(String(id)));
-        
+
         if (nonEnrolled.length > 0) {
             return {
                 valid: false,
@@ -111,8 +111,8 @@ const markAttendance = async (req, res) => {
         // Verify teacher is assigned to this class/section
         const teacherCheck = await validateTeacherAssignment(teacherId, classId, sectionId, school);
         if (!teacherCheck.valid) {
-            return res.status(403).json({ 
-                message: teacherCheck.message 
+            return res.status(403).json({
+                message: teacherCheck.message
             });
         }
 
@@ -130,8 +130,8 @@ const markAttendance = async (req, res) => {
         // Check if date is in the future
         const today = formatDate(new Date());
         if (attendanceDate > today) {
-            return res.status(400).json({ 
-                message: "Cannot mark attendance for future dates" 
+            return res.status(400).json({
+                message: "Cannot mark attendance for future dates"
             });
         }
 
@@ -144,8 +144,8 @@ const markAttendance = async (req, res) => {
         });
 
         if (exists) {
-            return res.status(409).json({ 
-                message: "Attendance already marked for this date" 
+            return res.status(409).json({
+                message: "Attendance already marked for this date"
             });
         }
 
@@ -163,12 +163,12 @@ const markAttendance = async (req, res) => {
 
         // Fetch student details and approved leaves in parallel
         const [users, leaves] = await Promise.all([
-            User.find({ 
+            User.find({
                 _id: { $in: studentIds },
-                school 
+                school
             })
-            .select("name email")
-            .lean(),
+                .select("name email")
+                .lean(),
 
             Leave.find({
                 school,
@@ -186,7 +186,7 @@ const markAttendance = async (req, res) => {
         const finalStudents = students.map(s => {
             const user = userMap.get(String(s.studentId));
             const hasApprovedLeave = leaveSet.has(String(s.studentId));
-            
+
             return {
                 studentId: s.studentId,
                 name: user?.name || "Unknown",
@@ -224,9 +224,9 @@ const markAttendance = async (req, res) => {
 
     } catch (err) {
         console.error("markAttendance error:", err);
-        return res.status(500).json({ 
+        return res.status(500).json({
             message: "Server error",
-            error: err.message 
+            error: err.message
         });
     }
 };
@@ -259,16 +259,16 @@ const updateAttendance = async (req, res) => {
         if (userRole === 'teacher') {
             // Teacher can only update their own attendance records
             if (String(attendance.teacherId) !== String(userId)) {
-                return res.status(403).json({ 
-                    message: "You can only update attendance records you created" 
+                return res.status(403).json({
+                    message: "You can only update attendance records you created"
                 });
             }
 
             // Check if attendance date is in the past (teachers can't update future attendance)
             const today = formatDate(new Date());
             if (attendance.date > today) {
-                return res.status(400).json({ 
-                    message: "Cannot update attendance for future dates" 
+                return res.status(400).json({
+                    message: "Cannot update attendance for future dates"
                 });
             }
         }
@@ -276,21 +276,21 @@ const updateAttendance = async (req, res) => {
         // Validate student IDs in request
         const studentIds = students.map(s => s.studentId);
         const uniqueIds = [...new Set(studentIds.map(id => String(id)))];
-        
+
         if (studentIds.length !== uniqueIds.length) {
-            return res.status(400).json({ 
-                message: "Duplicate student IDs in request" 
+            return res.status(400).json({
+                message: "Duplicate student IDs in request"
             });
         }
 
         // Validate that all students belong to the same class/section as the attendance record
         const enrollmentCheck = await validateStudentEnrollment(
-            studentIds, 
-            attendance.classId, 
-            attendance.sectionId, 
+            studentIds,
+            attendance.classId,
+            attendance.sectionId,
             school
         );
-        
+
         if (!enrollmentCheck.valid) {
             return res.status(400).json({
                 message: enrollmentCheck.message,
@@ -316,7 +316,7 @@ const updateAttendance = async (req, res) => {
         // Fetch details for new students
         const newStudentIds = studentIds.filter(id => !existingStudentMap.has(String(id)));
         let newUsers = [];
-        
+
         if (newStudentIds.length > 0) {
             newUsers = await User.find({
                 _id: { $in: newStudentIds },
@@ -332,10 +332,10 @@ const updateAttendance = async (req, res) => {
         for (const s of students) {
             const studentIdStr = String(s.studentId);
             const hasApprovedLeave = leaveSet.has(studentIdStr);
-            
+
             // Determine final status (respect approved leaves)
             const finalStatus = hasApprovedLeave ? "leave" : s.status;
-            
+
             if (existingStudentMap.has(studentIdStr)) {
                 // Update existing student
                 const existingStudent = existingStudentMap.get(studentIdStr);
@@ -377,9 +377,9 @@ const updateAttendance = async (req, res) => {
 
     } catch (err) {
         console.error("updateAttendance error:", err);
-        return res.status(500).json({ 
+        return res.status(500).json({
             message: "Server error",
-            error: err.message 
+            error: err.message
         });
     }
 };
@@ -407,14 +407,14 @@ const getAttendanceBySection = async (req, res) => {
             }).select('sectionInfo').lean();
 
             if (!teacher) {
-                return res.status(403).json({ 
-                    message: "Teacher not found or inactive" 
+                return res.status(403).json({
+                    message: "Teacher not found or inactive"
                 });
             }
 
             if (String(teacher.sectionInfo?.id) !== String(sectionId)) {
-                return res.status(403).json({ 
-                    message: "You can only view attendance for your assigned section" 
+                return res.status(403).json({
+                    message: "You can only view attendance for your assigned section"
                 });
             }
         }
@@ -439,9 +439,9 @@ const getAttendanceBySection = async (req, res) => {
             }
         } else if (startDate && endDate) {
             try {
-                filter.date = { 
-                    $gte: formatDate(startDate), 
-                    $lte: formatDate(endDate) 
+                filter.date = {
+                    $gte: formatDate(startDate),
+                    $lte: formatDate(endDate)
                 };
             } catch (error) {
                 return res.status(400).json({
@@ -477,16 +477,16 @@ const getAttendanceBySection = async (req, res) => {
             return {
                 _id: att._id,
                 date: att.date,
-                class: att.classId ? { 
-                    _id: att.classId._id, 
-                    name: att.classId.class 
+                class: att.classId ? {
+                    _id: att.classId._id,
+                    name: att.classId.class
                 } : null,
-                section: section ? { 
-                    _id: section._id, 
-                    name: section.name 
+                section: section ? {
+                    _id: section._id,
+                    name: section.name
                 } : null,
-                teacher: att.teacherId ? { 
-                    _id: att.teacherId._id, 
+                teacher: att.teacherId ? {
+                    _id: att.teacherId._id,
                     name: att.teacherId.name,
                     email: att.teacherId.email
                 } : null,
@@ -515,9 +515,9 @@ const getAttendanceBySection = async (req, res) => {
 
     } catch (err) {
         console.error("getAttendanceBySection error:", err);
-        return res.status(500).json({ 
+        return res.status(500).json({
             message: "Server error",
-            error: err.message 
+            error: err.message
         });
     }
 };
@@ -529,24 +529,20 @@ const getAttendanceByStudent = async (req, res) => {
         const school = req.user.school;
         const userId = req.user._id;
         const userRole = req.user.role;
-        
+
         const { page, limit, skip } = normalizePagination(req.query);
 
-        // Validate studentId
         if (!mongoose.Types.ObjectId.isValid(studentId)) {
             return res.status(400).json({ message: "Invalid student ID" });
         }
 
-        // Check permissions
         if (userRole === 'student') {
-            // Students can only view their own attendance
             if (String(studentId) !== String(userId)) {
-                return res.status(403).json({ 
-                    message: "You can only view your own attendance" 
+                return res.status(403).json({
+                    message: "You can only view your own attendance"
                 });
             }
         } else if (userRole === 'teacher') {
-            // Teachers can only view attendance of students in their class/section
             const teacher = await User.findOne({
                 _id: userId,
                 school,
@@ -554,12 +550,11 @@ const getAttendanceByStudent = async (req, res) => {
             }).select('classInfo sectionInfo').lean();
 
             if (!teacher) {
-                return res.status(403).json({ 
-                    message: "Teacher not found or inactive" 
+                return res.status(403).json({
+                    message: "Teacher not found or inactive"
                 });
             }
 
-            // Check if student belongs to teacher's class/section
             const student = await User.findOne({
                 _id: studentId,
                 school,
@@ -569,19 +564,17 @@ const getAttendanceByStudent = async (req, res) => {
             });
 
             if (!student) {
-                return res.status(403).json({ 
-                    message: "Student not found in your class/section" 
+                return res.status(403).json({
+                    message: "Student not found in your class/section"
                 });
             }
         }
 
-        // Build filter
         const filter = {
             school,
             "students.studentId": new mongoose.Types.ObjectId(studentId)
         };
 
-        // Handle date filtering
         if (date) {
             try {
                 filter.date = formatDate(date);
@@ -593,9 +586,9 @@ const getAttendanceByStudent = async (req, res) => {
             }
         } else if (startDate && endDate) {
             try {
-                filter.date = { 
-                    $gte: formatDate(startDate), 
-                    $lte: formatDate(endDate) 
+                filter.date = {
+                    $gte: formatDate(startDate),
+                    $lte: formatDate(endDate)
                 };
             } catch (error) {
                 return res.status(400).json({
@@ -615,7 +608,6 @@ const getAttendanceByStudent = async (req, res) => {
             .limit(limit)
             .lean();
 
-        // Format response
         const attendance = records
             .map(r => {
                 const student = r.students.find(
@@ -632,13 +624,20 @@ const getAttendanceByStudent = async (req, res) => {
                 return {
                     _id: r._id,
                     date: r.date,
-                    class: r.classId ? { 
-                        _id: r.classId._id, 
-                        name: r.classId.class 
+
+                    student: {
+                        studentId: student.studentId,
+                        name: student.name,
+                        email: student.email,
+                        status: student.status
+                    },
+                    class: r.classId ? {
+                        _id: r.classId._id,
+                        name: r.classId.class
                     } : null,
-                    section: section ? { 
-                        _id: section._id, 
-                        name: section.name 
+                    section: section ? {
+                        _id: section._id,
+                        name: section.name
                     } : null,
                     status: student.status,
                     createdAt: r.createdAt
@@ -656,9 +655,9 @@ const getAttendanceByStudent = async (req, res) => {
 
     } catch (err) {
         console.error("getAttendanceByStudent error:", err);
-        return res.status(500).json({ 
+        return res.status(500).json({
             message: "Server error",
-            error: err.message 
+            error: err.message
         });
     }
 };
