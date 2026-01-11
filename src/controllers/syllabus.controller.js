@@ -547,22 +547,10 @@ const createSyllabus = async (req, res) => {
                 nextDate.setDate(nextDate.getDate() + 1);
                 suggestedDate = formatDate(nextDate);
 
-                message = `Cannot create syllabus. Current date (${formattedPublishDate}) is before the expiry date (${existingActiveSyllabus.expireDate}) of existing syllabus "${existingActiveSyllabus.title}". Please try again from ${suggestedDate} or later.`;
+                message = `Cannot create syllabus. Current date (${formattedPublishDate}) is before the expiry date (${existingActiveSyllabus.expireDate}) of existing syllabus`;
             } else {
-                message = `Cannot create new syllabus for this subject. Existing syllabus "${existingActiveSyllabus.title}" has no expiry date and is permanently active.`;
+                message = `Cannot create new syllabus for this subject.`;
             }
-
-            return res.status(409).json({
-                message,
-                existingSyllabus: {
-                    _id: existingActiveSyllabus._id,
-                    title: existingActiveSyllabus.title,
-                    publishDate: existingActiveSyllabus.publishDate,
-                    expireDate: existingActiveSyllabus.expireDate,
-                    status: existingActiveSyllabus.status
-                },
-                suggestedDate
-            });
         }
 
         const futureSyllabus = await Syllabus.findOne({
@@ -665,7 +653,6 @@ const getSyllabus = async (req, res) => {
 
         const syllabiWithUploaders = await Promise.all(
             enhancedSyllabi.map(async (item) => {
-                const uploader = await resolveUploader(item.uploadedBy);
 
                 return {
                     _id: item._id,
@@ -675,7 +662,6 @@ const getSyllabus = async (req, res) => {
                     subject: item.subjectId,
                     class: item.class,
                     section: item.section,
-                    uploader,
                     publishDate: item.publishDate,
                     expireDate: item.expireDate,
                     status: item.status,
@@ -736,7 +722,6 @@ const getSyllabusBySection = async (req, res) => {
 
         const syllabiWithUploaders = await Promise.all(
             enhancedSyllabi.map(async (item) => {
-                const uploader = await resolveUploader(item.uploadedBy);
 
                 return {
                     _id: item._id,
@@ -746,7 +731,6 @@ const getSyllabusBySection = async (req, res) => {
                     subject: item.subjectId,
                     class: item.class,
                     section: item.section,
-                    uploader,
                     publishDate: item.publishDate,
                     expireDate: item.expireDate
                 };
