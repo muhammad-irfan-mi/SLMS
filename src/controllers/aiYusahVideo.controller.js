@@ -2,16 +2,13 @@ const AiYusahVideo = require("../models/AiYusahVideo");
 const User = require("../models/User");
 const { validateVideo, validateFilter } = require("../validators/aiYusahVideo.validation");
 
-// Helper function to detect user role
 const detectUserRole = (user) => {
   if (user.role === 'superadmin') return 'superadmin';
   
-  // Check if it's a school (has schoolId field or is School model)
   if (user.schoolId || (user.verified !== undefined && user.email && !user.role)) {
     return 'school';
   }
   
-  // Check if it's a teacher, admin_office, or student
   if (user.role && ['teacher', 'admin_office', 'student'].includes(user.role)) {
     return user.role;
   }
@@ -19,12 +16,10 @@ const detectUserRole = (user) => {
   return 'unknown';
 };
 
-// Superadmin Create Video
 const createAiVideo = async (req, res) => {
   try {
     const userRole = detectUserRole(req.user);
     
-    // Only superadmin can create videos
     if (userRole !== 'superadmin') {
       return res.status(403).json({ 
         message: "Only superadmin can create videos" 
@@ -76,7 +71,6 @@ const updateAiVideo = async (req, res) => {
     const { title, description, youtubeLink, category, status } = req.body;
     const userRole = detectUserRole(req.user);
 
-    // Only superadmin can update videos
     if (userRole !== 'superadmin') {
       return res.status(403).json({ 
         message: "Only superadmin can update videos" 
@@ -86,7 +80,6 @@ const updateAiVideo = async (req, res) => {
     const video = await AiYusahVideo.findById(id);
     if (!video) return res.status(404).json({ message: "Video not found" });
 
-    // Update fields
     if (title) video.title = title;
     if (description !== undefined) video.description = description;
     if (category) video.category = category;
@@ -122,7 +115,7 @@ const updateAiVideo = async (req, res) => {
   }
 };
 
-// Get Videos for Superadmin (all videos with filters)
+// Get Videos for Superadmin
 const getVideosForSuperadmin = async (req, res) => {
   try {
     const userRole = detectUserRole(req.user);
@@ -193,7 +186,7 @@ const getVideosForSuperadmin = async (req, res) => {
   }
 };
 
-// Get Videos for School/Teachers/Admins/Students (only active videos)
+// Get Videos for School/Teachers/Admins/Students
 const getVideosForAll = async (req, res) => {
   try {
     const userRole = detectUserRole(req.user);
