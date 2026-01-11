@@ -85,7 +85,6 @@ const calculateOTPExpiry = (minutes = 10) => {
     return expiry;
 };
 
-// OPt FUNCTIONS FOR USERS
 // Send OTP for user verification
 const sendUserOTP = async (req, res) => {
     try {
@@ -1455,7 +1454,6 @@ const forgotPassword = async (req, res) => {
 
     let user;
 
-    // ---- IDENTIFY USER ----
     if (username) {
       user = await User.findOne({ username: username.toLowerCase() });
       if (!user) {
@@ -1490,7 +1488,6 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    // ---- GENERATE OTP ----
     const otpCode = generateOTP();
     const otpExpiry = calculateOTPExpiry(10);
 
@@ -1502,7 +1499,6 @@ const forgotPassword = async (req, res) => {
 
     await user.save();
 
-    // ---- SEND EMAIL ----
     await emailService.sendForgotPasswordOTPEmail(
       user.email,
       otpCode,
@@ -1524,316 +1520,316 @@ const forgotPassword = async (req, res) => {
 };
 
 // Verify Forgot Password OTP
-// const verifyForgotPasswordOTP = async (req, res) => {
-//     try {
-//         const { email, otp, username } = req.body;
+const verifyForgotPasswordOTP = async (req, res) => {
+    try {
+        const { email, otp, username } = req.body;
 
-//         if (!email && !username) {
-//             return res.status(400).json({
-//                 message: "Please provide either email or username"
-//             });
-//         }
+        if (!email && !username) {
+            return res.status(400).json({
+                message: "Please provide either email or username"
+            });
+        }
 
-//         const query = {};
-//         let user = null;
+        const query = {};
+        let user = null;
 
-//         if (username) {
-//             query.username = username.toLowerCase();
-//             user = await User.findOne(query);
+        if (username) {
+            query.username = username.toLowerCase();
+            user = await User.findOne(query);
 
-//             if (!user) {
-//                 return res.status(404).json({
-//                     message: "No user found with this username"
-//                 });
-//             }
+            if (!user) {
+                return res.status(404).json({
+                    message: "No user found with this username"
+                });
+            }
 
-//             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-//                 return res.status(400).json({
-//                     message: "Email does not match the provided username"
-//                 });
-//             }
-//         } else if (email) {
-//             // If only email is provided
-//             query.email = email.toLowerCase();
+            if (email && user.email.toLowerCase() !== email.toLowerCase()) {
+                return res.status(400).json({
+                    message: "Email does not match the provided username"
+                });
+            }
+        } else if (email) {
+            // If only email is provided
+            query.email = email.toLowerCase();
 
-//             // Find user by email
-//             user = await User.findOne(query);
+            // Find user by email
+            user = await User.findOne(query);
 
-//             if (!user) {
-//                 return res.status(404).json({
-//                     message: "No user found with this email"
-//                 });
-//             }
+            if (!user) {
+                return res.status(404).json({
+                    message: "No user found with this email"
+                });
+            }
 
-//             // For students, require username when using email
-//             if (user.role === 'student') {
-//                 return res.status(400).json({
-//                     message: "For students, please provide username along with email. Multiple students may share the same email.",
-//                     suggestion: "Provide username parameter in your request"
-//                 });
-//             }
-//         }
+            // For students, require username when using email
+            if (user.role === 'student') {
+                return res.status(400).json({
+                    message: "For students, please provide username along with email. Multiple students may share the same email.",
+                    suggestion: "Provide username parameter in your request"
+                });
+            }
+        }
 
-//         // Check if forgotPasswordOTP exists
-//         if (!user.forgotPasswordOTP) {
-//             return res.status(400).json({
-//                 message: "No password reset request found. Please request a new OTP."
-//             });
-//         }
+        // Check if forgotPasswordOTP exists
+        if (!user.forgotPasswordOTP) {
+            return res.status(400).json({
+                message: "No password reset request found. Please request a new OTP."
+            });
+        }
 
-//         // Check OTP attempts
-//         if (user.forgotPasswordOTP.attempts >= 5) {
-//             return res.status(429).json({
-//                 message: "Too many OTP attempts. Please request a new OTP."
-//             });
-//         }
+        // Check OTP attempts
+        if (user.forgotPasswordOTP.attempts >= 5) {
+            return res.status(429).json({
+                message: "Too many OTP attempts. Please request a new OTP."
+            });
+        }
 
-//         // Validate OTP
-//         const isExpired = new Date() > new Date(user.forgotPasswordOTP.expiresAt);
-//         if (isExpired) {
-//             user.forgotPasswordOTP.attempts += 1;
-//             user.forgotPasswordOTP.lastAttempt = new Date();
-//             await user.save();
+        // Validate OTP
+        const isExpired = new Date() > new Date(user.forgotPasswordOTP.expiresAt);
+        if (isExpired) {
+            user.forgotPasswordOTP.attempts += 1;
+            user.forgotPasswordOTP.lastAttempt = new Date();
+            await user.save();
 
-//             return res.status(400).json({
-//                 message: "OTP has expired. Please request a new OTP.",
-//                 attemptsRemaining: 5 - user.forgotPasswordOTP.attempts
-//             });
-//         }
+            return res.status(400).json({
+                message: "OTP has expired. Please request a new OTP.",
+                attemptsRemaining: 5 - user.forgotPasswordOTP.attempts
+            });
+        }
 
-//         if (otp !== user.forgotPasswordOTP.code) {
-//             user.forgotPasswordOTP.attempts += 1;
-//             user.forgotPasswordOTP.lastAttempt = new Date();
-//             await user.save();
+        if (otp !== user.forgotPasswordOTP.code) {
+            user.forgotPasswordOTP.attempts += 1;
+            user.forgotPasswordOTP.lastAttempt = new Date();
+            await user.save();
 
-//             return res.status(400).json({
-//                 message: "Invalid OTP",
-//                 attemptsRemaining: 5 - user.forgotPasswordOTP.attempts
-//             });
-//         }
+            return res.status(400).json({
+                message: "Invalid OTP",
+                attemptsRemaining: 5 - user.forgotPasswordOTP.attempts
+            });
+        }
 
-//         // Mark OTP as verified for password reset
-//         user.forgotPasswordOTP.verified = true;
-//         await user.save();
+        // Mark OTP as verified for password reset
+        user.forgotPasswordOTP.verified = true;
+        await user.save();
 
-//         return res.status(200).json({
-//             message: "OTP verified successfully. You can now set new password.",
-//             canResetPassword: true,
-//             email: user.email,
-//             username: user.username,
-//             role: user.role
-//         });
-//     } catch (err) {
-//         console.error("Error verifying forgot password OTP:", err);
-//         return res.status(500).json({
-//             message: "Server error while verifying OTP",
-//             error: err.message,
-//         });
-//     }
-// };
+        return res.status(200).json({
+            message: "OTP verified successfully. You can now set new password.",
+            canResetPassword: true,
+            email: user.email,
+            username: user.username,
+            role: user.role
+        });
+    } catch (err) {
+        console.error("Error verifying forgot password OTP:", err);
+        return res.status(500).json({
+            message: "Server error while verifying OTP",
+            error: err.message,
+        });
+    }
+};
 
 // Reset Password with OTP (for forgot password flow)
-// const resetPasswordWithOTP = async (req, res) => {
-//     try {
-//         const { email, otp, newPassword, username } = req.body;
-
-//         // Validate input
-//         if (!email && !username) {
-//             return res.status(400).json({
-//                 message: "Please provide either email or username"
-//             });
-//         }
-
-//         // Build query based on identifier
-//         const query = {};
-//         let user = null;
-
-//         if (username) {
-//             // If username is provided, use it (most specific)
-//             query.username = username.toLowerCase();
-//             user = await User.findOne(query);
-
-//             if (!user) {
-//                 return res.status(404).json({
-//                     message: "No user found with this username"
-//                 });
-//             }
-
-//             // If email was also provided, verify it matches
-//             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-//                 return res.status(400).json({
-//                     message: "Email does not match the provided username"
-//                 });
-//             }
-//         } else if (email) {
-//             // If only email is provided
-//             query.email = email.toLowerCase();
-
-//             // Find user by email
-//             user = await User.findOne(query);
-
-//             if (!user) {
-//                 return res.status(404).json({
-//                     message: "No user found with this email"
-//                 });
-//             }
-
-//             // For students, require username when using email
-//             if (user.role === 'student') {
-//                 return res.status(400).json({
-//                     message: "For students, please provide username along with email. Multiple students may share the same email.",
-//                     suggestion: "Provide username parameter in your request"
-//                 });
-//             }
-//         }
-
-//         // Check if forgotPasswordOTP is verified
-//         if (!user.forgotPasswordOTP || !user.forgotPasswordOTP.verified) {
-//             return res.status(400).json({
-//                 message: "Please verify OTP first before resetting password."
-//             });
-//         }
-
-//         // Verify OTP again
-//         if (otp !== user.forgotPasswordOTP.code) {
-//             return res.status(400).json({
-//                 message: "Invalid OTP"
-//             });
-//         }
-
-//         // Check if OTP is still valid
-//         const isExpired = new Date() > new Date(user.forgotPasswordOTP.expiresAt);
-//         if (isExpired) {
-//             // Clear the OTP
-//             user.forgotPasswordOTP = undefined;
-//             await user.save();
-
-//             return res.status(400).json({
-//                 message: "OTP has expired. Please request a new password reset."
-//             });
-//         }
-
-//         // Hash and update password
-//         const hashedPassword = await bcrypt.hash(newPassword, 10);
-//         user.password = hashedPassword;
-
-//         // Clear the forgotPasswordOTP
-//         user.forgotPasswordOTP = undefined;
-
-//         await user.save();
-
-//         // Generate JWT token for auto-login
-//         const jwt = require('jsonwebtoken');
-//         const token = jwt.sign(
-//             {
-//                 id: user._id,
-//                 email: user.email,
-//                 role: user.role,
-//                 school: user.school,
-//                 ...(user.username && { username: user.username })
-//             },
-//             process.env.JWT_SECRET,
-//             { expiresIn: "7d" }
-//         );
-
-//         // Send password changed notification email
-//         try {
-//             await emailService.sendPasswordChangedNotification(
-//                 user.email,
-//                 user.name || "User"
-//             );
-//         } catch (emailError) {
-//             console.error('Failed to send password changed notification:', emailError);
-//         }
-
-//         return res.status(200).json({
-//             message: "Password reset successfully!",
-//             data: {
-//                 token: token,
-//                 user: {
-//                     id: user._id,
-//                     name: user.name,
-//                     email: user.email,
-//                     username: user.username,
-//                     role: user.role,
-//                     school: user.school
-//                 }
-//             }
-//         });
-//     } catch (err) {
-//         console.error("Error resetting password with OTP:", err);
-//         return res.status(500).json({
-//             message: "Server error while resetting password",
-//             error: err.message,
-//         });
-//     }
-// };
-
 const resetPasswordWithOTP = async (req, res) => {
-  try {
-    const { email, username, otp, newPassword } = req.body;
+    try {
+        const { email, otp, newPassword, username } = req.body;
 
-    let user;
+        // Validate input
+        if (!email && !username) {
+            return res.status(400).json({
+                message: "Please provide either email or username"
+            });
+        }
 
-    // ---- IDENTIFY USER ----
-    if (username) {
-      user = await User.findOne({ username: username.toLowerCase() });
-      if (!user) return res.status(404).json({ message: "User not found" });
+        // Build query based on identifier
+        const query = {};
+        let user = null;
 
-      if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-        return res.status(400).json({ message: "Email does not match username" });
-      }
-    } else if (email) {
-      user = await User.findOne({ email: email.toLowerCase() });
-      if (!user) return res.status(404).json({ message: "User not found" });
+        if (username) {
+            // If username is provided, use it (most specific)
+            query.username = username.toLowerCase();
+            user = await User.findOne(query);
 
-      if (user.role === "student") {
-        return res.status(400).json({
-          message: "Students must provide username"
+            if (!user) {
+                return res.status(404).json({
+                    message: "No user found with this username"
+                });
+            }
+
+            // If email was also provided, verify it matches
+            if (email && user.email.toLowerCase() !== email.toLowerCase()) {
+                return res.status(400).json({
+                    message: "Email does not match the provided username"
+                });
+            }
+        } else if (email) {
+            // If only email is provided
+            query.email = email.toLowerCase();
+
+            // Find user by email
+            user = await User.findOne(query);
+
+            if (!user) {
+                return res.status(404).json({
+                    message: "No user found with this email"
+                });
+            }
+
+            // For students, require username when using email
+            if (user.role === 'student') {
+                return res.status(400).json({
+                    message: "For students, please provide username along with email. Multiple students may share the same email.",
+                    suggestion: "Provide username parameter in your request"
+                });
+            }
+        }
+
+        // Check if forgotPasswordOTP is verified
+        if (!user.forgotPasswordOTP || !user.forgotPasswordOTP.verified) {
+            return res.status(400).json({
+                message: "Please verify OTP first before resetting password."
+            });
+        }
+
+        // Verify OTP again
+        if (otp !== user.forgotPasswordOTP.code) {
+            return res.status(400).json({
+                message: "Invalid OTP"
+            });
+        }
+
+        // Check if OTP is still valid
+        const isExpired = new Date() > new Date(user.forgotPasswordOTP.expiresAt);
+        if (isExpired) {
+            // Clear the OTP
+            user.forgotPasswordOTP = undefined;
+            await user.save();
+
+            return res.status(400).json({
+                message: "OTP has expired. Please request a new password reset."
+            });
+        }
+
+        // Hash and update password
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+        user.password = hashedPassword;
+
+        // Clear the forgotPasswordOTP
+        user.forgotPasswordOTP = undefined;
+
+        await user.save();
+
+        // Generate JWT token for auto-login
+        const jwt = require('jsonwebtoken');
+        const token = jwt.sign(
+            {
+                id: user._id,
+                email: user.email,
+                role: user.role,
+                school: user.school,
+                ...(user.username && { username: user.username })
+            },
+            process.env.JWT_SECRET,
+            { expiresIn: "7d" }
+        );
+
+        // Send password changed notification email
+        try {
+            await emailService.sendPasswordChangedNotification(
+                user.email,
+                user.name || "User"
+            );
+        } catch (emailError) {
+            console.error('Failed to send password changed notification:', emailError);
+        }
+
+        return res.status(200).json({
+            message: "Password reset successfully!",
+            data: {
+                token: token,
+                user: {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    username: user.username,
+                    role: user.role,
+                    school: user.school
+                }
+            }
         });
-      }
-    } else {
-      return res.status(400).json({
-        message: "Please provide email or username"
-      });
+    } catch (err) {
+        console.error("Error resetting password with OTP:", err);
+        return res.status(500).json({
+            message: "Server error while resetting password",
+            error: err.message,
+        });
     }
-
-    const otpData = user.forgotPasswordOTP;
-    if (!otpData) {
-      return res.status(400).json({ message: "OTP not requested" });
-    }
-
-    // ---- VALIDATE OTP ----
-    if (new Date() > otpData.expiresAt) {
-      user.forgotPasswordOTP = undefined;
-      await user.save();
-      return res.status(400).json({ message: "OTP expired" });
-    }
-
-    if (otp !== otpData.code) {
-      return res.status(400).json({ message: "Invalid OTP" });
-    }
-
-    // ---- RESET PASSWORD ----
-    user.password = await bcrypt.hash(newPassword, 10);
-    user.forgotPasswordOTP = undefined;
-    await user.save();
-
-    // ---- SEND CONFIRMATION EMAIL ----
-    await emailService.sendPasswordChangedNotification(
-      user.email,
-      user.name || "User"
-    );
-
-    return res.status(200).json({
-      message: "Password reset successful"
-    });
-
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ message: "Server error" });
-  }
 };
+
+// const resetPasswordWithOTP = async (req, res) => {
+//   try {
+//     const { email, username, otp, newPassword } = req.body;
+
+//     let user;
+
+//     // ---- IDENTIFY USER ----
+//     if (username) {
+//       user = await User.findOne({ username: username.toLowerCase() });
+//       if (!user) return res.status(404).json({ message: "User not found" });
+
+//       if (email && user.email.toLowerCase() !== email.toLowerCase()) {
+//         return res.status(400).json({ message: "Email does not match username" });
+//       }
+//     } else if (email) {
+//       user = await User.findOne({ email: email.toLowerCase() });
+//       if (!user) return res.status(404).json({ message: "User not found" });
+
+//       if (user.role === "student") {
+//         return res.status(400).json({
+//           message: "Students must provide username"
+//         });
+//       }
+//     } else {
+//       return res.status(400).json({
+//         message: "Please provide email or username"
+//       });
+//     }
+
+//     const otpData = user.forgotPasswordOTP;
+//     if (!otpData) {
+//       return res.status(400).json({ message: "OTP not requested" });
+//     }
+
+//     // ---- VALIDATE OTP ----
+//     if (new Date() > otpData.expiresAt) {
+//       user.forgotPasswordOTP = undefined;
+//       await user.save();
+//       return res.status(400).json({ message: "OTP expired" });
+//     }
+
+//     if (otp !== otpData.code) {
+//       return res.status(400).json({ message: "Invalid OTP" });
+//     }
+
+//     // ---- RESET PASSWORD ----
+//     user.password = await bcrypt.hash(newPassword, 10);
+//     user.forgotPasswordOTP = undefined;
+//     await user.save();
+
+//     // ---- SEND CONFIRMATION EMAIL ----
+//     await emailService.sendPasswordChangedNotification(
+//       user.email,
+//       user.name || "User"
+//     );
+
+//     return res.status(200).json({
+//       message: "Password reset successful"
+//     });
+
+//   } catch (err) {
+//     console.error(err);
+//     return res.status(500).json({ message: "Server error" });
+//   }
+// };
 
 
 // Reset Password with Old Password (for logged-in users)
@@ -2093,12 +2089,10 @@ const resendForgotPasswordOTP = async (req, res) => {
             });
         }
 
-        // Build query based on identifier
         const query = {};
         let user = null;
 
         if (username) {
-            // If username is provided, use it (most specific)
             query.username = username.toLowerCase();
             user = await User.findOne(query);
 
@@ -2225,7 +2219,7 @@ module.exports = {
     deleteStudentBySchool,
     editOwnProfile,
     forgotPassword,
-    // verifyForgotPasswordOTP,
+    verifyForgotPasswordOTP,
     resetPasswordWithOTP,
     resetPassword,
     // changePassword,

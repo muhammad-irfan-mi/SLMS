@@ -3,59 +3,66 @@ const router = express.Router();
 
 const { upload } = require("../utils/multer");
 const { 
-    protect, 
-    isTeacherOrAdminOfficeOrSchool, 
-    isStudent, 
-    isAdminOffice,
-    isTeacher 
+  protect, 
+  isTeacherOrAdminOfficeOrSchool, 
+  isStudent, 
+  isAdminOffice
 } = require("../middlewares/auth");
 const { 
-    addResult, 
-    updateResult, 
-    getResults, 
-    getStudentResults, 
-    deleteResult,
-    getResultsByPosition 
+  addResult, 
+  updateResult, 
+  getResults, 
+  getStudentResults, 
+  deleteResult,
+  getResultsByPosition 
 } = require("../controllers/result.controller");
+const validate = require("../middlewares/validate");
+const { addResultSchema, updateResultSchema, resultIdParamSchema, getResultsQuerySchema, getResultsByPositionQuerySchema } = require("../validators/result.vakidation");
 
 // Admin/Teacher routes
 router.post("/", 
-    protect, 
-    isTeacherOrAdminOfficeOrSchool, 
-    upload.single("image"), 
-    addResult
+  protect, 
+  isTeacherOrAdminOfficeOrSchool, 
+  upload.single("image"), 
+  validate(addResultSchema),
+  addResult
 );
 
-router.put("/:id", 
-    protect, 
-    isTeacherOrAdminOfficeOrSchool, 
-    upload.single("image"), 
-    updateResult
+router.put("/:resultId", 
+  protect, 
+  isTeacherOrAdminOfficeOrSchool, 
+  upload.single("image"), 
+  validate(resultIdParamSchema, "params"),
+  validate(updateResultSchema),
+  updateResult
 );
 
-router.delete("/:id", 
-    protect, 
-    isAdminOffice, 
-    deleteResult
+router.delete("/:resultId", 
+  protect, 
+  isAdminOffice, 
+  validate(resultIdParamSchema, "params"),
+  deleteResult
 );
 
 router.get("/", 
-    protect, 
-    isTeacherOrAdminOfficeOrSchool, 
-    getResults
+  protect, 
+  isTeacherOrAdminOfficeOrSchool, 
+  validate(getResultsQuerySchema, "query"),
+  getResults
 );
 
 router.get("/by-position", 
-    protect, 
-    isTeacherOrAdminOfficeOrSchool, 
-    getResultsByPosition
+  protect, 
+  isTeacherOrAdminOfficeOrSchool, 
+  validate(getResultsByPositionQuerySchema, "query"),
+  getResultsByPosition
 );
 
 // Student routes
 router.get("/student", 
-    protect, 
-    isStudent, 
-    getStudentResults
+  protect, 
+  isStudent, 
+  getStudentResults
 );
 
 module.exports = router;

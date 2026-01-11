@@ -73,6 +73,8 @@ const schoolLogin = async (req, res) => {
     if (!school) return res.status(404).json({ message: "School not found" });
     if (!school.verified)
       return res.status(401).json({ message: "Please set your password first." });
+    if(!school.password)
+      return res.status(401).json({ message: "Please set your password first." });
 
     const validPass = await bcrypt.compare(password, school.password);
     if (!validPass) return res.status(400).json({ message: "Invalid password" });

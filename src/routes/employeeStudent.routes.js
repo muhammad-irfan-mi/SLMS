@@ -22,7 +22,7 @@ const {
     // changePassword,
     resendForgotPasswordOTP,
     resetPassword,
-    // verifyForgotPasswordOTP,
+    verifyForgotPasswordOTP,
     forgotPassword,
     resetPasswordWithOTP
 } = require("../controllers/employeeStudent.controller");
@@ -198,11 +198,11 @@ router.post(
     forgotPassword
 );
 
-// router.post(
-//     "/verify-forgot-password-otp",
-//     validate(validationSchemas.verifyForgotPasswordOTP),
-//     verifyForgotPasswordOTP
-// );
+router.post(
+    "/verify-forgot-password-otp",
+    validate(validationSchemas.verifyForgotPasswordOTP),
+    verifyForgotPasswordOTP
+);
 
 router.post(
     "/reset-verify-password",

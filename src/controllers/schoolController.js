@@ -417,22 +417,31 @@ const editSchoolBySuperAdmin = async (req, res) => {
 const deleteSchoolBySuperAdmin = async (req, res) => {
   try {
     const { id } = req.params;
+
     const school = await School.findById(id);
 
     if (!school) {
       return res.status(404).json({ message: "School not found" });
     }
 
-    const { cnicFront, cnicBack, nocDoc } = school.images || {};
-    const filesToDelete = [cnicFront, cnicBack, nocDoc].filter(Boolean);
-
-    for (const fileUrl of filesToDelete) {
-      await deleteFileFromS3(fileUrl);
+    if (school.isDeleted) {
+      return res.status(400).json({ message: "School already deleted" });
     }
 
-    await school.deleteOne();
+    school.isDeleted = true;
+    school.deletedAt = new Date();
 
-    return res.status(200).json({ message: "School and its files deleted successfully" });
+    await school.save();
+
+    return res.status(200).json({
+      message: "School deleted successfully",
+      school: {
+        _id: school._id,
+        name: school.name,
+        isDeleted: school.isDeleted,
+        deletedAt: school.deletedAt
+      }
+    });
   } catch (err) {
     console.error("Error deleting school:", err);
     return res.status(500).json({

@@ -1,3 +1,4 @@
+const { boolean } = require("joi");
 const mongoose = require("mongoose");
 const { Schema } = mongoose;
 
@@ -15,6 +16,8 @@ const SchoolSchema = new Schema({
   },
   schoolId: { type: String, required: true, unique: true },
   verified: { type: Boolean, default: false },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date },
   location: {
     lat: Number,
     lon: Number,
