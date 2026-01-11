@@ -1,4 +1,5 @@
 const ClassSection = require("../models/ClassSection");
+const Result = require("../models/Result");
 const User = require("../models/User");
 const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
 
