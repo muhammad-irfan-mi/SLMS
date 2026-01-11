@@ -486,7 +486,7 @@ const normalizePagination = (query) => {
 const createSyllabus = async (req, res) => {
     try {
         const schoolId = req.user.school;
-        const uploadedById = req.user._id;
+        // const uploadedById = req.user._id;
         const userRole = req.user.role;
 
         const { classId, sectionId, subjectId, title, description, detail, publishDate, expireDate, status } = req.body;
@@ -523,9 +523,9 @@ const createSyllabus = async (req, res) => {
             title,
             description,
             detail,
-            uploadedBy: uploadedById,
+            // uploadedBy: uploadedById,
             publishDate: formattedPublishDate,
-            // expireDate: formattedExpireDate,
+            expireDate: formattedExpireDate,
             status: status || "draft",
         });
 
@@ -535,7 +535,7 @@ const createSyllabus = async (req, res) => {
 
         const classSectionInfo = await getClassSectionInfo(classId, sectionId, schoolId);
 
-        const uploader = await resolveUploader(uploadedById);
+        // const uploader = await resolveUploader(uploadedById);
 
         res.status(201).json({
             message: "Syllabus created successfully",
@@ -551,7 +551,7 @@ const createSyllabus = async (req, res) => {
                 },
                 class: classSectionInfo.class,
                 section: classSectionInfo.section,
-                uploader,
+                // uploader,
                 publishDate: syllabus.publishDate,
                 expireDate: syllabus.expireDate,
                 status: syllabus.status,

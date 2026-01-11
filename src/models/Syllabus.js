@@ -41,12 +41,6 @@ const syllabusSchema = new Schema(
       maxlength: 5000,
     },
 
-    // uploadedBy: {
-    //   type: Schema.Types.ObjectId,
-    //   ref: "User",
-    //   required: true,
-    // },
-
     publishDate: {
       type: String,
     },
