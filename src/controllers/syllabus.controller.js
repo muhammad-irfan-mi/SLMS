@@ -486,10 +486,9 @@ const normalizePagination = (query) => {
 const createSyllabus = async (req, res) => {
     try {
         const schoolId = req.user.school;
-        // const uploadedById = req.user._id;
         const userRole = req.user.role;
 
-        const { classId, sectionId, subjectId, title, description, detail, publishDate, expireDate, status } = req.body;
+        const { classId, sectionId, subjectId, title, description, detail, expireDate, status } = req.body;
 
         const classSectionCheck = await validateClassSection(classId, sectionId, schoolId);
         if (!classSectionCheck.valid) {
@@ -501,18 +500,92 @@ const createSyllabus = async (req, res) => {
             return res.status(400).json({ message: subjectCheck.message });
         }
 
-        let formattedPublishDate = null;
+        const today = new Date();
+        const formattedPublishDate = formatDate(today);
         let formattedExpireDate = null;
 
         try {
-            if (publishDate) formattedPublishDate = formatDate(publishDate);
             if (expireDate) formattedExpireDate = formatDate(expireDate);
         } catch (error) {
             return res.status(400).json({ message: error.message });
         }
 
-        if (formattedPublishDate && formattedExpireDate && formattedExpireDate < formattedPublishDate) {
-            return res.status(400).json({ message: "Expire date must be after publish date" });
+        if (formattedExpireDate && formattedExpireDate <= formattedPublishDate) {
+            return res.status(400).json({
+                message: `Expire date must be after publish date (${formattedPublishDate})`
+            });
+        }
+
+        const existingActiveSyllabus = await Syllabus.findOne({
+            school: schoolId,
+            classId,
+            sectionId,
+            subjectId,
+            $or: [
+                // current date is before expiry
+                {
+                    expireDate: { $gte: formattedPublishDate }
+                },
+                // Syllabus has no expire date 
+                {
+                    expireDate: null
+                },
+                // Current date falls within existing syllabus date range
+                {
+                    publishDate: { $lte: formattedPublishDate },
+                    expireDate: { $gte: formattedPublishDate }
+                }
+            ]
+        }).select('title publishDate expireDate status').lean();
+
+        if (existingActiveSyllabus) {
+            let message = '';
+            let suggestedDate = null;
+
+            if (existingActiveSyllabus.expireDate) {
+                const nextDate = new Date(existingActiveSyllabus.expireDate);
+                nextDate.setDate(nextDate.getDate() + 1);
+                suggestedDate = formatDate(nextDate);
+
+                message = `Cannot create syllabus. Current date (${formattedPublishDate}) is before the expiry date (${existingActiveSyllabus.expireDate}) of existing syllabus "${existingActiveSyllabus.title}". Please try again from ${suggestedDate} or later.`;
+            } else {
+                message = `Cannot create new syllabus for this subject. Existing syllabus "${existingActiveSyllabus.title}" has no expiry date and is permanently active.`;
+            }
+
+            return res.status(409).json({
+                message,
+                existingSyllabus: {
+                    _id: existingActiveSyllabus._id,
+                    title: existingActiveSyllabus.title,
+                    publishDate: existingActiveSyllabus.publishDate,
+                    expireDate: existingActiveSyllabus.expireDate,
+                    status: existingActiveSyllabus.status
+                },
+                suggestedDate
+            });
+        }
+
+        const futureSyllabus = await Syllabus.findOne({
+            school: schoolId,
+            classId,
+            sectionId,
+            subjectId,
+            publishDate: { $gt: formattedPublishDate }
+        }).select('title publishDate expireDate status').lean();
+
+        if (futureSyllabus) {
+            const message = `Cannot create syllabus. There's already a future syllabus`;
+
+            return res.status(409).json({
+                message,
+                existingSyllabus: {
+                    _id: futureSyllabus._id,
+                    title: futureSyllabus.title,
+                    publishDate: futureSyllabus.publishDate,
+                    expireDate: futureSyllabus.expireDate,
+                    status: futureSyllabus.status
+                }
+            });
         }
 
         const syllabus = await Syllabus.create({
@@ -710,10 +783,11 @@ const updateSyllabus = async (req, res) => {
             return res.status(403).json({ message: "You can only update syllabi from your school" });
         }
 
-        if (updateData.classId || updateData.sectionId) {
-            const classId = updateData.classId || syllabus.classId;
-            const sectionId = updateData.sectionId || syllabus.sectionId;
+        const classId = updateData.classId || syllabus.classId;
+        const sectionId = updateData.sectionId || syllabus.sectionId;
+        const subjectId = updateData.subjectId || syllabus.subjectId;
 
+        if (updateData.classId || updateData.sectionId) {
             const classSectionCheck = await validateClassSection(classId, sectionId, schoolId);
             if (!classSectionCheck.valid) {
                 return res.status(400).json({ message: classSectionCheck.message });
@@ -721,32 +795,85 @@ const updateSyllabus = async (req, res) => {
         }
 
         if (updateData.subjectId) {
-            const classId = updateData.classId || syllabus.classId;
-            const subjectCheck = await validateSubjectAssignment(updateData.subjectId, classId, schoolId);
+            const subjectCheck = await validateSubjectAssignment(subjectId, classId, schoolId);
             if (!subjectCheck.valid) {
                 return res.status(400).json({ message: subjectCheck.message });
             }
         }
 
+        let formattedExpireDate = updateData.expireDate;
+
         if (updateData.publishDate) {
-            try {
-                updateData.publishDate = formatDate(updateData.publishDate);
-            } catch (error) {
-                return res.status(400).json({ message: error.message });
-            }
+            return res.status(400).json({
+                message: "Publish date cannot be changed. It is automatically set to the creation date."
+            });
         }
 
         if (updateData.expireDate) {
             try {
-                updateData.expireDate = formatDate(updateData.expireDate);
+                formattedExpireDate = formatDate(updateData.expireDate);
+                updateData.expireDate = formattedExpireDate;
             } catch (error) {
                 return res.status(400).json({ message: error.message });
             }
         }
 
-        if (updateData.publishDate && updateData.expireDate && updateData.expireDate < updateData.publishDate) {
-            return res.status(400).json({ message: "Expire date must be after publish date" });
+        const finalPublishDate = syllabus.publishDate; 
+        const finalExpireDate = formattedExpireDate || syllabus.expireDate;
+
+        if (finalExpireDate && finalExpireDate <= finalPublishDate) {
+            return res.status(400).json({
+                message: `Expire date must be after original publish date (${finalPublishDate})`
+            });
         }
+
+        if (updateData.subjectId || updateData.expireDate) {
+            const today = formatDate(new Date());
+
+            const existingActiveSyllabus = await Syllabus.findOne({
+                _id: { $ne: syllabusId }, 
+                school: schoolId,
+                classId,
+                sectionId,
+                subjectId,
+                $or: [
+                    {
+                        expireDate: { $gte: finalPublishDate }
+                    },
+                    {
+                        expireDate: null
+                    },
+                    {
+                        publishDate: { $lte: finalPublishDate },
+                        expireDate: { $gte: finalPublishDate }
+                    }
+                ]
+            }).select('title publishDate expireDate status').lean();
+
+            if (existingActiveSyllabus) {
+                let message = '';
+
+                if (existingActiveSyllabus.expireDate) {
+                    message = `Cannot update syllabus. Original publish date (${finalPublishDate}) is before the expiry date (${existingActiveSyllabus.expireDate}) of existing syllabus "${existingActiveSyllabus.title}".`;
+                } else {
+                    message = `Cannot update syllabus. Existing syllabus "${existingActiveSyllabus.title}" has no expiry date and is permanently active.`;
+                }
+
+                return res.status(409).json({
+                    message,
+                    existingSyllabus: {
+                        _id: existingActiveSyllabus._id,
+                        title: existingActiveSyllabus.title,
+                        publishDate: existingActiveSyllabus.publishDate,
+                        expireDate: existingActiveSyllabus.expireDate,
+                        status: existingActiveSyllabus.status
+                    }
+                });
+            }
+        }
+
+        // Update syllabus (excluding publishDate)
+        delete updateData.publishDate; // Ensure publishDate cannot be updated
 
         const updatedSyllabus = await Syllabus.findByIdAndUpdate(
             syllabusId,
@@ -754,6 +881,7 @@ const updateSyllabus = async (req, res) => {
             { new: true, runValidators: true }
         ).populate("subjectId", "name code");
 
+        // Get class and section info using helper
         const classSectionInfo = await getClassSectionInfo(
             updatedSyllabus.classId,
             updatedSyllabus.sectionId,
@@ -773,7 +901,7 @@ const updateSyllabus = async (req, res) => {
                 class: classSectionInfo.class,
                 section: classSectionInfo.section,
                 uploader,
-                publishDate: updatedSyllabus.publishDate,
+                publishDate: updatedSyllabus.publishDate, 
                 expireDate: updatedSyllabus.expireDate,
                 status: updatedSyllabus.status,
                 updatedAt: updatedSyllabus.updatedAt
