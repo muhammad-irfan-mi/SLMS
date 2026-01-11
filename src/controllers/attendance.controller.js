@@ -405,7 +405,6 @@ const getAttendanceBySection = async (req, res) => {
                 _id: userId,
                 school,
                 role: 'teacher',
-                status: 'active'
             }).select('sectionInfo').lean();
 
             if (!teacher) {
