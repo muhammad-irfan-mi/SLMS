@@ -73,7 +73,6 @@ const validateStudentEnrollment = async (studentIds, classId, sectionId, school)
             _id: { $in: studentIds },
             school,
             role: 'student',
-            // status: 'active',
             'classInfo.id': classId,
             'sectionInfo.id': sectionId
         }).select('_id').lean();
@@ -552,7 +551,6 @@ const getAttendanceByStudent = async (req, res) => {
                 _id: userId,
                 school,
                 role: 'teacher',
-                status: 'active'
             }).select('classInfo sectionInfo').lean();
 
             if (!teacher) {
@@ -566,7 +564,6 @@ const getAttendanceByStudent = async (req, res) => {
                 _id: studentId,
                 school,
                 role: 'student',
-                status: 'active',
                 'classInfo.id': teacher.classInfo?.id,
                 'sectionInfo.id': teacher.sectionInfo?.id
             });
