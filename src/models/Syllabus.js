@@ -41,14 +41,14 @@ const syllabusSchema = new Schema(
       maxlength: 5000,
     },
 
-    uploadedBy: {
-      type: Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
+    // uploadedBy: {
+    //   type: Schema.Types.ObjectId,
+    //   ref: "User",
+    //   required: true,
+    // },
 
     publishDate: {
-      type: String, 
+      type: String,
     },
     expireDate: {
       type: String,
@@ -63,5 +63,10 @@ const syllabusSchema = new Schema(
   },
   { timestamps: true }
 );
+
+syllabusSchema.index({ school: 1, classId: 1, sectionId: 1 });
+syllabusSchema.index({ school: 1, subjectId: 1 });
+syllabusSchema.index({ school: 1, status: 1, publishDate: -1 });
+syllabusSchema.index({ school: 1, sectionId: 1, status: 1 });
 
 module.exports = mongoose.model("Syllabus", syllabusSchema);
