@@ -1070,7 +1070,7 @@ const getStudentSiblingsByEmail = async (req, res) => {
 const getStudentById = async (req, res) => {
     try {
         const { id } = req.params;
-        const student = await User.findById(id).select("-password");
+        const student = await User.findById(id).select("-password -otp -forgotPasswordOTP");
 
         if (!student || student.role !== "student")
             return res.status(404).json({ message: "Student not found" });
