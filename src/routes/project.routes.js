@@ -1,110 +1,79 @@
 const express = require("express");
 const router = express.Router();
 const { protect, isTeacherOrAdminOfficeOrSchool, isStudent } = require('../middlewares/auth');
-const { 
-  createProject, 
-  getProjects, 
-  updateProject, 
-  deleteProject, 
+const {
+  createProject,
+  updateProject,
+  deleteProject,
   getProjectsForStudent,
   submitProject,
-  gradeSubmission,
   getProjectSubmissions,
   getSubmission,
-  updateSubmission
+  gradeSubmission,
+  getProjects
 } = require("../controllers/projectController");
 const { upload } = require("../utils/multer");
-const { 
-  validateProject, 
-  validateFilter, 
+const {
+  validateProject,
+  validateFilter,
   validateFiles,
   validateSubmission,
   validateGrading
 } = require("../validators/project.validation");
 
-// Teacher/Admin/School routes
-router.post(
-  "/",
+router.post("/",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]),
   validateFiles,
   validateProject,
-  createProject
-);
+  createProject);
 
-router.get(
-  "/",
+router.get("/",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   validateFilter,
-  getProjects
-);
+  getProjects);
 
-router.patch(
-  "/:id",
+router.patch("/:id",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]),
   validateFiles,
   validateProject,
-  updateProject
-);
+  updateProject);
 
-router.delete(
-  "/:id",
+router.delete("/:id",
   protect,
   isTeacherOrAdminOfficeOrSchool,
-  deleteProject
-);
+  deleteProject);
 
-router.get(
-  "/student",
+router.get("/student",
   protect,
   isStudent,
   validateFilter,
-  getProjectsForStudent
-);
+  getProjectsForStudent);
 
-router.post(
-  "/submit/:projectId",
+router.post("/submit/:projectId",
   protect,
   isStudent,
-  upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]),
-  validateFiles,
+  upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]), validateFiles,
   validateSubmission,
-  submitProject
-);
+  submitProject);
 
-// Submission viewing and grading
-router.get(
-  "/:projectId/submissions",
+router.get("/:projectId/submissions",
   protect,
   isTeacherOrAdminOfficeOrSchool,
-  validateFilter,
-  getProjectSubmissions
-);
+  validateFilter, getProjectSubmissions);
 
-router.get(
-  "/:projectId/submissions/:submissionId",
+router.get("/:projectId/submissions/:submissionId",
   protect,
-  getSubmission
-);
-
-router.patch(
-  "/:projectId/submissions/:submissionId",
-  protect,
-  upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]),
-  validateFiles,
-  updateSubmission
-);
-
-router.post(
-  "/:projectId/submissions/:submissionId/grade",
+  getSubmission);
+  
+router.post("/:projectId/submissions/:submissionId/grade",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   validateGrading,
-  gradeSubmission
-);
+  gradeSubmission);
 
 module.exports = router;

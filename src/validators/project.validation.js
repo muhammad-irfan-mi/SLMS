@@ -58,7 +58,7 @@ const projectSchema = Joi.object({
       'number.max': 'Maximum marks cannot exceed 1000'
     }),
   
-  status: Joi.string().valid('draft', 'assigned', 'completed', 'graded').default('assigned'),
+  // status: Joi.string().valid('draft', 'assigned', 'completed', 'graded').default('assigned'),
   
   // File validation (for file size, type, etc.)
   fileValidation: Joi.object({
