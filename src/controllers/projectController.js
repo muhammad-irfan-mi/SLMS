@@ -165,7 +165,6 @@ const createProject = async (req, res) => {
     const { _id: userId, school } = req.user;
 
     let resolvedRole = req.user.role;
-    console.log(req.user)
     if (!resolvedRole) {
       if (school && String(school) === String(userId)) {
         resolvedRole = 'school';
@@ -195,6 +194,16 @@ const createProject = async (req, res) => {
     // if (!isTeacher && !isAdminOrSchool) {
     //   return res.status(403).json({ message: "Only teachers, admin office, or school can create projects" });
     // }
+    let parsedStudentIds = studentIds;
+    if (typeof studentIds === 'string') {
+      try {
+        parsedStudentIds = JSON.parse(studentIds);
+      } catch (error) {
+        return res.status(400).json({
+          message: 'studentIds must be a valid JSON array string'
+        });
+      }
+    }
 
     const classDoc = await ClassSection.findOne({ _id: classId, school });
     if (!classDoc) return res.status(404).json({ message: "Class not found or doesn't belong to your school" });
@@ -212,16 +221,16 @@ const createProject = async (req, res) => {
 
     let validatedStudentIds = [];
     if (targetType === "students") {
-      if (!studentIds || !Array.isArray(studentIds) || studentIds.length === 0) {
+      if (!parsedStudentIds || !Array.isArray(parsedStudentIds) || parsedStudentIds.length === 0) {
         return res.status(400).json({ message: "At least one student must be selected" });
       }
 
-      const validationResult = await validateStudentsInClass(studentIds, school, classId, sectionId);
+      const validationResult = await validateStudentsInClass(parsedStudentIds, school, classId, sectionId);
       if (validationResult.invalidIds.length > 0) {
         return res.status(400).json({ message: "Some students are not in this class/section" });
       }
 
-      validatedStudentIds = studentIds;
+      validatedStudentIds = parsedStudentIds;
     } else if (targetType === "section") {
       const sectionStudents = await User.find({
         school,

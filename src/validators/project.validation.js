@@ -35,14 +35,28 @@ const projectSchema = Joi.object({
 
   studentIds: Joi.when('targetType', {
     is: 'students',
-    then: Joi.array()
-      .items(Joi.string().hex().length(24))
-      .min(1)
-      .required()
-      .messages({
-        'array.min': 'At least one student must be selected',
-        'array.base': 'studentIds must be an array'
-      }),
+    then: Joi.alternatives().try(
+      Joi.array().items(Joi.string().hex().length(24)).min(1).required(),
+      Joi.string().custom((value, helpers) => {
+        try {
+          const parsed = JSON.parse(value);
+          if (!Array.isArray(parsed)) {
+            return helpers.error('any.invalid');
+          }
+          const isValid = parsed.every(id => /^[0-9a-fA-F]{24}$/.test(id));
+          if (!isValid) {
+            return helpers.error('any.invalid');
+          }
+          return parsed;
+        } catch {
+          return helpers.error('any.invalid');
+        }
+      }, 'JSON Array Validation')
+    ).required().messages({
+      'alternatives.types': 'studentIds must be an array or a valid JSON array string',
+      'array.base': 'studentIds must be an array',
+      'array.min': 'At least one student must be selected'
+    }),
     otherwise: Joi.array().items(Joi.string().hex().length(24)).optional()
   }),
 
