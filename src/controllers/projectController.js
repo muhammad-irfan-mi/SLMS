@@ -61,8 +61,7 @@ const validateStudentsInClass = async (studentIds, school, classId, sectionId) =
     school,
     'classInfo.id': classId,
     'sectionInfo.id': sectionId,
-    isActive: true
-  }).select('_id name email rollNumber').lean();
+  }).select('_id name email rollNo').lean();
 
   const validStudentIds = students.map(s => String(s._id));
   const invalidIds = studentIds.filter(id => !validStudentIds.includes(String(id)));
