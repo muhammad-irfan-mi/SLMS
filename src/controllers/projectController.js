@@ -347,7 +347,8 @@ const getProjects = async (req, res) => {
       .skip(skip)
       .limit(Number(limit));
 
-    if (withSubmissions === 'true') {
+    const includeSubmissions = withSubmissions === true || withSubmissions === 'true';
+    if (includeSubmissions) {
       query = query.populate({
         path: 'submissions.studentId',
         select: 'name email rollNumber'
@@ -358,6 +359,7 @@ const getProjects = async (req, res) => {
 
     const formattedProjects = await Promise.all(
       projects.map(async (project) => {
+        console.log(project)
         const creator = await getCreatorInfo(project.assignedBy, school);
         const classSection = await getClassAndSection(project.classId, project.sectionId, school);
 
@@ -380,7 +382,7 @@ const getProjects = async (req, res) => {
           pdf: project.pdf,
           gradingCompleted: project.gradingCompleted,
           submissionStats: project.submissionStats,
-          submissions: withSubmissions === 'true' ? project.submissions : [],
+          submissions: includeSubmissions ? project.submissions : [],
           submissionCount: project.submissions.length,
           createdAt: project.createdAt,
           isDeadlinePassed: project.deadline < new Date()
