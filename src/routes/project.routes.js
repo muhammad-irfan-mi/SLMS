@@ -25,51 +25,57 @@ router.post("/",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]),
-  validateFiles,
   validateProject,
-  createProject);
+  createProject
+);
 
 router.get("/",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   validateFilter,
-  getProjects);
+  getProjects
+);
 
-router.patch("/:id",
+router.put("/:id",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]),
   validateFiles,
   validateProject,
-  updateProject);
+  updateProject
+);
 
 router.delete("/:id",
   protect,
   isTeacherOrAdminOfficeOrSchool,
-  deleteProject);
+  deleteProject
+);
 
 router.get("/student",
   protect,
   isStudent,
   validateFilter,
-  getProjectsForStudent);
+  getProjectsForStudent
+);
 
 router.post("/submit/:projectId",
   protect,
   isStudent,
   upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]), validateFiles,
-  validateSubmission,
-  submitProject);
+  submitProject
+);
 
 router.get("/:projectId/submissions",
   protect,
   isTeacherOrAdminOfficeOrSchool,
-  validateFilter, getProjectSubmissions);
+  validateFilter,
+  getProjectSubmissions
+);
 
 router.get("/:projectId/submissions/:submissionId",
   protect,
   getSubmission);
-  
+
 router.post("/:projectId/submissions/:submissionId/grade",
   protect,
   isTeacherOrAdminOfficeOrSchool,

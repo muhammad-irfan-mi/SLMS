@@ -8,31 +8,31 @@ const projectSchema = Joi.object({
       'string.min': 'Title must be at least 3 characters',
       'string.max': 'Title cannot exceed 200 characters'
     }),
-  
+
   description: Joi.string().max(500).allow('').optional(),
-  
+
   detail: Joi.string().max(2000).allow('').optional(),
-  
+
   classId: Joi.string().hex().length(24).required()
     .messages({
       'string.hex': 'Class ID must be a valid MongoDB ObjectId',
       'string.length': 'Class ID must be 24 characters'
     }),
-  
+
   sectionId: Joi.string().hex().length(24).required()
     .messages({
       'string.hex': 'Section ID must be a valid MongoDB ObjectId',
       'string.length': 'Section ID must be 24 characters'
     }),
-  
+
   subjectId: Joi.string().hex().length(24).required()
     .messages({
       'string.hex': 'Subject ID must be a valid MongoDB ObjectId',
       'string.length': 'Subject ID must be 24 characters'
     }),
-  
+
   targetType: Joi.string().valid('section', 'students').default('section'),
-  
+
   studentIds: Joi.when('targetType', {
     is: 'students',
     then: Joi.array()
@@ -45,21 +45,21 @@ const projectSchema = Joi.object({
       }),
     otherwise: Joi.array().items(Joi.string().hex().length(24)).optional()
   }),
-  
+
   deadline: Joi.date().iso().greater('now').required()
     .messages({
       'date.format': 'Deadline must be a valid ISO date (YYYY-MM-DD)',
       'date.greater': 'Deadline must be a future date'
     }),
-  
+
   maxMarks: Joi.number().min(0).max(1000).optional()
     .messages({
       'number.min': 'Maximum marks cannot be negative',
       'number.max': 'Maximum marks cannot exceed 1000'
     }),
-  
+
   // status: Joi.string().valid('draft', 'assigned', 'completed', 'graded').default('assigned'),
-  
+
   // File validation (for file size, type, etc.)
   fileValidation: Joi.object({
     images: Joi.array().max(2).optional()
@@ -94,10 +94,7 @@ const submissionSchema = Joi.object({
 
 // Grading validation
 const gradingSchema = Joi.object({
-  marks: Joi.number().min(0).max(Joi.ref('$maxMarks')).optional()
-    .messages({
-      'number.max': 'Marks cannot exceed maximum marks'
-    }),
+  marks: Joi.number().min(0).optional(),
   feedback: Joi.string().max(1000).allow('').optional(),
   grade: Joi.string().valid('A', 'B', 'C', 'D', 'F').optional(),
   status: Joi.string().valid('submitted', 'graded', 'rejected', 'resubmit').optional()
@@ -111,13 +108,13 @@ const validateFiles = (req, res, next) => {
         message: 'Maximum 5 images allowed'
       });
     }
-    
+
     if (req.files.pdf && req.files.pdf.length > 1) {
       return res.status(400).json({
         message: 'Only one PDF file allowed'
       });
     }
-    
+
     // Validate file types
     if (req.files.images) {
       for (const image of req.files.images) {
@@ -128,7 +125,7 @@ const validateFiles = (req, res, next) => {
         }
       }
     }
-    
+
     if (req.files.pdf && req.files.pdf[0]) {
       const pdf = req.files.pdf[0];
       if (pdf.mimetype !== 'application/pdf') {
@@ -143,74 +140,74 @@ const validateFiles = (req, res, next) => {
 
 const validateProject = (req, res, next) => {
   const { error } = projectSchema.validate(req.body, { abortEarly: false });
-  
+
   if (error) {
     const errors = error.details.map(detail => ({
       field: detail.path.join('.'),
       message: detail.message
     }));
-    
+
     return res.status(400).json({
       message: 'Validation failed',
       errors
     });
   }
-  
+
   next();
 };
 
 const validateFilter = (req, res, next) => {
   const { error } = filterSchema.validate(req.query, { abortEarly: false });
-  
+
   if (error) {
     const errors = error.details.map(detail => ({
       field: detail.path.join('.'),
       message: detail.message
     }));
-    
+
     return res.status(400).json({
       message: 'Filter validation failed',
       errors
     });
   }
-  
+
   next();
 };
 
 const validateSubmission = (req, res, next) => {
   const { error } = submissionSchema.validate(req.body, { abortEarly: false });
-  
+
   if (error) {
     const errors = error.details.map(detail => ({
       field: detail.path.join('.'),
       message: detail.message
     }));
-    
+
     return res.status(400).json({
       message: 'Submission validation failed',
       errors
     });
   }
-  
+
   next();
 };
 
 const validateGrading = (req, res, next) => {
   // Get maxMarks from project if needed for validation
   const { error } = gradingSchema.validate(req.body, { abortEarly: false });
-  
+
   if (error) {
     const errors = error.details.map(detail => ({
       field: detail.path.join('.'),
       message: detail.message
     }));
-    
+
     return res.status(400).json({
       message: 'Grading validation failed',
       errors
     });
   }
-  
+
   next();
 };
 

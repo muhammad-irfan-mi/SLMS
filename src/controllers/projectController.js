@@ -126,35 +126,61 @@ const handleSubmissionUploads = async (files) => {
   return { images, pdf };
 };
 
-const getCreatorInfo = async (creatorId, schoolId) => {
-  if (String(creatorId) === String(schoolId)) {
-    const schoolDoc = await School.findById(schoolId).select('name email');
+const getCreatorInfo = async (assignedBy, schoolId) => {
+  const user = await User.findById(assignedBy)
+    .select('name email role')
+    .lean();
+
+  if (user) {
     return {
-      _id: schoolId,
-      name: schoolDoc?.name || 'School',
-      email: schoolDoc?.email,
-      role: 'school'
-    };
-  } else {
-    const user = await User.findById(creatorId).select('name email role');
-    return user ? {
-      _id: user._id,
+      id: user._id,
       name: user.name,
       email: user.email,
       role: user.role
-    } : {
-      _id: creatorId,
-      name: 'Unknown',
-      email: '',
-      role: 'unknown'
     };
   }
+
+  const school = await School.findById(schoolId)
+    .select('name email')
+    .lean();
+
+  if (school) {
+    return {
+      id: school._id,
+      name: school.name,
+      email: school.email,
+      role: 'school'
+    };
+  }
+
+  return null;
 };
+
 
 
 const createProject = async (req, res) => {
   try {
-    const { school, _id: userId, role } = req.user;
+    // const { school, _id: userId, role } = req.user;
+
+    const { _id: userId, school } = req.user;
+
+    let resolvedRole = req.user.role;
+    console.log(req.user)
+    if (!resolvedRole) {
+      if (school && String(school) === String(userId)) {
+        resolvedRole = 'school';
+      }
+    }
+
+    const isTeacher = resolvedRole === 'teacher';
+    const isAdminOrSchool = ['admin_office', 'school'].includes(resolvedRole);
+
+    if (!isTeacher && !isAdminOrSchool) {
+      return res.status(403).json({
+        message: "Only teachers, admin office, or school can create projects"
+      });
+    }
+
     const {
       title, description, detail,
       classId, sectionId, subjectId,
@@ -162,12 +188,13 @@ const createProject = async (req, res) => {
       deadline, maxMarks, status = 'assigned'
     } = req.body;
 
-    const isTeacher = role === 'teacher';
-    const isAdminOrSchool = ['admin_office', 'school'].includes(role);
+    // const isTeacher = role === 'teacher';
+    // const isAdminOrSchool = ['admin_office', 'school'].includes(role);
+    // console.log(req.user);
 
-    if (!isTeacher && !isAdminOrSchool) {
-      return res.status(403).json({ message: "Only teachers, admin office, or school can create projects" });
-    }
+    // if (!isTeacher && !isAdminOrSchool) {
+    //   return res.status(403).json({ message: "Only teachers, admin office, or school can create projects" });
+    // }
 
     const classDoc = await ClassSection.findOne({ _id: classId, school });
     if (!classDoc) return res.status(404).json({ message: "Class not found or doesn't belong to your school" });
@@ -208,6 +235,11 @@ const createProject = async (req, res) => {
     }
 
     const uploads = await handleProjectUploads(req.files);
+    const projectImages = Array.isArray(uploads.images)
+      ? uploads.images
+      : uploads.images
+        ? [uploads.images]
+        : [];
 
     const project = await Project.create({
       school,
@@ -223,7 +255,7 @@ const createProject = async (req, res) => {
       deadline: new Date(deadline),
       maxMarks: maxMarks || 100,
       status,
-      images: uploads.images,
+      images: projectImages,
       pdf: uploads.pdf,
       submissionStats: {
         totalEligible: validatedStudentIds.length,
