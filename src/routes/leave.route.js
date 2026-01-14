@@ -1,31 +1,32 @@
 const express = require("express");
-const { 
-    applyLeave, 
-    cancelLeave, 
-    getLeaves, 
-    getLeavesByStudent, 
-    approveLeave, 
-    rejectLeave, 
-    applyTeacherLeave, 
-    getTeacherLeaves, 
-    updateTeacherLeave, 
-    cancelTeacherLeave, 
-    approveTeacherLeave, 
-    rejectTeacherLeave 
+const {
+    applyLeave,
+    cancelLeave,
+    getLeaves,
+    getLeavesByStudent,
+    approveLeave,
+    rejectLeave,
+    applyTeacherLeave,
+    getTeacherLeaves,
+    updateTeacherLeave,
+    cancelTeacherLeave,
+    approveTeacherLeave,
+    rejectTeacherLeave,
+    updateLeave
 } = require("../controllers/leaveController");
 
-const { 
-    isAdminOffice, 
-    protect, 
-    isStudent, 
-    isTeacher, 
-    isTeacherOrAdminOfficeOrSchool, 
+const {
+    isAdminOffice,
+    protect,
+    isStudent,
+    isTeacher,
+    isTeacherOrAdminOfficeOrSchool,
     allowedRoles
 } = require("../middlewares/auth");
 
 const validate = require("../middlewares/validate");
 
-const { 
+const {
     applyLeaveSchema,
     cancelLeaveSchema,
     getLeavesQuerySchema,
@@ -33,99 +34,108 @@ const {
     getLeavesByStudentQuerySchema,
     applyTeacherLeaveSchema,
     getTeacherLeavesQuerySchema,
-    updateTeacherLeaveSchema
+    updateTeacherLeaveSchema,
+    updateLeaveSchema
 } = require("../validators/leave.validation");
 
 const router = express.Router();
 
 // Student routes
-router.post("/apply", 
-    protect, 
-    isStudent, 
-    validate(applyLeaveSchema), 
+router.post("/apply",
+    protect,
+    isStudent,
+    validate(applyLeaveSchema),
     applyLeave
 );
 
-router.post("/:id/cancel", 
-    protect, 
-    isStudent, 
-    validate(cancelLeaveSchema, "params"), 
+router.put(
+    "/:id",
+    protect,
+    isStudent,
+    validate(updateLeaveSchema),
+    updateLeave
+);
+
+router.post("/:id/cancel",
+    protect,
+    isStudent,
+    validate(cancelLeaveSchema, "params"),
     cancelLeave
 );
 
-router.get("/", 
-    protect, 
-    isTeacherOrAdminOfficeOrSchool, 
-    validate(getLeavesQuerySchema, "query"), 
+router.get("/",
+    protect,
+    isTeacherOrAdminOfficeOrSchool,
+    validate(getLeavesQuerySchema, "query"),
     getLeaves
 );
 
-router.get("/student/:studentId", 
-    protect, 
-    allowedRoles, 
-    validate(getLeavesByStudentQuerySchema, "query"), 
+router.get("/student/:studentId",
+    protect,
+    allowedRoles,
+    validate(getLeavesByStudentQuerySchema, "query"),
     getLeavesByStudent
 );
 
-router.post("/:id/approve", 
-    protect, 
-    isTeacherOrAdminOfficeOrSchool, 
-    validate(reviewLeaveSchema), 
-    validate(cancelLeaveSchema, "params"), 
+router.post("/:id/approve",
+    protect,
+    isTeacherOrAdminOfficeOrSchool,
+    validate(reviewLeaveSchema),
+    validate(cancelLeaveSchema, "params"),
     approveLeave
 );
 
-router.post("/:id/reject", 
-    protect, 
-    isTeacherOrAdminOfficeOrSchool, 
-    validate(reviewLeaveSchema), 
-    validate(cancelLeaveSchema, "params"), 
+router.post("/:id/reject",
+    protect,
+    isTeacherOrAdminOfficeOrSchool,
+    validate(reviewLeaveSchema),
+    validate(cancelLeaveSchema, "params"),
     rejectLeave
 );
 
 // Teacher leave routes
-router.post("/teacher/apply", 
-    protect, 
-    isTeacher, 
-    validate(applyTeacherLeaveSchema), 
+router.post("/teacher/apply",
+    protect,
+    isTeacher,
+    validate(applyTeacherLeaveSchema),
     applyTeacherLeave
 );
 
-router.get("/teacher/all", 
-    protect, 
-    isTeacher, 
-    validate(getTeacherLeavesQuerySchema, "query"), 
+router.get("/teacher/all",
+    protect,
+    isTeacher,
+    validate(getTeacherLeavesQuerySchema, "query"),
     getTeacherLeaves
 );
 
-router.put("/teacher/update/:id", 
-    protect, 
-    isTeacher, 
-    validate(updateTeacherLeaveSchema), 
-    validate(cancelLeaveSchema, "params"), 
+router.put("/teacher/update/:id",
+    protect,
+    isTeacher,
+    validate(updateTeacherLeaveSchema),
+    validate(cancelLeaveSchema, "params"),
     updateTeacherLeave
 );
 
-router.put("/teacher/cancel/:id", 
-    protect, 
-    isTeacher, 
-    validate(cancelLeaveSchema, "params"), 
+router.put("/teacher/cancel/:id",
+    protect,
+    isTeacher,
+    validate(cancelLeaveSchema, "params"),
     cancelTeacherLeave
 );
 
 // Admin actions for teacher leaves
-router.put("/admin/approve/:id", 
-    protect, 
-    isAdminOffice, 
-    validate(cancelLeaveSchema, "params"), 
+router.put("/admin/approve/:id",
+    protect,
+    isAdminOffice,
+    validate(cancelLeaveSchema, "params"),
     approveTeacherLeave
 );
 
-router.post("/admin/reject/:id", 
-    protect, 
-    isAdminOffice, 
-    validate(reviewLeaveSchema), 
-    validate(cancelLeaveSchema, "params"), 
+router.post("/admin/reject/:id",
+    protect,
+    isAdminOffice,
+    validate(reviewLeaveSchema),
+    validate(cancelLeaveSchema, "params"),
     rejectTeacherLeave
 );
 

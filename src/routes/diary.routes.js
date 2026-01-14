@@ -22,7 +22,7 @@ router.post(
     createDiary
 );
 
-router.patch(
+router.put(
     "/:diaryId",
     protect,
     isTeacherOrAdminOfficeOrSchool,

@@ -242,6 +242,87 @@ const applyLeave = async (req, res) => {
     }
 };
 
+// Student updates an existing leave
+const updateLeave = async (req, res) => {
+    try {
+        const school = req.user.school;
+        const studentId = req.user._id;
+        const { id } = req.params;
+        const { date, subject, reason } = req.body;
+
+        const leave = await Leave.findOne({
+            _id: id,
+            school,
+            studentId
+        });
+
+        if (!leave) {
+            return res.status(404).json({
+                message: "Leave not found"
+            });
+        }
+
+        if (leave.status !== "pending") {
+            return res.status(400).json({
+                message: `Cannot update a ${leave.status} leave`
+            });
+        }
+
+        if (date) {
+            const formattedDate = formatDate(date);
+            const today = formatDate(new Date());
+
+            if (formattedDate < today) {
+                return res.status(400).json({
+                    message: "Cannot update leave to a past date"
+                });
+            }
+
+            const conflict = await Leave.findOne({
+                _id: { $ne: id },
+                school,
+                studentId,
+                date: formattedDate,
+                status: { $in: ["pending", "approved"] }
+            });
+
+            if (conflict) {
+                return res.status(409).json({
+                    message: "Leave already exists for this date",
+                    conflictDate: formattedDate
+                });
+            }
+
+            leave.date = formattedDate;
+        }
+
+        if (subject) leave.subject = subject;
+        if (reason) leave.reason = reason;
+
+        leave.updatedAt = new Date();
+
+        await leave.save();
+
+        return res.status(200).json({
+            message: "Leave updated successfully",
+            leave: {
+                _id: leave._id,
+                date: leave.date,
+                subject: leave.subject,
+                reason: leave.reason,
+                status: leave.status
+            }
+        });
+
+    } catch (err) {
+        console.error("updateLeave error:", err);
+        return res.status(500).json({
+            message: "Server error",
+            error: err.message
+        });
+    }
+};
+
 // Student can cancel their leave (if pending or approved).
 const cancelLeave = async (req, res) => {
     try {
@@ -1384,6 +1465,7 @@ const rejectTeacherLeave = async (req, res) => {
 
 module.exports = {
     applyLeave,
+    updateLeave,
     cancelLeave,
     getLeaves,
     approveLeave,

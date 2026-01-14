@@ -63,31 +63,218 @@ async function handleDiaryUploads(files, existing = {}) {
 const validateDates = (date, dueDate) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const diaryDate = new Date(date);
     diaryDate.setHours(0, 0, 0, 0);
-    
+
     const diaryDueDate = new Date(dueDate);
     diaryDueDate.setHours(0, 0, 0, 0);
-    
+
     if (diaryDate < today) {
         return { valid: false, message: "Diary date cannot be in the past" };
     }
-    
+
     if (diaryDueDate <= diaryDate) {
         return { valid: false, message: "Due date must be after the diary date" };
     }
-    
+
     return { valid: true };
 };
 
 // Create diary with images
+// const createDiary = async (req, res) => {
+//     try {
+//         const teacherId = req.user._id;
+//         const school = req.user.school;
+//         const teacherName = req.user.name;
+//         const teacherRole = req.user.role;
+
+//         const { error, value } = createDiarySchema.validate(req.body);
+//         if (error) {
+//             return res.status(400).json({
+//                 message: "Validation error",
+//                 details: error.details.map(d => d.message)
+//             });
+//         }
+
+//         const {
+//             classId,
+//             sectionId,
+//             subjectId,
+//             title,
+//             description,
+//             date,
+//             dueDate,
+//             forAll = true,
+//             // rollNumbers = []
+//             studentIds = []
+//         } = value;
+
+//         // Validate date constraints
+//         const dateValidation = validateDates(date, dueDate);
+//         if (!dateValidation.valid) {
+//             return res.status(400).json({ message: dateValidation.message });
+//         }
+
+//         let isAuthorized = false;
+
+//         if (teacherRole === "superadmin" || teacherRole === "admin_office") {
+//             isAuthorized = true;
+//         } else {
+//             const scheduleExists = await Schedule.findOne({
+//                 school,
+//                 teacherId,
+//                 classId,
+//                 sectionId,
+//                 subjectId
+//             });
+
+//             isAuthorized = !!scheduleExists;
+//         }
+
+//         if (!isAuthorized) {
+//             return res.status(403).json({
+//                 message: "Not authorized. You are not assigned to teach this subject in the selected class/section"
+//             });
+//         }
+
+//         const classDoc = await ClassSection.findOne({
+//             _id: classId,
+//             school
+//         }).lean();
+
+//         if (!classDoc) {
+//             return res.status(404).json({
+//                 message: "Class not found or doesn't belong to your school"
+//             });
+//         }
+
+//         const sectionExists = classDoc.sections.some(s => String(s._id) === String(sectionId));
+//         if (!sectionExists) {
+//             return res.status(404).json({
+//                 message: "Section not found in this class"
+//             });
+//         }
+
+//         const subjectDoc = await Subject.findOne({
+//             _id: subjectId,
+//             school
+//         }).lean();
+
+//         if (!subjectDoc) {
+//             return res.status(404).json({
+//                 message: "Subject not found or doesn't belong to your school"
+//             });
+//         }
+
+//         const uploads = await handleDiaryUploads(req.files);
+
+//         // let studentIds = [];
+//         // if (!forAll && Array.isArray(rollNumbers) && rollNumbers.length > 0) {
+//         //     const students = await User.find({
+//         //         school,
+//         //         role: "student",
+//         //         rollNo: { $in: rollNumbers },
+//         //         "classInfo.id": classId,
+//         //         "sectionInfo.id": sectionId
+//         //     }).select("_id rollNo name");
+
+//         //     if (students.length !== rollNumbers.length) {
+//         //         const foundRollNumbers = students.map(s => s.rollNo);
+//         //         const missing = rollNumbers.filter(r => !foundRollNumbers.includes(r));
+//         //         return res.status(400).json({
+//         //             message: "Some students not found in this class/section",
+//         //             missingRollNumbers: missing
+//         //         });
+//         //     }
+
+//         //     studentIds = students.map(s => s._id);
+//         // }
+
+//         if (!forAll) {
+//             if (!Array.isArray(value.studentIds) || value.studentIds.length === 0) {
+//                 return res.status(400).json({
+//                     message: "studentIds are required when forAll is false"
+//                 });
+//             }
+
+//             const students = await User.find({
+//                 _id: { $in: value.studentIds },
+//                 school,
+//                 role: "student",
+//                 "classInfo.id": classId,
+//                 "sectionInfo.id": sectionId
+//             }).select("_id");
+
+//             if (students.length !== value.studentIds.length) {
+//                 const foundIds = students.map(s => String(s._id));
+//                 const missingIds = value.studentIds.filter(
+//                     id => !foundIds.includes(String(id))
+//                 );
+
+//                 return res.status(400).json({
+//                     message: "Some students not found in this class/section",
+//                     missingStudentIds: missingIds
+//                 });
+//             }
+
+//             studentIds = students.map(s => s._id);
+//         }
+
+//         // Create diary
+//         const diary = await Diary.create({
+//             school,
+//             classId,
+//             sectionId,
+//             subjectId,
+//             date: formatDate(date),
+//             dueDate: formatDate(dueDate),
+//             title,
+//             description: description || "",
+//             forAll,
+//             studentIds,
+//             createdBy: teacherId,
+//             createdByName: teacherName,
+//             images: uploads.images,
+//             pdf: uploads.pdf
+//         });
+
+//         // Populate the response
+//         const populatedDiary = await Diary.findById(diary._id)
+//             .populate("classId", "class sections")
+//             .populate("subjectId", "name code")
+//             .populate("createdBy", "name email")
+//             .lean();
+
+//         res.status(201).json({
+//             message: "Diary created successfully",
+//             diary: {
+//                 ...populatedDiary,
+//                 class: populatedDiary.classId?.class || null,
+//                 section: extractSection(populatedDiary.classId, sectionId),
+//                 subject: populatedDiary.subjectId || null,
+//                 teacher: populatedDiary.createdBy || null,
+//                 images: uploads.images,
+//                 pdf: uploads.pdf,
+//                 classId: undefined,
+//                 subjectId: undefined,
+//                 createdBy: undefined
+//             }
+//         });
+
+//     } catch (err) {
+//         console.error("createDiary error:", err);
+//         res.status(500).json({
+//             message: err.message || "Server error",
+//             error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+//         });
+//     }
+// };
 const createDiary = async (req, res) => {
     try {
         const teacherId = req.user._id;
         const school = req.user.school;
         const teacherName = req.user.name;
-        const teacherRole = req.user.role;
 
         const { error, value } = createDiarySchema.validate(req.body);
         if (error) {
@@ -106,140 +293,249 @@ const createDiary = async (req, res) => {
             date,
             dueDate,
             forAll = true,
-            rollNumbers = []
+            studentIds = []
         } = value;
 
-        // Validate date constraints
-        const dateValidation = validateDates(date, dueDate);
-        if (!dateValidation.valid) {
-            return res.status(400).json({ message: dateValidation.message });
-        }
+        console.log(school, teacherId, classId, sectionId, subjectId)
 
-        let isAuthorized = false;
-        
-        if (teacherRole === "superadmin" || teacherRole === "admin_office") {
-            isAuthorized = true;
-        } else {
-            const scheduleExists = await Schedule.findOne({
-                school,
-                teacherId,
-                classId,
-                sectionId,
-                subjectId
-            });
+        const scheduleExists = await Schedule.findOne({
+            school,
+            teacherId,
+            classId,
+            sectionId,
+            subjectId
+        });
 
-            isAuthorized = !!scheduleExists;
-        }
-
-        if (!isAuthorized) {
+        if (!scheduleExists) {
             return res.status(403).json({
-                message: "Not authorized. You are not assigned to teach this subject in the selected class/section"
+                message: "Not authorized to create diary for this subject"
             });
         }
 
-        const classDoc = await ClassSection.findOne({
-            _id: classId,
-            school
-        }).lean();
-
+        // Validate class & section
+        const classDoc = await ClassSection.findOne({ _id: classId, school }).lean();
         if (!classDoc) {
-            return res.status(404).json({
-                message: "Class not found or doesn't belong to your school"
-            });
+            return res.status(404).json({ message: "Class not found" });
         }
 
-        const sectionExists = classDoc.sections.some(s => String(s._id) === String(sectionId));
+        const sectionExists = classDoc.sections.some(
+            s => String(s._id) === String(sectionId)
+        );
         if (!sectionExists) {
-            return res.status(404).json({
-                message: "Section not found in this class"
-            });
+            return res.status(404).json({ message: "Section not found" });
         }
 
-        const subjectDoc = await Subject.findOne({
-            _id: subjectId,
-            school
-        }).lean();
-
+        // Validate subject
+        const subjectDoc = await Subject.findOne({ _id: subjectId, school });
         if (!subjectDoc) {
-            return res.status(404).json({
-                message: "Subject not found or doesn't belong to your school"
-            });
+            return res.status(404).json({ message: "Subject not found" });
+        }
+
+        // Validate students when forAll = false
+        let finalStudentIds = [];
+
+        if (!forAll) {
+            if (!Array.isArray(studentIds) || studentIds.length === 0) {
+                return res.status(400).json({
+                    message: "studentIds are required when forAll is false"
+                });
+            }
+
+            const students = await User.find({
+                _id: { $in: studentIds },
+                school,
+                role: "student",
+                "classInfo.id": classId,
+                "sectionInfo.id": sectionId
+            }).select("_id");
+
+            if (students.length !== studentIds.length) {
+                return res.status(400).json({
+                    message: "Some students do not belong to this class/section"
+                });
+            }
+
+            finalStudentIds = students.map(s => s._id);
         }
 
         const uploads = await handleDiaryUploads(req.files);
 
-        let studentIds = [];
-        if (!forAll && Array.isArray(rollNumbers) && rollNumbers.length > 0) {
-            const students = await User.find({
-                school,
-                role: "student",
-                rollNo: { $in: rollNumbers },
-                "classInfo.id": classId,
-                "sectionInfo.id": sectionId
-            }).select("_id rollNo name");
-
-            if (students.length !== rollNumbers.length) {
-                const foundRollNumbers = students.map(s => s.rollNo);
-                const missing = rollNumbers.filter(r => !foundRollNumbers.includes(r));
-                return res.status(400).json({
-                    message: "Some students not found in this class/section",
-                    missingRollNumbers: missing
-                });
-            }
-
-            studentIds = students.map(s => s._id);
-        }
-
-        // Create diary
         const diary = await Diary.create({
             school,
             classId,
             sectionId,
             subjectId,
-            date: formatDate(date),
-            dueDate: formatDate(dueDate),
+            date,
+            dueDate,
             title,
-            description: description || "",
+            description,
             forAll,
-            studentIds,
+            studentIds: forAll ? [] : finalStudentIds,
             createdBy: teacherId,
             createdByName: teacherName,
             images: uploads.images,
             pdf: uploads.pdf
         });
 
-        // Populate the response
-        const populatedDiary = await Diary.findById(diary._id)
-            .populate("classId", "class sections")
-            .populate("subjectId", "name code")
-            .populate("createdBy", "name email")
-            .lean();
-
-        res.status(201).json({
+        return res.status(201).json({
             message: "Diary created successfully",
-            diary: {
-                ...populatedDiary,
-                class: populatedDiary.classId?.class || null,
-                section: extractSection(populatedDiary.classId, sectionId),
-                subject: populatedDiary.subjectId || null,
-                teacher: populatedDiary.createdBy || null,
-                images: uploads.images,
-                pdf: uploads.pdf,
-                classId: undefined,
-                subjectId: undefined,
-                createdBy: undefined
-            }
+            diary
         });
 
     } catch (err) {
         console.error("createDiary error:", err);
-        res.status(500).json({
-            message: err.message || "Server error",
-            error: process.env.NODE_ENV === 'development' ? err.stack : undefined
-        });
+        res.status(500).json({ message: "Server error" });
     }
 };
 
+
+// const updateDiary = async (req, res) => {
+//     try {
+//         const { diaryId } = req.params;
+//         const teacherId = req.user._id;
+//         const school = req.user.school;
+//         const teacherRole = req.user.role;
+
+//         const { error, value } = updateDiarySchema.validate(req.body);
+//         if (error) {
+//             return res.status(400).json({
+//                 message: "Validation error",
+//                 details: error.details.map(d => d.message)
+//             });
+//         }
+
+//         const {
+//             title,
+//             description,
+//             date,
+//             dueDate,
+//             forAll,
+//             rollNumbers,
+//             subjectId
+//         } = value;
+
+//         // Find existing diary
+//         const existingDiary = await Diary.findById(diaryId);
+//         if (!existingDiary) {
+//             return res.status(404).json({ message: "Diary not found" });
+//         }
+
+//         // Check if user is the creator
+//         const isCreator = String(existingDiary.createdBy) === String(teacherId);
+
+//         // For non-creators, only admin can update
+//         if (!isCreator && teacherRole !== "superadmin" && teacherRole !== "admin_office") {
+//             return res.status(403).json({
+//                 message: "Access denied: Only the creator or admin can update this diary"
+//             });
+//         }
+
+//         // If creator, check if they still have schedule permission for the updated subject
+//         if (isCreator && teacherRole !== "superadmin" && teacherRole !== "admin_office") {
+//             const finalSubjectId = subjectId || existingDiary.subjectId;
+//             const scheduleExists = await Schedule.findOne({
+//                 school,
+//                 teacherId,
+//                 classId: existingDiary.classId,
+//                 sectionId: existingDiary.sectionId,
+//                 subjectId: finalSubjectId
+//             });
+
+//             if (!scheduleExists) {
+//                 return res.status(403).json({
+//                     message: "You are no longer assigned to teach this subject in this class/section"
+//                 });
+//             }
+//         }
+
+//         // Validate dates if being updated
+//         if (date || dueDate) {
+//             const finalDate = date || existingDiary.date;
+//             const finalDueDate = dueDate || existingDiary.dueDate;
+
+//             const dateValidation = validateDates(finalDate, finalDueDate);
+//             if (!dateValidation.valid) {
+//                 return res.status(400).json({ message: dateValidation.message });
+//             }
+//         }
+
+//         // Validate subject if being updated
+//         if (subjectId && subjectId !== String(existingDiary.subjectId)) {
+//             const subjectDoc = await Subject.findOne({
+//                 _id: subjectId,
+//                 school
+//             });
+
+//             if (!subjectDoc) {
+//                 return res.status(404).json({
+//                     message: "Subject not found or doesn't belong to your school"
+//                 });
+//             }
+//             existingDiary.subjectId = subjectId;
+//         }
+
+//         // Handle file uploads
+//         const uploads = await handleDiaryUploads(req.files, {
+//             images: existingDiary.images,
+//             pdf: existingDiary.pdf
+//         });
+
+//         // Update fields
+//         if (title !== undefined) existingDiary.title = title;
+//         if (description !== undefined) existingDiary.description = description;
+//         if (date) existingDiary.date = formatDate(date);
+//         if (dueDate) existingDiary.dueDate = formatDate(dueDate);
+//         if (forAll !== undefined) existingDiary.forAll = forAll;
+
+//         // Update student IDs if not for all
+//         if (forAll === false && Array.isArray(rollNumbers)) {
+//             const students = await User.find({
+//                 school,
+//                 role: "student",
+//                 rollNo: { $in: rollNumbers },
+//                 "classInfo.id": existingDiary.classId,
+//                 "sectionInfo.id": existingDiary.sectionId
+//             }).select("_id rollNo name");
+
+//             if (students.length !== rollNumbers.length) {
+//                 const foundRollNumbers = students.map(s => s.rollNo);
+//                 const missing = rollNumbers.filter(r => !foundRollNumbers.includes(r));
+//                 return res.status(400).json({
+//                     message: "Some students not found",
+//                     missingRollNumbers: missing
+//                 });
+//             }
+
+//             existingDiary.studentIds = students.map(s => s._id);
+//         } else if (forAll === true) {
+//             existingDiary.studentIds = [];
+//         }
+
+//         // Update images and PDF
+//         if (uploads.images.length > 0) {
+//             existingDiary.images = uploads.images;
+//         }
+//         if (uploads.pdf !== undefined) {
+//             existingDiary.pdf = uploads.pdf;
+//         }
+
+//         await existingDiary.save();
+
+//         res.status(200).json({
+//             message: "Diary updated successfully",
+//             diary: existingDiary
+//         });
+
+//     } catch (err) {
+//         console.error("updateDiary error:", err);
+//         res.status(500).json({
+//             message: err.message || "Server error",
+//             error: process.env.NODE_ENV === 'development' ? err.stack : undefined
+//         });
+//     }
+// };
+
+// Get diary by section with filters
 const updateDiary = async (req, res) => {
     try {
         const { diaryId } = req.params;
@@ -255,138 +551,78 @@ const updateDiary = async (req, res) => {
             });
         }
 
-        const {
-            title,
-            description,
-            date,
-            dueDate,
-            forAll,
-            rollNumbers,
-            subjectId
-        } = value;
+        const { title, description, date, dueDate, forAll, studentIds } = value;
 
-        // Find existing diary
-        const existingDiary = await Diary.findById(diaryId);
-        if (!existingDiary) {
+        const diary = await Diary.findById(diaryId);
+        if (!diary) {
             return res.status(404).json({ message: "Diary not found" });
         }
 
-        // Check if user is the creator
-        const isCreator = String(existingDiary.createdBy) === String(teacherId);
+        const isCreator = String(diary.createdBy) === String(teacherId);
 
-        // For non-creators, only admin can update
-        if (!isCreator && teacherRole !== "superadmin" && teacherRole !== "admin_office") {
+        if (!isCreator && !["superadmin", "admin_office"].includes(teacherRole)) {
             return res.status(403).json({
-                message: "Access denied: Only the creator or admin can update this diary"
+                message: "You are not allowed to update this diary"
             });
         }
 
-        // If creator, check if they still have schedule permission for the updated subject
-        if (isCreator && teacherRole !== "superadmin" && teacherRole !== "admin_office") {
-            const finalSubjectId = subjectId || existingDiary.subjectId;
-            const scheduleExists = await Schedule.findOne({
-                school,
-                teacherId,
-                classId: existingDiary.classId,
-                sectionId: existingDiary.sectionId,
-                subjectId: finalSubjectId
-            });
+        // Update basic fields
+        if (title !== undefined) diary.title = title;
+        if (description !== undefined) diary.description = description;
+        if (date) diary.date = date;
+        if (dueDate) diary.dueDate = dueDate;
 
-            if (!scheduleExists) {
-                return res.status(403).json({
-                    message: "You are no longer assigned to teach this subject in this class/section"
-                });
+        // Handle forAll logic
+        if (forAll !== undefined) {
+            diary.forAll = forAll;
+
+            if (forAll === true) {
+                diary.studentIds = [];
             }
         }
 
-        // Validate dates if being updated
-        if (date || dueDate) {
-            const finalDate = date || existingDiary.date;
-            const finalDueDate = dueDate || existingDiary.dueDate;
-            
-            const dateValidation = validateDates(finalDate, finalDueDate);
-            if (!dateValidation.valid) {
-                return res.status(400).json({ message: dateValidation.message });
-            }
-        }
-
-        // Validate subject if being updated
-        if (subjectId && subjectId !== String(existingDiary.subjectId)) {
-            const subjectDoc = await Subject.findOne({
-                _id: subjectId,
-                school
-            });
-
-            if (!subjectDoc) {
-                return res.status(404).json({
-                    message: "Subject not found or doesn't belong to your school"
-                });
-            }
-            existingDiary.subjectId = subjectId;
-        }
-
-        // Handle file uploads
-        const uploads = await handleDiaryUploads(req.files, {
-            images: existingDiary.images,
-            pdf: existingDiary.pdf
-        });
-
-        // Update fields
-        if (title !== undefined) existingDiary.title = title;
-        if (description !== undefined) existingDiary.description = description;
-        if (date) existingDiary.date = formatDate(date);
-        if (dueDate) existingDiary.dueDate = formatDate(dueDate);
-        if (forAll !== undefined) existingDiary.forAll = forAll;
-
-        // Update student IDs if not for all
-        if (forAll === false && Array.isArray(rollNumbers)) {
+        // Update studentIds if forAll is false
+        if (forAll === false && Array.isArray(studentIds)) {
             const students = await User.find({
+                _id: { $in: studentIds },
                 school,
                 role: "student",
-                rollNo: { $in: rollNumbers },
-                "classInfo.id": existingDiary.classId,
-                "sectionInfo.id": existingDiary.sectionId
-            }).select("_id rollNo name");
+                "classInfo.id": diary.classId,
+                "sectionInfo.id": diary.sectionId
+            }).select("_id");
 
-            if (students.length !== rollNumbers.length) {
-                const foundRollNumbers = students.map(s => s.rollNo);
-                const missing = rollNumbers.filter(r => !foundRollNumbers.includes(r));
+            if (students.length !== studentIds.length) {
                 return res.status(400).json({
-                    message: "Some students not found",
-                    missingRollNumbers: missing
+                    message: "Some students are invalid"
                 });
             }
 
-            existingDiary.studentIds = students.map(s => s._id);
-        } else if (forAll === true) {
-            existingDiary.studentIds = [];
+            // 🔥 Replace student list (add/remove handled automatically)
+            diary.studentIds = students.map(s => s._id);
         }
 
-        // Update images and PDF
-        if (uploads.images.length > 0) {
-            existingDiary.images = uploads.images;
-        }
-        if (uploads.pdf !== undefined) {
-            existingDiary.pdf = uploads.pdf;
-        }
+        const uploads = await handleDiaryUploads(req.files, {
+            images: diary.images,
+            pdf: diary.pdf
+        });
 
-        await existingDiary.save();
+        if (uploads.images.length > 0) diary.images = uploads.images;
+        if (uploads.pdf !== undefined) diary.pdf = uploads.pdf;
 
-        res.status(200).json({
+        await diary.save();
+
+        return res.status(200).json({
             message: "Diary updated successfully",
-            diary: existingDiary
+            diary
         });
 
     } catch (err) {
         console.error("updateDiary error:", err);
-        res.status(500).json({
-            message: err.message || "Server error",
-            error: process.env.NODE_ENV === 'development' ? err.stack : undefined
-        });
+        res.status(500).json({ message: "Server error" });
     }
 };
 
-// Get diary by section with filters
+
 const getDiaryBySection = async (req, res) => {
     try {
         const { sectionId } = req.params;

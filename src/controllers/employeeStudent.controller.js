@@ -400,38 +400,6 @@ async function generateUniqueUsername(name, email, schoolId) {
     }
 }
 
-// async function generateUniqueUsernameForSiblings(name, email, schoolId, existingSiblings = []) {
-//     const baseUsername = name.toLowerCase().replace(/\s+/g, '_');
-//     let username = baseUsername;
-//     let counter = 1;
-
-//     // Check if this username already exists among siblings
-//     const usernameExists = existingSiblings.some(
-//         sibling => sibling.username &&
-//             sibling.username.toLowerCase() === username
-//     );
-
-//     if (!usernameExists) {
-//         return username;
-//     }
-
-//     // If exists among siblings, try with numbers
-//     while (true) {
-//         username = `${baseUsername}_${counter}`;
-//         const usernameExists = existingSiblings.some(
-//             sibling => sibling.username &&
-//                 sibling.username.toLowerCase() === username
-//         );
-
-//         if (!usernameExists) {
-//             return username;
-//         }
-//         counter++;
-//     }
-// }
-
-// Helper function to extract class and section info
-
 async function getClassSectionInfo(classId, sectionId, schoolId) {
     if (!classId) return { className: null, sectionName: null };
 

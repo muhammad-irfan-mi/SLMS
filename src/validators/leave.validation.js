@@ -25,13 +25,12 @@ exports.applyLeaveSchema = Joi.object({
         }),
     dates: Joi.array().items(
         Joi.alternatives().try(
-            Joi.string().isoDate(), // ISO date string
-            dateFormat, // Already formatted date
-            Joi.date() // Date object
+            Joi.string().isoDate(), 
+            dateFormat,
+            Joi.date() 
         )
     ).min(1).max(30).required()
         .custom((value, helpers) => {
-            // Check for duplicate dates
             const stringDates = value.map(date => {
                 const d = new Date(date);
                 return d.toISOString().split('T')[0];
@@ -64,6 +63,32 @@ exports.applyLeaveSchema = Joi.object({
             'any.required': 'Reason is required'
         })
 });
+
+// Update leave validation
+exports.updateLeaveSchema = Joi.object({
+    date: Joi.alternatives().try(
+        Joi.string().isoDate(),
+        dateFormat,
+        Joi.date()
+    ).optional(),
+
+    subject: Joi.string().min(1).max(200).optional()
+        .messages({
+            'string.min': 'Subject must be at least 1 character',
+            'string.max': 'Subject cannot exceed 200 characters'
+        }),
+
+    reason: Joi.string().min(1).max(1000).optional()
+        .messages({
+            'string.min': 'Reason must be at least 1 character',
+            'string.max': 'Reason cannot exceed 1000 characters'
+        })
+})
+    .or('date', 'subject', 'reason')
+    .messages({
+        'object.missing': 'At least one field (date, subject, or reason) is required'
+    });
+
 
 // Cancel leave validation
 exports.cancelLeaveSchema = Joi.object({
