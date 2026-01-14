@@ -1,7 +1,5 @@
-// validators/diary.validation.js
 const Joi = require('joi');
 
-// Custom validation for date comparison
 const dateValidation = (value, helpers) => {
     const { dueDate } = helpers.state.ancestors[0];
     
@@ -55,15 +53,15 @@ const createDiarySchema = Joi.object({
             'any.required': 'Due date is required'
         }),
     forAll: Joi.boolean().default(true),
-    rollNumbers: Joi.when('forAll', {
-        is: false,
-        then: Joi.array().items(Joi.string().trim()).min(1).required()
-            .messages({
-                'array.min': 'At least one roll number is required when forAll is false',
-                'any.required': 'Roll numbers are required when forAll is false'
-            }),
-        otherwise: Joi.array().items(Joi.string().trim()).optional()
-    })
+    // rollNumbers: Joi.when('forAll', {
+    //     is: false,
+    //     then: Joi.array().items(Joi.string().trim()).min(1).optional()
+    //         .messages({
+    //             'array.min': 'At least one roll number is required when forAll is false',
+    //             'any.required': 'Roll numbers are required when forAll is false'
+    //         }),
+    //     otherwise: Joi.array().items(Joi.string().trim()).optional()
+    // })
 });
 
 const updateDiarySchema = Joi.object({
@@ -83,14 +81,14 @@ const updateDiarySchema = Joi.object({
             'string.pattern.base': 'Due date must be in YYYY-MM-DD format'
         }),
     forAll: Joi.boolean().optional(),
-    rollNumbers: Joi.when('forAll', {
-        is: false,
-        then: Joi.array().items(Joi.string().trim()).min(1).required()
-            .messages({
-                'array.min': 'At least one roll number is required when forAll is false'
-            }),
-        otherwise: Joi.array().items(Joi.string().trim()).optional()
-    })
+    // rollNumbers: Joi.when('forAll', {
+    //     is: false,
+    //     then: Joi.array().items(Joi.string().trim()).min(1).optional()
+    //         .messages({
+    //             'array.min': 'At least one roll number is required when forAll is false'
+    //         }),
+    //     otherwise: Joi.array().items(Joi.string().trim()).optional()
+    // })
 });
 
 const getDiaryQuerySchema = Joi.object({

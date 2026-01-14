@@ -1,4 +1,3 @@
-// controllers/diary.controller.js
 const User = require("../models/User");
 const ClassSection = require("../models/ClassSection");
 const Subject = require("../models/Subject");
@@ -116,13 +115,11 @@ const createDiary = async (req, res) => {
             return res.status(400).json({ message: dateValidation.message });
         }
 
-        // Check if teacher has schedule for this class, section, and subject
         let isAuthorized = false;
         
         if (teacherRole === "superadmin" || teacherRole === "admin_office") {
             isAuthorized = true;
         } else {
-            // Check if teacher is assigned to this subject in the schedule
             const scheduleExists = await Schedule.findOne({
                 school,
                 teacherId,
@@ -140,7 +137,6 @@ const createDiary = async (req, res) => {
             });
         }
 
-        // Validate class and section
         const classDoc = await ClassSection.findOne({
             _id: classId,
             school
@@ -159,7 +155,6 @@ const createDiary = async (req, res) => {
             });
         }
 
-        // Validate subject belongs to school
         const subjectDoc = await Subject.findOne({
             _id: subjectId,
             school
@@ -171,10 +166,8 @@ const createDiary = async (req, res) => {
             });
         }
 
-        // Handle file uploads
         const uploads = await handleDiaryUploads(req.files);
 
-        // Handle student IDs if not for all
         let studentIds = [];
         if (!forAll && Array.isArray(rollNumbers) && rollNumbers.length > 0) {
             const students = await User.find({

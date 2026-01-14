@@ -6,6 +6,7 @@ const getClassSectionData = async (classId, schoolId, sectionId = null) => {
       _id: classId,
       school: schoolId
     }).lean();
+    
 
     if (!classDoc) {
       return {

@@ -52,7 +52,6 @@ const diarySchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    // Add image support like in Project model
     images: [{
         type: String
     }],
