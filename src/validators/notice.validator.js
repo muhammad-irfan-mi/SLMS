@@ -1,23 +1,51 @@
 const Joi = require('joi');
 
-// Helper function for date validation (YYYY-MM-DD)
 const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
 
-// Custom validation for date comparison - end date should not be less than start date
-const validateDateRange = (value, helpers) => {
+const getCurrentPakistanDate = () => {
+    const now = new Date();
+    const offset = 5 * 60 * 60 * 1000;
+    const localTime = new Date(now.getTime() + offset);
+    return localTime.toISOString().split('T')[0];
+};
+
+const validateStartDate = (value, helpers) => {
     if (!value) return value;
-    
-    const { startDate } = helpers.state.ancestors[0];
-    if (!startDate) return value;
-    
-    const start = new Date(startDate);
-    const end = new Date(value);
-    
-    // Check if end date is less than start date
-    if (end < start) {
+
+    const currentDate = getCurrentPakistanDate();
+    const inputDate = new Date(value);
+    const today = new Date(currentDate);
+
+    inputDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+
+    if (inputDate < today) {
         return helpers.error('any.invalid');
     }
-    
+    return value;
+};
+const validateDateRange = (value, helpers) => {
+    if (!value) return value;
+
+    const { startDate } = helpers.state.ancestors[0];
+    if (!startDate) return value;
+
+    const start = new Date(startDate);
+    const end = new Date(value);
+    const currentDate = getCurrentPakistanDate();
+    const today = new Date(currentDate);
+
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+
+    if (end < start) {
+        return helpers.error('date.endBeforeStart');
+    }
+    if (end < today) {
+        return helpers.error('date.pastDate');
+    }
+
     return value;
 };
 
@@ -121,8 +149,10 @@ const createNoticeSchema = Joi.object({
 
     startDate: Joi.string()
         .pattern(dateRegex)
+        .custom(validateStartDate, 'Start date validation')
         .messages({
-            'string.pattern.base': 'Start date must be in YYYY-MM-DD format'
+            'string.pattern.base': 'Start date must be in YYYY-MM-DD format',
+            'any.invalid': 'Start date cannot be a past date'
         }),
 
     endDate: Joi.string()
@@ -130,7 +160,8 @@ const createNoticeSchema = Joi.object({
         .custom(validateDateRange, 'End date validation')
         .messages({
             'string.pattern.base': 'End date must be in YYYY-MM-DD format',
-            'any.invalid': 'End date cannot be before start date'
+            'date.endBeforeStart': 'End date cannot be before start date',
+            'date.pastDate': 'End date cannot be a past date'
         })
         .when('startDate', {
             is: Joi.exist(),
@@ -221,8 +252,10 @@ const updateNoticeSchema = Joi.object({
 
     startDate: Joi.string()
         .pattern(dateRegex)
+        .custom(validateStartDate, 'Start date validation')
         .messages({
-            'string.pattern.base': 'Start date must be in YYYY-MM-DD format'
+            'string.pattern.base': 'Start date must be in YYYY-MM-DD format',
+            'any.invalid': 'Start date cannot be a past date'
         }),
 
     endDate: Joi.string()
@@ -230,7 +263,8 @@ const updateNoticeSchema = Joi.object({
         .custom(validateDateRange, 'End date validation')
         .messages({
             'string.pattern.base': 'End date must be in YYYY-MM-DD format',
-            'any.invalid': 'End date cannot be before start date'
+            'date.endBeforeStart': 'End date cannot be before start date',
+            'date.pastDate': 'End date cannot be a past date'
         })
         .when('startDate', {
             is: Joi.exist(),
@@ -396,50 +430,47 @@ const getNoticesForStudentQuerySchema = Joi.object({
         })
 });
 
-// Validation middleware
-const validate = (schema) => (req, res, next) => {
-    const { error, value } = schema.validate(req.body, { 
-        abortEarly: false,
-        stripUnknown: true 
-    });
-    
-    if (error) {
-        const errorMessages = error.details.map(detail => detail.message);
-        return res.status(400).json({ 
-            success: false,
-            message: 'Validation error',
-            errors: errorMessages 
-        });
-    }
-    
-    req.body = value;
-    next();
-};
-
 const validateQuery = (schema) => (req, res, next) => {
-    const { error, value } = schema.validate(req.query, { 
+    const { error, value } = schema.validate(req.query, {
         abortEarly: false,
-        stripUnknown: true 
+        stripUnknown: true
     });
-    
+
     if (error) {
         const errorMessages = error.details.map(detail => detail.message);
-        return res.status(400).json({ 
+        return res.status(400).json({
             success: false,
             message: 'Validation error',
-            errors: errorMessages 
+            errors: errorMessages
         });
     }
-    
+
     req.query = value;
     next();
 };
+
+// Mark multiple notices as read schema
+const markMultipleAsReadSchema = Joi.object({
+    noticeIds: Joi.array()
+        .items(
+            Joi.string()
+                .pattern(/^[0-9a-fA-F]{24}$/)
+                .message('Invalid notice ID format')
+        )
+        .min(1)
+        .required()
+        .messages({
+            'array.min': 'At least one notice ID is required',
+            'any.required': 'noticeIds is required',
+            'array.base': 'noticeIds must be an array'
+        })
+});
 
 module.exports = {
     createNoticeSchema,
     updateNoticeSchema,
     getNoticesQuerySchema,
     getNoticesForStudentQuerySchema,
-    validate,
+    markMultipleAsReadSchema,
     validateQuery
 };

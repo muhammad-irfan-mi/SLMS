@@ -5,23 +5,18 @@ const {
     getNoticesForStudent,
     updateNotice,
     deleteNotice,
-    getNotices
+    getNotices,
+    markAsRead
 } = require("../controllers/noticeController");
 
-const {
-    validate,
-    validateQuery,
-    createNoticeSchema,
-    updateNoticeSchema,
-    getNoticesQuerySchema,
-    getNoticesForStudentQuerySchema
-} = require("../validators/notice.validator");
+const { createNoticeSchema, getNoticesQuerySchema, validateQuery, getNoticesForStudentQuerySchema, updateNoticeSchema } = require("../validators/notice.validator");
 
 const {
     isTeacherOrAdminOfficeOrSchool,
     protect,
     isStudent
 } = require("../middlewares/auth");
+const validate = require("../middlewares/validate");
 
 router.post(
     "/",
@@ -39,7 +34,6 @@ router.get(
     getNotices
 );
 
-// Get notices for student
 router.get(
     "/student",
     protect,
@@ -61,6 +55,12 @@ router.delete(
     protect,
     isTeacherOrAdminOfficeOrSchool,
     deleteNotice
+);
+
+router.post(
+    "/:id/read",
+    protect,
+    markAsRead
 );
 
 module.exports = router;

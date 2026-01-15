@@ -6,20 +6,26 @@ const noticeSchema = new Schema({
   title: { type: String, required: true },
   message: { type: String, required: true },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
-  target: { 
+  target: {
     type: String,
-    enum: ["all_teachers", "selected_teachers", "all_students", "selected_students", "all", "custom",'class'],
+    enum: ["all_teachers", "selected_teachers", "all_students", "selected_students", "all", "custom", 'class'],
     default: "all"
   },
-  targetTeacherIds: [{ type: Schema.Types.ObjectId, ref: "User" }], 
-  targetStudentIds: [{ type: Schema.Types.ObjectId, ref: "User" }], 
-  classId: { type: Schema.Types.ObjectId, ref: "ClassSection" }, 
+  targetTeacherIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
+  targetStudentIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
+  classId: { type: Schema.Types.ObjectId, ref: "ClassSection" },
   sectionId: { type: Schema.Types.ObjectId },
-  category: { type: String, enum: ["notice","meeting","holiday","general"], default: "notice" },
-  startDate: { type: String }, 
-  endDate: { type: String }, 
+  category: { type: String, enum: ["notice", "meeting", "holiday", "general"], default: "notice" },
+  startDate: { type: String },
+  endDate: { type: String },
   pinned: { type: Boolean, default: false },
-  attachments: [{ type: String }]
+  attachments: [{ type: String }],
+  readBy: [{
+    user: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    readAt: { type: Date, default: Date.now }
+  }]
 }, { timestamps: true });
+
+noticeSchema.index({ "readBy.user": 1 });
 
 module.exports = mongoose.model("Notice", noticeSchema);

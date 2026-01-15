@@ -2,6 +2,7 @@ const mongoose = require("mongoose");
 const ClassSection = require("../models/ClassSection");
 const Notice = require("../models/Notice");
 const User = require("../models/User");
+const School = require('../models/School');
 
 const formatDate = (d) => {
   if (!d) return undefined;
@@ -19,7 +20,6 @@ const createNotice = async (req, res) => {
       classId, sectionId, category, startDate, endDate, attachments, pinned
     } = req.body;
 
-    // Validate class and section if provided
     if (classId) {
       const classExists = await ClassSection.findOne({
         _id: classId,
@@ -47,7 +47,6 @@ const createNotice = async (req, res) => {
       }
     }
 
-    // Validate teacher IDs belong to the same school
     if (targetTeacherIds && targetTeacherIds.length > 0) {
       const teachers = await User.find({
         _id: { $in: targetTeacherIds },
@@ -63,7 +62,6 @@ const createNotice = async (req, res) => {
       }
     }
 
-    // Validate student IDs belong to the same school
     if (targetStudentIds && targetStudentIds.length > 0) {
       const students = await User.find({
         _id: { $in: targetStudentIds },
@@ -115,14 +113,19 @@ const createNotice = async (req, res) => {
 // Get notices for teachers/admins
 const getNotices = async (req, res) => {
   try {
-    console.log("req.user:", req.user);
     const user = req.user;
 
-    // Get school ID - school document has _id directly
-    const schoolId = user._id || user.id;
+    const schoolId = user.school || user.schoolId || (user.schoolInfo && user.schoolInfo.id);
 
-    console.log("School ID:", schoolId);
+    if (!schoolId) {
+      return res.status(400).json({
+        success: false,
+        message: "School information not found"
+      });
+    }
 
+    const userId = user._id || user.id;
+    const userRole = user.role;
     const {
       classId,
       sectionId,
@@ -138,16 +141,18 @@ const getNotices = async (req, res) => {
       sortOrder = 'desc'
     } = req.query;
 
+    const teacherClassId = user.classId || (user.classInfo && user.classInfo.id);
+    const teacherSectionId = user.sectionId || (user.sectionInfo && user.sectionInfo.id);
+    const teacherId = user._id || user.id;
+
     const now = new Date();
     const filter = { school: schoolId };
 
-    // Apply basic filters
     if (classId) filter.classId = classId;
     if (sectionId) filter.sectionId = sectionId;
     if (category) filter.category = category;
     if (target) filter.target = target;
 
-    // Date range filter
     if (startDate || endDate) {
       filter.createdAt = {};
       if (startDate) {
@@ -160,7 +165,6 @@ const getNotices = async (req, res) => {
       }
     }
 
-    // Text search
     if (search) {
       filter.$or = [
         { title: { $regex: search, $options: "i" } },
@@ -168,7 +172,6 @@ const getNotices = async (req, res) => {
       ];
     }
 
-    // Active only filter
     if (activeOnly === "true") {
       filter.$and = (filter.$and || []).concat([
         {
@@ -186,36 +189,47 @@ const getNotices = async (req, res) => {
       ]);
     }
 
-    // Check user type
     if (!user.role) {
       console.log("School login - showing all notices for school");
     }
     else if (user.role === "teacher") {
-      console.log("Teacher login");
+
       const teacherFilters = [
         { target: "all" },
         { target: "all_teachers" },
-        { target: "class", classId: user.classId || null },
-        {
-          target: "section",
-          classId: user.classId || null,
-          sectionId: user.sectionId || null
-        },
-        { target: "selected_teachers", targetTeacherIds: user._id || user.id },
-        { target: "custom", targetTeacherIds: user._id || user.id }
+        { target: "custom" },
+        { target: "selected_teachers", targetTeacherIds: teacherId }
       ];
+
+      if (teacherClassId) {
+        teacherFilters.push({ target: "class", classId: teacherClassId });
+      }
+
+      if (teacherClassId && teacherSectionId) {
+        teacherFilters.push({
+          target: "section",
+          classId: teacherClassId,
+          sectionId: teacherSectionId
+        });
+      }
+
+      const validFilters = teacherFilters.filter(filterItem => {
+        if (filterItem.target === "class" && !filterItem.classId) return false;
+        if (filterItem.target === "section" && (!filterItem.classId || !filterItem.sectionId)) return false;
+        return true;
+      });
+
 
       filter.$and = [
         { school: schoolId },
-        { $or: teacherFilters }
+        { $or: validFilters }
       ];
-      delete filter.school;
+
     }
-    else if (["admin_office", "school"].includes(user.role)) {
+    else if (["admin_office", "school", "superadmin"].includes(user.role)) {
       console.log("Admin login with role:", user.role);
     }
     else {
-      console.log("Access denied for user:", user);
       return res.status(403).json({
         success: false,
         message: "Access denied. Teacher, Admin, or School role required."
@@ -225,35 +239,69 @@ const getNotices = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
     const sortDirection = sortOrder === "asc" ? 1 : -1;
 
-    console.log("Final filter:", JSON.stringify(filter, null, 2));
-
-    // Import models
-    const User = require('../models/User'); // Adjust path as needed
-    const School = require('../models/School'); // Adjust path as needed
-
-    // Build query
     const query = Notice.find(filter)
       .populate("classId", "class")
       .populate("targetTeacherIds", "name email role")
       .populate("targetStudentIds", "name email rollNo")
+      .populate("readBy.user", "name email role")
       .sort({ pinned: -1, [sortBy]: sortDirection })
       .skip(skip)
       .limit(Number(limit));
 
-    // Execute queries
     const [total, notices] = await Promise.all([
       Notice.countDocuments(filter),
       query.lean()
     ]);
 
-    // Process notices to populate createdBy (can be User or School)
-    const processedNotices = await Promise.all(
+      const processedNotices = await Promise.all(
       notices.map(async (notice) => {
         const noticeObj = { ...notice };
 
+        if (userRole === "teacher" || userRole === "student") {
+          const hasRead = notice.readBy && notice.readBy.some(read =>
+            read.user && read.user._id && read.user._id.toString() === userId.toString()
+          );
+
+          noticeObj.isRead = hasRead;
+
+          if (hasRead) {
+            const readRecord = notice.readBy && notice.readBy.find(read =>
+              read.user && read.user._id && read.user._id.toString() === userId.toString()
+            );
+            noticeObj.readAt = readRecord ? readRecord.readAt : null;
+          }
+
+          noticeObj.readCount = notice.readBy ? notice.readBy.length : 0;
+        }
+
+        if (userRole === "teacher") {
+          delete noticeObj.targetTeacherIds;
+          delete noticeObj.targetStudentIds;
+          
+          delete noticeObj.readBy;
+          
+          if (notice.target === "selected_teachers" || notice.target === "selected_students") {
+            if (notice.target === "selected_teachers" && Array.isArray(notice.targetTeacherIds)) {
+              noticeObj.isTargetedToMe = notice.targetTeacherIds.some(id => 
+                id.toString() === userId.toString()
+              );
+            } else if (notice.target === "selected_students") {
+              noticeObj.isTargetedToMe = false;
+            }
+          } else {
+            noticeObj.isTargetedToMe = true;
+          }
+        }
+
+        if (["admin_office", "school", "superadmin"].includes(userRole)) {
+          delete noticeObj.readBy;
+          delete noticeObj.isRead;
+          delete noticeObj.readAt;
+          delete noticeObj.readCount;
+        }
+
         if (notice.createdBy) {
           try {
-            // Try to find as User first
             const userDoc = await User.findById(notice.createdBy)
               .select('name email role schoolId username');
 
@@ -266,7 +314,6 @@ const getNotices = async (req, res) => {
                 username: userDoc.username
               };
             } else {
-              // If not found as User, try as School
               const schoolDoc = await School.findById(notice.createdBy)
                 .select('name email schoolId');
 
@@ -279,7 +326,6 @@ const getNotices = async (req, res) => {
                   schoolId: schoolDoc.schoolId
                 };
               } else {
-                // If still not found, keep as is
                 noticeObj.createdBy = notice.createdBy;
               }
             }
@@ -293,10 +339,7 @@ const getNotices = async (req, res) => {
       })
     );
 
-    // Calculate pagination info
     const totalPages = Math.ceil(total / Number(limit));
-    const hasNextPage = page < totalPages;
-    const hasPrevPage = page > 1;
 
     return res.status(200).json({
       total,
@@ -319,13 +362,10 @@ const getNotices = async (req, res) => {
 // Get notices for student
 const getNoticesForStudent = async (req, res) => {
   try {
-    console.log("Student req.user:", req.user);
-
-    // For students, req.user should be a user document with role "student"
     const user = req.user;
     const studentId = user._id || user.id;
+    const userId = studentId;
 
-    // Get school ID - check different possible locations
     const schoolId = user.school || user.schoolId || (user.schoolInfo && user.schoolInfo.id);
 
     if (!schoolId) {
@@ -338,8 +378,6 @@ const getNoticesForStudent = async (req, res) => {
     const classId = user.classId || (user.classInfo && user.classInfo.id);
     const sectionId = user.sectionId || (user.sectionInfo && user.sectionInfo.id);
 
-    console.log("Student info:", { studentId, schoolId, classId, sectionId });
-
     const {
       category,
       activeOnly,
@@ -351,12 +389,10 @@ const getNoticesForStudent = async (req, res) => {
     } = req.query;
 
     const now = new Date();
-    const filter = { school: schoolId }; // Filter by school ID
+    const filter = { school: schoolId };
 
-    // Apply basic filters
     if (category) filter.category = category;
 
-    // Date range filter
     if (startDate || endDate) {
       filter.createdAt = {};
       if (startDate) {
@@ -369,7 +405,6 @@ const getNoticesForStudent = async (req, res) => {
       }
     }
 
-    // Text search
     if (search) {
       filter.$or = [
         { title: { $regex: search, $options: "i" } },
@@ -377,8 +412,6 @@ const getNoticesForStudent = async (req, res) => {
       ];
     }
 
-    // Student-specific filters
-    // Students see notices targeted to all students, their class, their section, or specifically to them
     const studentFilters = [
       { target: "all" },
       { target: "all_students" },
@@ -392,23 +425,19 @@ const getNoticesForStudent = async (req, res) => {
       { target: "custom", targetStudentIds: studentId }
     ];
 
-    // Remove null filters (if student doesn't have class/section info)
     const validFilters = studentFilters.filter(filterItem => {
       if (filterItem.target === "class" && !classId) return false;
       if (filterItem.target === "section" && (!classId || !sectionId)) return false;
       return true;
     });
 
-    // Add school filter and student filters
     filter.$and = [
       { school: schoolId },
       { $or: validFilters }
     ];
 
-    // Remove individual school filter since it's in $and now
     delete filter.school;
 
-    // Active only filter
     if (activeOnly === "true") {
       filter.$and = filter.$and.concat([
         {
@@ -426,35 +455,77 @@ const getNoticesForStudent = async (req, res) => {
       ]);
     }
 
-    console.log("Student filter:", JSON.stringify(filter, null, 2));
-
     const skip = (Number(page) - 1) * Number(limit);
 
-    // Build query
     const query = Notice.find(filter)
       .populate("createdBy", "name email role")
       .populate("classId", "class")
+      .select('-targetTeacherIds -targetStudentIds -createdBy') 
       .sort({ pinned: -1, createdAt: -1 })
       .skip(skip)
       .limit(Number(limit));
 
-    // Execute queries in parallel
     const [total, notices] = await Promise.all([
       Notice.countDocuments(filter),
       query.lean()
     ]);
 
-    // Calculate pagination info
+    const noticeIds = notices.map(notice => notice._id);
+
+    const readNotices = await Notice.find({
+      _id: { $in: noticeIds },
+      'readBy.user': studentId
+    }).select('_id readBy.$'); 
+
+    const readMap = new Map();
+    readNotices.forEach(notice => {
+      const readEntry = notice.readBy.find(read => 
+        read.user.toString() === studentId.toString()
+      );
+      if (readEntry) {
+        readMap.set(notice._id.toString(), readEntry.readAt);
+      }
+    });
+
+    const processedNotices = notices.map(notice => {
+      const noticeObj = { ...notice };
+
+      const readAt = readMap.get(notice._id.toString());
+      noticeObj.isRead = !!readAt;
+      
+      if (readAt) {
+        noticeObj.readAt = readAt;
+      }
+
+      if (notice.readBy) {
+        noticeObj.readCount = notice.readBy.length;
+        delete noticeObj.readBy;
+      } else {
+        noticeObj.readCount = 0;
+      }
+
+      if (notice.target === "selected_students" || notice.target === "custom") {
+        noticeObj.isTargetedToMe = true; 
+      } else {
+        noticeObj.isTargetedToMe = true;
+      }
+
+      return noticeObj;
+    });
+
     const totalPages = Math.ceil(total / Number(limit));
     const hasNextPage = page < totalPages;
     const hasPrevPage = page > 1;
 
     return res.status(200).json({
+      success: true,
       total,
       page: Number(page),
       limit: Number(limit),
       totalPages,
-      data: notices,
+      hasNextPage,
+      hasPrevPage,
+      data: processedNotices,
     });
 
   } catch (err) {
@@ -613,10 +684,143 @@ const deleteNotice = async (req, res) => {
   }
 };
 
+// Mark notice as read
+const markAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user._id || req.user.id;
+
+    const notice = await Notice.findById(id);
+    if (!notice) {
+      return res.status(404).json({
+        success: false,
+        message: "Notice not found"
+      });
+    }
+
+    const alreadyRead = notice.readBy.some(read =>
+      read.user.toString() === userId.toString()
+    );
+
+    if (!alreadyRead) {
+      notice.readBy.push({
+        user: userId,
+        readAt: new Date()
+      });
+
+      await notice.save();
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: alreadyRead ? "Notice already marked as read" : "Notice marked as read",
+      data: {
+        noticeId: notice._id,
+        read: true,
+        readAt: alreadyRead
+          ? notice.readBy.find(r => r.user.toString() === userId.toString()).readAt
+          : notice.readBy[notice.readBy.length - 1].readAt
+      }
+    });
+
+  } catch (err) {
+    console.error("markAsRead error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+};
+
+// Mark multiple notices as read
+const markMultipleAsRead = async (req, res) => {
+  try {
+    const { noticeIds } = req.body;
+    const userId = req.user._id || req.user.id;
+
+    if (!Array.isArray(noticeIds) || noticeIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide an array of notice IDs"
+      });
+    }
+
+    const invalidIds = noticeIds.filter(id => !mongoose.Types.ObjectId.isValid(id));
+    if (invalidIds.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid notice IDs: ${invalidIds.join(', ')}`
+      });
+    }
+
+    const notices = await Notice.find({ _id: { $in: noticeIds } });
+
+    const results = [];
+    const bulkOps = [];
+
+    for (const notice of notices) {
+      const alreadyRead = notice.readBy.some(read =>
+        read.user.toString() === userId.toString()
+      );
+
+      if (!alreadyRead) {
+        bulkOps.push({
+          updateOne: {
+            filter: {
+              _id: notice._id,
+              "readBy.user": { $ne: userId }
+            },
+            update: {
+              $push: {
+                readBy: {
+                  user: userId,
+                  readAt: new Date()
+                }
+              }
+            }
+          }
+        });
+      }
+
+      results.push({
+        noticeId: notice._id,
+        noticeTitle: notice.title,
+        alreadyRead: alreadyRead,
+        success: !alreadyRead
+      });
+    }
+
+    if (bulkOps.length > 0) {
+      await Notice.bulkWrite(bulkOps);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Notices processed successfully",
+      data: {
+        total: results.length,
+        markedAsRead: results.filter(r => r.success).length,
+        alreadyRead: results.filter(r => r.alreadyRead).length,
+        details: results
+      }
+    });
+
+  } catch (err) {
+    console.error("markMultipleAsRead error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createNotice,
   getNotices,
   getNoticesForStudent,
   updateNotice,
-  deleteNotice
+  deleteNotice,
+  markAsRead
 };
