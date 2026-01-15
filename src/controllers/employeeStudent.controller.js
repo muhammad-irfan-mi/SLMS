@@ -1534,11 +1534,56 @@ const deleteEmployeeBySchool = async (req, res) => {
 const getAllStudentsBySchool = async (req, res) => {
     try {
         const schoolId = req.user.school;
-        const students = await User.find({
-            school: schoolId,
-            role: "student",
-        }).select("-password");
-        return res.status(200).json({ students });
+
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const [students, total] = await Promise.all([
+            User.find({
+                school: schoolId,
+                role: "student"
+            })
+                .select("-password -forgotPasswordOTP -otp")
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+
+            User.countDocuments({
+                school: schoolId,
+                role: "student"
+            })
+        ]);
+
+        const formattedStudents = [];
+        for (const student of students) {
+            const classId = student.classInfo?.id || null;
+            const sectionId = student.sectionInfo?.id || null;
+
+            const { className, sectionName } =
+                await getClassSectionInfo(classId, sectionId, schoolId);
+
+            formattedStudents.push({
+                ...student,
+                classInfo: {
+                    id: classId,
+                    className
+                },
+                sectionInfo: {
+                    id: sectionId,
+                    sectionName
+                }
+            });
+
+        }
+
+        return res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            students: formattedStudents
+        });
     } catch (err) {
         console.error("Error fetching students:", err);
         return res.status(500).json({ message: err.message || "Server error while fetching students" });
