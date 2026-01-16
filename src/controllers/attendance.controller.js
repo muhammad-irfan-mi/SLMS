@@ -46,12 +46,10 @@ const validateTeacherAssignment = async (teacherId, classId, sectionId, school) 
             return { valid: false, message: "Teacher not found" };
         }
 
-        // Check if teacher is incharge
         if (!teacher.isIncharge) {
             return { valid: false, message: "Only incharge teachers can mark attendance" };
         }
 
-        // Check if teacher is assigned to the specified class/section
         if (String(teacher.classInfo?.id) !== String(classId)) {
             return { valid: false, message: "Teacher is not assigned to this class" };
         }
@@ -79,7 +77,6 @@ const validateStudentEnrollment = async (studentIds, classId, sectionId, school)
 
         const enrolledIds = new Set(enrolledStudents.map(s => String(s._id)));
 
-        // Check for non-enrolled students
         const nonEnrolled = studentIds.filter(id => !enrolledIds.has(String(id)));
 
         if (nonEnrolled.length > 0) {
@@ -392,14 +389,11 @@ const getAttendanceBySection = async (req, res) => {
         const userId = req.user._id;
         const userRole = req.user.role;
 
-        // Validate sectionId
         if (!mongoose.Types.ObjectId.isValid(sectionId)) {
             return res.status(400).json({ message: "Invalid section ID" });
         }
 
-        // For teachers, check if they're assigned to this section
         if (userRole === 'teacher') {
-            // Get teacher's assigned section
             const teacher = await User.findOne({
                 _id: userId,
                 school,
@@ -421,13 +415,11 @@ const getAttendanceBySection = async (req, res) => {
 
         const { page, limit, skip } = normalizePagination(req.query);
 
-        // Build filter
         const filter = {
             school,
             sectionId
         };
 
-        // Handle date filtering
         if (date) {
             try {
                 filter.date = formatDate(date);
@@ -451,7 +443,6 @@ const getAttendanceBySection = async (req, res) => {
             }
         }
 
-        // Get total count and records
         const [total, records] = await Promise.all([
             Attendance.countDocuments(filter),
             Attendance.find(filter)
@@ -463,7 +454,6 @@ const getAttendanceBySection = async (req, res) => {
                 .lean()
         ]);
 
-        // Format response
         const attendance = records.map(att => {
             const section = att.classId?.sections?.find(
                 s => String(s._id) === String(sectionId)
