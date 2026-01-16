@@ -125,7 +125,7 @@ const createExamUpdateNotification = async (schoolId, classId, sectionId, examDa
     if (teacherId) {
       notices.teacherNotice = await Notice.create({
         ...notificationData,
-        title: `📝 Exam Updated - ${examData.subjectName}`,
+        title: `Exam Updated - ${examData.subjectName}`,
         target: 'selected_teachers',
         targetTeacherIds: [teacherId],
         classId: classId,
