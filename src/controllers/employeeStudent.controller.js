@@ -6,7 +6,6 @@ const School = require("../models/School");
 const ClassSection = require("../models/ClassSection");
 const { uploadFileToS3, deleteFileFromS3 } = require("../services/s3.service");
 const emailService = require("../services/email.service");
-const otpService = require("../services/otp.service");
 
 // Helper for S3 uploads
 async function uploadFiles(files, existingImages = {}) {
@@ -125,7 +124,10 @@ const sendUserOTP = async (req, res) => {
         await emailService.sendUserOTPEmail(
             email,
             otpCode,
-            existingUser.name || existingUser.tempData?.name || "User"
+            existingUser.name || existingUser.tempData?.name || "User",
+            existingUser.school,
+            existingUser.username || null,
+            existingUser.role
         );
 
         return res.status(200).json({
@@ -276,6 +278,7 @@ const resendUserOTP = async (req, res) => {
         await emailService.sendUserOTPEmail(
             email,
             newOTP,
+            username? username : null,
             user.name || user.tempData?.name || "User"
         );
 
@@ -538,8 +541,7 @@ const addEmployeeBySchool = async (req, res) => {
             });
             await newUser.save();
         }
-        await emailService.sendUserOTPEmail(email, otpCode, name);
-
+        await emailService.sendUserOTPEmail(email, otpCode, name, schoolId, null, role);
         return res.status(201).json({
             message: "Employee added successfully. OTP sent to email for verification.",
             email,
@@ -652,215 +654,6 @@ const editEmployeeBySchool = async (req, res) => {
 };
 
 // ADD STUDENT - UPDATED for sibling support
-// const addStudentBySchool = async (req, res) => {
-//     try {
-//         const { name, username, email, phone, address, cnic, fatherName, classId, sectionId, rollNo } = req.body;
-//         const schoolId = req.user.school;
-
-//         const emailInOtherSchool = await checkEmailInOtherSchool(email, schoolId);
-//         if (emailInOtherSchool) {
-//             return res.status(400).json({
-//                 message: `Email ${email} is already registered in another school.`
-//             });
-//         }
-
-//         if (rollNo) {
-//             const rollExists = await User.findOne({
-//                 _id: { $ne: id },
-//                 school: req.user.school,
-//                 role: "student",
-//                 rollNo: rollNo,
-//                 "classInfo.id": classInfo.id,
-//                 "sectionInfo.id": sectionInfo?.id || null
-//             });
-
-//             if (rollExists) {
-//                 return res.status(400).json({
-//                     message: `Roll number "${rollNo}" already exists in this class/section`
-//                 });
-//             }
-//         }
-//         const classDoc = await ClassSection.findOne({ _id: classId, school: schoolId });
-//         if (!classDoc) {
-//             return res.status(403).json({
-//                 message: "Class not found or you don't have permission to add students to this class"
-//             });
-//         }
-
-//         if (sectionId) {
-//             const sectionExists = classDoc.sections.some(
-//                 sec => sec._id.toString() === sectionId
-//             );
-
-//             if (!sectionExists) {
-//                 return res.status(403).json({
-//                     message: "Section not found in this class"
-//                 });
-//             }
-//         }
-
-//         const siblings = await User.find({
-//             email: email.toLowerCase(),
-//             school: schoolId,
-//             role: "student"
-//         });
-
-//         if (username) {
-//             const usernameExists = siblings.some(
-//                 sibling => sibling.username &&
-//                     sibling.username.toLowerCase() === username.toLowerCase()
-//             );
-
-//             if (usernameExists) {
-//                 return res.status(400).json({
-//                     message: `Username "${username}" is already used by another sibling with the same email address. Siblings must have unique usernames.`
-//                 });
-//             }
-//         }
-
-
-//         // if (username) {
-//         //     const existingInSameSection = await checkUsernameInSection(
-//         //         username.toLowerCase(),
-//         //         sectionId,
-//         //         schoolId
-//         //     );
-
-//         //     if (existingInSameSection) {
-//         //         return res.status(400).json({
-//         //             message: `Username "${username}" already exists in Section . Please choose a different username or add to a different section.`,
-//         //         });
-//         //     }
-
-//         //     const existingInSameClass = await checkUsernameInClass(
-//         //         username.toLowerCase(),
-//         //         classId,
-//         //         schoolId
-//         //     );
-
-//         //     if (existingInSameClass) {
-//         //         return res.status(400).json({
-//         //             message: `Username "${username}" already exists in class. Please choose a different username.`,
-//         //             existingStudent: {
-//         //                 name: existingInSameClass.name,
-//         //                 section: existingInSameClass.sectionInfo.id
-//         //             }
-//         //         });
-//         //     }
-//         // }
-
-//         const result = await getClassAndSection(classId, sectionId, schoolId);
-//         if (result.error) {
-//             return res.status(400).json({ message: result.error });
-//         }
-
-//         const { classInfo, sectionInfo } = result;
-//         const images = await uploadFiles(req.files);
-
-//         let finalUsername = username;
-//         if (!username) {
-//             finalUsername = await generateUniqueUsername(name, email, schoolId);
-//         } else {
-//             finalUsername = username.toLowerCase();
-//         }
-
-//         // const siblings = await getStudentSiblings(email, schoolId);
-
-//         let finalRollNo = rollNo;
-//         if (!rollNo && siblings.length > 0) {
-//             finalRollNo = `${email.split('@')[0]}-${siblings.length + 1}`;
-//         }
-
-//         let siblingGroupId = null;
-//         if (siblings.length > 0) {
-//             siblingGroupId = siblings[0].siblingGroupId || siblings[0]._id;
-
-//             if (!siblings[0].siblingGroupId) {
-//                 siblingGroupId = siblings[0]._id;
-//                 await User.updateMany(
-//                     {
-//                         _id: { $in: siblings.map(s => s._id) },
-//                         school: schoolId
-//                     },
-//                     { $set: { siblingGroupId: siblingGroupId } }
-//                 );
-//             }
-//         }
-
-//         const otpCode = generateOTP();
-//         const otpExpiry = calculateOTPExpiry(10);
-
-//         const newStudent = new User({
-//             name,
-//             username: finalUsername,
-//             email: email.toLowerCase(),
-//             phone,
-//             address,
-//             cnic,
-//             fatherName,
-//             role: "student",
-//             rollNo: finalRollNo,
-//             classInfo,
-//             sectionInfo,
-//             school: schoolId,
-//             images,
-//             siblingGroupId,
-//             verified: false,
-//             tempData: {
-//                 name,
-//                 username: finalUsername,
-//                 email: email.toLowerCase(),
-//                 phone,
-//                 address,
-//                 cnic,
-//                 fatherName,
-//                 role: "student",
-//                 rollNo: finalRollNo,
-//                 classInfo,
-//                 sectionInfo,
-//                 school: schoolId,
-//                 images,
-//                 siblingGroupId
-//             },
-//             otp: {
-//                 code: otpCode,
-//                 expiresAt: otpExpiry,
-//                 attempts: 0,
-//                 lastAttempt: new Date()
-//             }
-//         });
-
-//         await newStudent.save();
-//         await School.findByIdAndUpdate(schoolId, { $inc: { noOfStudents: 1 } });
-
-//         await emailService.sendUserOTPEmail(email, otpCode, name);
-
-//         const updatedSiblings = await User.find({
-//             email: email.toLowerCase(),
-//             school: schoolId,
-//             role: "student"
-//         });
-
-//         return res.status(201).json({
-//             message: "Student added successfully. OTP sent to parent email for verification.",
-//             email,
-//             otpExpiry,
-//             student: {
-//                 name,
-//                 username: finalUsername,
-//                 email,
-//                 class: classInfo?.name,
-//                 section: sectionInfo?.name
-//             },
-//             siblings: updatedSiblings
-//         });
-//     } catch (err) {
-//         console.error("Error adding student:", err);
-//         return res.status(500).json({
-//             message: err.message || "Server error while adding student"
-//         });
-//     }
-// };
 const addStudentBySchool = async (req, res) => {
     try {
         const {
@@ -878,7 +671,6 @@ const addStudentBySchool = async (req, res) => {
 
         const schoolId = req.user.school;
 
-        // 1. Email already used in other school
         const emailInOtherSchool = await checkEmailInOtherSchool(email, schoolId);
         if (emailInOtherSchool) {
             return res.status(400).json({
@@ -886,7 +678,6 @@ const addStudentBySchool = async (req, res) => {
             });
         }
 
-        // 2. Validate class & section
         const classDoc = await ClassSection.findOne({ _id: classId, school: schoolId });
         if (!classDoc) {
             return res.status(403).json({ message: "Class not found" });
@@ -901,7 +692,6 @@ const addStudentBySchool = async (req, res) => {
             }
         }
 
-        // 3. Get classInfo & sectionInfo
         const result = await getClassAndSection(classId, sectionId, schoolId);
         if (result.error) {
             return res.status(400).json({ message: result.error });
@@ -909,7 +699,6 @@ const addStudentBySchool = async (req, res) => {
 
         const { classInfo, sectionInfo } = result;
 
-        // 4. Roll No uniqueness (CLASS + SECTION)
         if (rollNo) {
             const rollExists = await User.findOne({
                 school: schoolId,
@@ -926,14 +715,12 @@ const addStudentBySchool = async (req, res) => {
             }
         }
 
-        // 5. Siblings
         const siblings = await User.find({
             email: email.toLowerCase(),
             school: schoolId,
             role: "student"
         });
 
-        // 6. Username
         let finalUsername = username
             ? username.toLowerCase()
             : await generateUniqueUsername(name, email, schoolId);
@@ -944,13 +731,11 @@ const addStudentBySchool = async (req, res) => {
             });
         }
 
-        // 7. Roll No auto
         let finalRollNo = rollNo;
         if (!rollNo && siblings.length > 0) {
             finalRollNo = `${email.split("@")[0]}-${siblings.length + 1}`;
         }
 
-        // 8. Sibling Group
         let siblingGroupId = null;
         if (siblings.length > 0) {
             siblingGroupId = siblings[0].siblingGroupId || siblings[0]._id;
@@ -961,14 +746,11 @@ const addStudentBySchool = async (req, res) => {
             );
         }
 
-        // 9. Upload images
         const images = await uploadFiles(req.files);
 
-        // 10. OTP
         const otpCode = generateOTP();
         const otpExpiry = calculateOTPExpiry(10);
 
-        // 11. Create student
         const student = new User({
             name,
             username: finalUsername,
@@ -996,8 +778,13 @@ const addStudentBySchool = async (req, res) => {
         await student.save();
         await School.findByIdAndUpdate(schoolId, { $inc: { noOfStudents: 1 } });
 
-        await emailService.sendUserOTPEmail(email, otpCode, name);
-
+        await emailService.sendStudentRegistrationEmail(
+            email,
+            otpCode,
+            name,
+            finalUsername,
+            schoolId
+        );
         return res.status(201).json({
             message: "Student added successfully. OTP sent.",
             student
@@ -1012,203 +799,6 @@ const addStudentBySchool = async (req, res) => {
 };
 
 // UPDATE STUDENT - UPDATED for sibling support
-// const editStudentBySchool = async (req, res) => {
-//     try {
-//         const { id } = req.params;
-//         const existing = await User.findById(id);
-
-//         if (!existing || existing.role !== "student")
-//             return res.status(404).json({ message: "Student not found" });
-
-//         if (existing.school.toString() !== req.user.school.toString())
-//             return res.status(403).json({ message: "Unauthorized" });
-
-//         const { email, classId, sectionId, rollNo, username } = req.body;
-
-//         const targetEmail = email || existing.email;
-
-//         const siblings = await User.find({
-//             email: targetEmail.toLowerCase(),
-//             school: req.user.school,
-//             role: "student",
-//             _id: { $ne: id }
-//         });
-
-//         if (username && siblings.length > 0) {
-//             const usernameExists = siblings.some(
-//                 sibling => sibling.username &&
-//                     sibling.username.toLowerCase() === username.toLowerCase()
-//             );
-
-//             if (usernameExists) {
-//                 return res.status(400).json({
-//                     message: `Username "${username}" is already used by another sibling with the same email address. Siblings must have unique usernames.`
-//                 });
-//             }
-//         }
-
-//         let classInfo = existing.classInfo;
-//         let sectionInfo = existing.sectionInfo;
-
-//         if (req.body.classId) {
-//             const classDoc = await ClassSection.findOne({
-//                 _id: req.body.classId,
-//                 school: req.user.school
-//             });
-
-//             if (!classDoc) {
-//                 return res.status(403).json({
-//                     message: "Class not found or you don't have permission"
-//                 });
-//             }
-
-//             if (req.body.sectionId) {
-//                 const sectionExists = classDoc.sections.some(
-//                     sec => sec._id.toString() === req.body.sectionId
-//                 );
-
-//                 if (!sectionExists) {
-//                     return res.status(403).json({
-//                         message: "Section not found in this class"
-//                     });
-//                 }
-//             }
-
-//             const result = await getClassAndSection(req.body.classId, req.body.sectionId, req.user.school);
-//             if (result.error) {
-//                 return res.status(400).json({ message: result.error });
-//             }
-//             classInfo = result.classInfo;
-//             sectionInfo = result.sectionInfo;
-//         }
-
-//         // 6. Handle file uploads
-//         const images = await uploadFiles(req.files, existing.images);
-
-//         // 7. Prepare updated data
-//         const updatedData = {
-//             name: req.body.name ?? existing.name,
-//             email: targetEmail.toLowerCase(),
-//             phone: req.body.phone ?? existing.phone,
-//             address: req.body.address ?? existing.address,
-//             cnic: req.body.cnic ?? existing.cnic,
-//             fatherName: req.body.fatherName ?? existing.fatherName,
-//             rollNo: rollNo ?? existing.rollNo,
-//             classInfo,
-//             sectionInfo,
-//             images,
-//         };
-
-//         // 8. Handle username (if provided)
-//         if (username !== undefined) {
-//             if (username === null || username === '') {
-//                 // Clear username if empty/null
-//                 updatedData.username = null;
-//             } else {
-//                 updatedData.username = username.toLowerCase();
-//             }
-//         }
-
-//         // 9. Handle password update
-//         if (req.body.password) {
-//             updatedData.password = await bcrypt.hash(req.body.password, 10);
-//         }
-
-//         // 10. Update siblingGroupId if email is changing
-//         if (email && email.toLowerCase() !== existing.email.toLowerCase()) {
-//             // Remove from old sibling group
-//             updatedData.siblingGroupId = null;
-
-//             // Check if new email has siblings
-//             const newSiblings = await User.find({
-//                 email: email.toLowerCase(),
-//                 school: req.user.school,
-//                 role: "student",
-//                 _id: { $ne: id }
-//             });
-
-//             if (newSiblings.length > 0) {
-//                 // Join existing sibling group
-//                 updatedData.siblingGroupId = newSiblings[0].siblingGroupId || newSiblings[0]._id;
-
-//                 // Check username uniqueness against new siblings
-//                 if (username) {
-//                     const usernameExists = newSiblings.some(
-//                         sibling => sibling.username &&
-//                             sibling.username.toLowerCase() === username.toLowerCase()
-//                     );
-
-//                     if (usernameExists) {
-//                         return res.status(400).json({
-//                             message: `Username "${username}" is already used by another sibling with the new email address.`
-//                         });
-//                     }
-//                 }
-//             } else {
-//                 // Create new sibling group
-//                 updatedData.siblingGroupId = null; // Will be set to own _id after save
-//             }
-//         }
-
-//         // 11. Update student
-//         const updated = await User.findByIdAndUpdate(id, updatedData, {
-//             new: true,
-//             runValidators: true
-//         });
-
-//         // 12. Update siblingGroupId if needed
-//         if (email && !updated.siblingGroupId) {
-//             updated.siblingGroupId = updated._id;
-//             await updated.save();
-//         }
-
-//         // 13. Update old siblings' group if email changed
-//         if (email && email.toLowerCase() !== existing.email.toLowerCase()) {
-//             // Find remaining siblings with old email
-//             const oldSiblings = await User.find({
-//                 email: existing.email.toLowerCase(),
-//                 school: req.user.school,
-//                 role: "student",
-//                 _id: { $ne: id }
-//             });
-
-//             // If only one sibling left, set their siblingGroupId to their own _id
-//             if (oldSiblings.length === 1) {
-//                 await User.findByIdAndUpdate(oldSiblings[0]._id, {
-//                     siblingGroupId: oldSiblings[0]._id
-//                 });
-//             }
-//         }
-
-//         // 14. Get updated siblings list
-//         const updatedSiblings = await User.find({
-//             email: updated.email.toLowerCase(),
-//             school: req.user.school,
-//             role: "student"
-//         });
-
-//         return res.status(200).json({
-//             message: "Student updated successfully",
-//             student: updated,
-//             siblings: updatedSiblings
-//         });
-//     } catch (err) {
-//         console.error("Error updating student:", err);
-
-//         // Handle duplicate key error
-//         if (err.code === 11000) {
-//             if (err.keyPattern.username === 1 && err.keyPattern.email === 1) {
-//                 return res.status(400).json({
-//                     message: `Username "${err.keyValue.username}" is already used by another sibling with email "${err.keyValue.email}". Siblings must have unique usernames.`
-//                 });
-//             }
-//         }
-
-//         return res.status(500).json({
-//             message: err.message || "Server error while updating student"
-//         });
-//     }
-// };
 const editStudentBySchool = async (req, res) => {
     try {
         const { id } = req.params;
@@ -1684,113 +1274,6 @@ const editOwnProfile = async (req, res) => {
     }
 };
 
-// Forgot Password - Send OTP
-// const forgotPassword = async (req, res) => {
-//     try {
-//         const { email, username } = req.body;
-
-//         // Validate input
-//         if (!email && !username) {
-//             return res.status(400).json({
-//                 message: "Please provide either email or username"
-//             });
-//         }
-
-//         // Build query based on identifier
-//         const query = {};
-//         let user = null;
-
-//         if (username) {
-//             // If username is provided, use it (most specific)
-//             query.username = username.toLowerCase();
-//             user = await User.findOne(query);
-
-//             if (!user) {
-//                 return res.status(404).json({
-//                     message: "No user found with this username"
-//                 });
-//             }
-
-//             // If email was also provided, verify it matches
-//             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-//                 return res.status(400).json({
-//                     message: "Email does not match the provided username"
-//                 });
-//             }
-//         } else if (email) {
-//             // If only email is provided
-//             query.email = email.toLowerCase();
-
-//             // Find user by email
-//             user = await User.findOne(query);
-
-//             if (!user) {
-//                 return res.status(404).json({
-//                     message: "No user found with this email"
-//                 });
-//             }
-
-//             // For students, require username when using email
-//             if (user.role === 'student') {
-//                 return res.status(400).json({
-//                     message: "For students, please provide username along with email. Multiple students may share the same email.",
-//                     suggestion: "Provide username parameter in your request"
-//                 });
-//             }
-//         }
-
-//         // Check if user has password set
-//         if (!user.password) {
-//             return res.status(400).json({
-//                 message: "Password not set. Please use initial setup OTP first."
-//             });
-//         }
-
-//         // Generate OTP for password reset
-//         const otpCode = generateOTP();
-//         const otpExpiry = calculateOTPExpiry(10);
-
-//         // Store OTP for password reset
-//         user.forgotPasswordOTP = {
-//             code: otpCode,
-//             expiresAt: otpExpiry,
-//             attempts: 0,
-//             lastAttempt: new Date(),
-//             verified: false
-//         };
-
-//         await user.save();
-
-//         // Send OTP email
-//         try {
-//             await emailService.sendForgotPasswordOTPEmail(
-//                 user.email,
-//                 otpCode,
-//                 user.name || "User"
-//             );
-//         } catch (emailError) {
-//             console.error('Failed to send email, but OTP is still generated:', emailError);
-//             // Don't fail the request - OTP is still stored
-//         }
-
-//         return res.status(200).json({
-//             message: "Password reset OTP sent to your email",
-//             email: user.email,
-//             username: user.username,
-//             role: user.role,
-//             otpExpiry,
-//             note: "OTP is valid for 10 minutes",
-//             ...(process.env.NODE_ENV === 'development' && { otpCode })
-//         });
-//     } catch (err) {
-//         console.error("Error in forgot password:", err);
-//         return res.status(500).json({
-//             message: "Server error while processing forgot password",
-//             error: err.message,
-//         });
-//     }
-// };
-
 const forgotPassword = async (req, res) => {
     try {
         const { email, username } = req.body;
@@ -1813,7 +1296,6 @@ const forgotPassword = async (req, res) => {
                 return res.status(404).json({ message: "User not found" });
             }
 
-            // Students MUST provide username
             if (user.role === "student") {
                 return res.status(400).json({
                     message: "Students must provide username with email"
@@ -1845,7 +1327,7 @@ const forgotPassword = async (req, res) => {
         await emailService.sendForgotPasswordOTPEmail(
             user.email,
             otpCode,
-            user.name || "User"
+            username  || user.name,
         );
 
         return res.status(200).json({
@@ -1983,12 +1465,10 @@ const resetPasswordWithOTP = async (req, res) => {
             });
         }
 
-        // Build query based on identifier
         const query = {};
         let user = null;
 
         if (username) {
-            // If username is provided, use it (most specific)
             query.username = username.toLowerCase();
             user = await User.findOne(query);
 
@@ -1998,17 +1478,14 @@ const resetPasswordWithOTP = async (req, res) => {
                 });
             }
 
-            // If email was also provided, verify it matches
             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
                 return res.status(400).json({
                     message: "Email does not match the provided username"
                 });
             }
         } else if (email) {
-            // If only email is provided
             query.email = email.toLowerCase();
 
-            // Find user by email
             user = await User.findOne(query);
 
             if (!user) {
@@ -2017,7 +1494,6 @@ const resetPasswordWithOTP = async (req, res) => {
                 });
             }
 
-            // For students, require username when using email
             if (user.role === 'student') {
                 return res.status(400).json({
                     message: "For students, please provide username along with email. Multiple students may share the same email.",
@@ -2026,24 +1502,20 @@ const resetPasswordWithOTP = async (req, res) => {
             }
         }
 
-        // Check if forgotPasswordOTP is verified
         if (!user.forgotPasswordOTP || !user.forgotPasswordOTP.verified) {
             return res.status(400).json({
                 message: "Please verify OTP first before resetting password."
             });
         }
 
-        // Verify OTP again
         if (otp !== user.forgotPasswordOTP.code) {
             return res.status(400).json({
                 message: "Invalid OTP"
             });
         }
 
-        // Check if OTP is still valid
         const isExpired = new Date() > new Date(user.forgotPasswordOTP.expiresAt);
         if (isExpired) {
-            // Clear the OTP
             user.forgotPasswordOTP = undefined;
             await user.save();
 
@@ -2052,16 +1524,13 @@ const resetPasswordWithOTP = async (req, res) => {
             });
         }
 
-        // Hash and update password
         const hashedPassword = await bcrypt.hash(newPassword, 10);
         user.password = hashedPassword;
 
-        // Clear the forgotPasswordOTP
         user.forgotPasswordOTP = undefined;
 
         await user.save();
 
-        // Generate JWT token for auto-login
         const jwt = require('jsonwebtoken');
         const token = jwt.sign(
             {
@@ -2079,7 +1548,8 @@ const resetPasswordWithOTP = async (req, res) => {
         try {
             await emailService.sendPasswordChangedNotification(
                 user.email,
-                user.name || "User"
+                user.name || "User",
+                user.school
             );
         } catch (emailError) {
             console.error('Failed to send password changed notification:', emailError);
@@ -2107,176 +1577,6 @@ const resetPasswordWithOTP = async (req, res) => {
         });
     }
 };
-
-// const resetPasswordWithOTP = async (req, res) => {
-//   try {
-//     const { email, username, otp, newPassword } = req.body;
-
-//     let user;
-
-//     // ---- IDENTIFY USER ----
-//     if (username) {
-//       user = await User.findOne({ username: username.toLowerCase() });
-//       if (!user) return res.status(404).json({ message: "User not found" });
-
-//       if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-//         return res.status(400).json({ message: "Email does not match username" });
-//       }
-//     } else if (email) {
-//       user = await User.findOne({ email: email.toLowerCase() });
-//       if (!user) return res.status(404).json({ message: "User not found" });
-
-//       if (user.role === "student") {
-//         return res.status(400).json({
-//           message: "Students must provide username"
-//         });
-//       }
-//     } else {
-//       return res.status(400).json({
-//         message: "Please provide email or username"
-//       });
-//     }
-
-//     const otpData = user.forgotPasswordOTP;
-//     if (!otpData) {
-//       return res.status(400).json({ message: "OTP not requested" });
-//     }
-
-//     // ---- VALIDATE OTP ----
-//     if (new Date() > otpData.expiresAt) {
-//       user.forgotPasswordOTP = undefined;
-//       await user.save();
-//       return res.status(400).json({ message: "OTP expired" });
-//     }
-
-//     if (otp !== otpData.code) {
-//       return res.status(400).json({ message: "Invalid OTP" });
-//     }
-
-//     // ---- RESET PASSWORD ----
-//     user.password = await bcrypt.hash(newPassword, 10);
-//     user.forgotPasswordOTP = undefined;
-//     await user.save();
-
-//     // ---- SEND CONFIRMATION EMAIL ----
-//     await emailService.sendPasswordChangedNotification(
-//       user.email,
-//       user.name || "User"
-//     );
-
-//     return res.status(200).json({
-//       message: "Password reset successful"
-//     });
-
-//   } catch (err) {
-//     console.error(err);
-//     return res.status(500).json({ message: "Server error" });
-//   }
-// };
-
-
-// Reset Password with Old Password (for logged-in users)
-// const resetPassword = async (req, res) => {
-//     try {
-//         const { email, oldPassword, newPassword, username } = req.body;
-
-//         // Validate input
-//         if (!email && !username) {
-//             return res.status(400).json({
-//                 message: "Please provide either email or username"
-//             });
-//         }
-
-//         // Build query based on identifier
-//         const query = {};
-//         let user = null;
-
-//         if (username) {
-//             // If username is provided, use it (most specific)
-//             query.username = username.toLowerCase();
-//             user = await User.findOne(query);
-
-//             if (!user) {
-//                 return res.status(404).json({
-//                     message: "No user found with this username"
-//                 });
-//             }
-
-//             // If email was also provided, verify it matches
-//             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-//                 return res.status(400).json({
-//                     message: "Email does not match the provided username"
-//                 });
-//             }
-//         } else if (email) {
-//             // If only email is provided
-//             query.email = email.toLowerCase();
-
-//             // Find user by email
-//             user = await User.findOne(query);
-
-//             if (!user) {
-//                 return res.status(404).json({
-//                     message: "No user found with this email"
-//                 });
-//             }
-
-//             // For students, require username when using email
-//             if (user.role === 'student') {
-//                 return res.status(400).json({
-//                     message: "For students, please provide username along with email. Multiple students may share the same email.",
-//                     suggestion: "Provide username parameter in your request"
-//                 });
-//             }
-//         }
-
-//         // Verify old password
-//         const isPasswordValid = await bcrypt.compare(oldPassword, user.password);
-//         if (!isPasswordValid) {
-//             return res.status(400).json({
-//                 message: "Current password is incorrect"
-//             });
-//         }
-
-//         // Check if new password is same as old password
-//         const isSamePassword = await bcrypt.compare(newPassword, user.password);
-//         if (isSamePassword) {
-//             return res.status(400).json({
-//                 message: "New password must be different from current password"
-//             });
-//         }
-
-//         // Hash and update password
-//         const hashedPassword = await bcrypt.hash(newPassword, 10);
-//         user.password = hashedPassword;
-//         await user.save();
-
-//         // Send password changed notification
-//         try {
-//             await emailService.sendPasswordChangedNotification(
-//                 user.email,
-//                 user.name || "User"
-//             );
-//         } catch (emailError) {
-//             console.error('Failed to send password changed notification:', emailError);
-//         }
-
-//         return res.status(200).json({
-//             message: "Password reset successfully!",
-//             data: {
-//                 email: user.email,
-//                 username: user.username,
-//                 role: user.role
-//             }
-//         });
-//     } catch (err) {
-//         console.error("Error resetting password:", err);
-//         return res.status(500).json({
-//             message: "Server error while resetting password",
-//             error: err.message,
-//         });
-//     }
-// };
 
 const resetPassword = async (req, res) => {
     try {
@@ -2366,59 +1666,6 @@ const resetPassword = async (req, res) => {
         });
     }
 };
-
-// Change Password (for logged-in users with JWT token)
-// const changePassword = async (req, res) => {
-//     try {
-//         const { oldPassword, newPassword, confirmPassword } = req.body;
-//         const userId = req.user.id;
-
-//         // Find user
-//         const user = await User.findById(userId);
-//         if (!user) {
-//             return res.status(404).json({
-//                 message: "User not found"
-//             });
-//         }
-
-//         // Verify old password
-//         const isPasswordValid = await bcrypt.compare(oldPassword, user.password);
-//         if (!isPasswordValid) {
-//             return res.status(400).json({
-//                 message: "Current password is incorrect"
-//             });
-//         }
-
-//         // Check if new password is same as old password
-//         const isSamePassword = await bcrypt.compare(newPassword, user.password);
-//         if (isSamePassword) {
-//             return res.status(400).json({
-//                 message: "New password must be different from current password"
-//             });
-//         }
-
-//         // Hash and update password
-//         const hashedPassword = await bcrypt.hash(newPassword, 10);
-//         user.password = hashedPassword;
-//         await user.save();
-
-//         // Send password changed notification
-//         await emailService.sendPasswordChangedNotification(
-//             user.email,
-//             user.name || "User"
-//         );
-
-//         return res.status(200).json({
-//             message: "Password changed successfully!"
-//         });
-//     } catch (err) {
-//         console.error("Error changing password:", err);
-//         return res.status(500).json({
-//             message: "Server error while changing password",
-//             error: err.message,
-//         });
-//     }
-// };
 
 // Resend Forgot Password OTP
 const resendForgotPasswordOTP = async (req, res) => {
@@ -2565,6 +1812,5 @@ module.exports = {
     verifyForgotPasswordOTP,
     resetPasswordWithOTP,
     resetPassword,
-    // changePassword,
     resendForgotPasswordOTP
 };
