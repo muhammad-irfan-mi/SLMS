@@ -1,23 +1,32 @@
 const SchoolMedia = require('../models/SchoolMedia');
 const User = require('../models/User');
-const School = require('../models/School');
+const School = require('../models/School'); 
 const { uploadFileToS3, deleteFileFromS3 } = require('../services/s3.service');
-const { validateCreateMedia, validateUpdateMedia, validateFilter, validateFile } = require('../validators/schoolMedia.validator');
 
-// Helper to detect user role
-const detectUserRole = (user) => {
-  if (user.role === 'school') return 'school';
-  if (user.role) return user.role;
-  
-  // Detect school from School model
-  if (user.schoolId || (user.verified !== undefined && user.email)) {
+const detectUserType = (user) => {
+  if (user.schoolId && user.verified !== undefined) {
     return 'school';
   }
-  
+  if (user.role) {
+    return user.role; 
+  }
   return 'unknown';
 };
 
-// Helper to format tags
+const getSchoolId = (user, userType) => {
+  if (userType === 'school') {
+    return user._id; 
+  }
+  return user.school; 
+};
+
+const getUserName = (user, userType) => {
+  if (userType === 'school') {
+    return user.name || 'School';
+  }
+  return user.name || (user.role === 'admin_office' ? 'Admin Office' : 'User');
+};
+
 const formatTags = (tags) => {
   if (!tags) return [];
   
@@ -32,44 +41,55 @@ const formatTags = (tags) => {
   return [];
 };
 
-// Helper to format date
 const formatDate = (dateString) => {
   if (!dateString) return null;
   
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return null;
   
-  return date.toISOString().split('T')[0]; // YYYY-MM-DD format
+  return date.toISOString().split('T')[0]; 
 };
 
-// School creates media (only school can create)
 const createMedia = async (req, res) => {
+  console.log('User object:', req.user);
+  console.log('User keys:', Object.keys(req.user));
+  
   try {
-    const userRole = detectUserRole(req.user);
+    const user = req.user;
+    const userType = detectUserType(user);
     
-    // Only school can create media
-    if (userRole !== 'school') {
+    console.log('Detected user type:', userType);
+    
+    if (!['school', 'admin_office'].includes(userType)) {
       return res.status(403).json({ 
-        message: 'Only school can upload media' 
+        success: false,
+        message: 'Only school and admin office can upload media' 
       });
     }
 
-    const school = req.user._id || req.user.id; // School ID
-    const userId = req.user._id;
-    const userName = req.user.name || 'School';
-
-    const { title, description, type, visibility, tags, eventDate } = req.body;
-
     if (!req.file) {
       return res.status(400).json({ 
+        success: false,
         message: 'Video file is required',
         field: 'video'
       });
     }
 
+    const { title, description, type, visibility, tags, eventDate } = req.body;
+
+    const schoolId = getSchoolId(user, userType);
+    if (!schoolId) {
+      console.log('School ID not found for user:', user);
+      return res.status(400).json({
+        success: false,
+        message: 'School ID not found'
+      });
+    }
+
+    console.log('School ID:', schoolId);
+
     const file = req.file;
     
-    // Upload to S3
     const uploaded = await uploadFileToS3({
       fileBuffer: file.buffer,
       fileName: `${Date.now()}-${file.originalname}`,
@@ -77,9 +97,9 @@ const createMedia = async (req, res) => {
     });
 
     const newMedia = await SchoolMedia.create({
-      school,
-      createdBy: userId,
-      createdByName: userName,
+      school: schoolId,
+      createdBy: user._id,
+      createdByName: getUserName(user, userType),
       title,
       description: description || '',
       type: type === 'reel' ? 'reel' : 'video',
@@ -92,120 +112,65 @@ const createMedia = async (req, res) => {
     });
 
     return res.status(201).json({ 
+      success: true,
       message: 'Media uploaded successfully', 
-      media: newMedia 
+      data: newMedia 
     });
   } catch (err) {
     console.error('createMedia error:', err);
     return res.status(500).json({ 
+      success: false,
       message: 'Server error', 
-      error: err.message 
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 };
 
-// Admin office creates media
-const createAdminMedia = async (req, res) => {
-  try {
-    const userRole = detectUserRole(req.user);
-    
-    // Only admin_office can create media
-    if (userRole !== 'admin_office') {
-      return res.status(403).json({ 
-        message: 'Only admin office can upload media' 
-      });
-    }
-
-    const school = req.user.school; // Admin's school
-    const userId = req.user._id;
-    const userName = req.user.name || 'Admin Office';
-
-    const { title, description, type, visibility, tags, eventDate } = req.body;
-
-    if (!req.file) {
-      return res.status(400).json({ 
-        message: 'Video file is required',
-        field: 'video'
-      });
-    }
-
-    const file = req.file;
-    
-    // Upload to S3
-    const uploaded = await uploadFileToS3({
-      fileBuffer: file.buffer,
-      fileName: `${Date.now()}-${file.originalname}`,
-      mimeType: file.mimetype,
-    });
-
-    const newMedia = await SchoolMedia.create({
-      school,
-      createdBy: userId,
-      createdByName: userName,
-      title,
-      description: description || '',
-      type: type === 'reel' ? 'reel' : 'video',
-      visibility: visibility === 'public' ? 'public' : 'school-only',
-      fileUrl: uploaded,
-      fileKey: uploaded,
-      mimeType: file.mimetype,
-      tags: formatTags(tags),
-      eventDate: formatDate(eventDate),
-    });
-
-    return res.status(201).json({ 
-      message: 'Media uploaded successfully', 
-      media: newMedia 
-    });
-  } catch (err) {
-    console.error('createAdminMedia error:', err);
-    return res.status(500).json({ 
-      message: 'Server error', 
-      error: err.message 
-    });
-  }
-};
-
-// Update media with proper authorization
+// UPDATE MEDIA 
 const updateMedia = async (req, res) => {
   try {
     const { id } = req.params;
-    const userRole = detectUserRole(req.user);
-    const userId = req.user._id;
+    const user = req.user;
+    const userType = detectUserType(user);
+    const userId = user._id;
 
     const media = await SchoolMedia.findById(id);
     if (!media) {
-      return res.status(404).json({ message: 'Media not found' });
-    }
-
-    // Authorization check
-    let isAuthorized = false;
-    
-    if (userRole === 'school') {
-      // School can only update their own media
-      const schoolId = req.user._id || req.user.id;
-      isAuthorized = String(media.school) === String(schoolId) && 
-                    String(media.createdBy) === String(userId);
-    } 
-    else if (userRole === 'admin_office') {
-      // Admin office can update their own media and school media from same school
-      const schoolId = req.user.school;
-      isAuthorized = String(media.school) === String(schoolId);
-    }
-    else if (userRole === 'superadmin') {
-      // Superadmin can update any media
-      isAuthorized = true;
-    }
-
-    if (!isAuthorized) {
-      return res.status(403).json({ 
-        message: 'Not authorized to update this media' 
+      return res.status(404).json({ 
+        success: false,
+        message: 'Media not found' 
       });
+    }
+
+    if (String(media.createdBy) !== String(userId)) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'You can only update media you uploaded' 
+      });
+    }
+
+    if (userType === 'school') {
+      const schoolId = getSchoolId(user, userType);
+      if (String(media.school) !== String(schoolId)) {
+        return res.status(403).json({ 
+          success: false,
+          message: 'Not authorized to update this media' 
+        });
+      }
+    }
+
+    if (userType === 'admin_office') {
+      const adminSchoolId = user.school;
+      if (String(media.school) !== String(adminSchoolId)) {
+        return res.status(403).json({ 
+          success: false,
+          message: 'Not authorized to update this media' 
+        });
+      }
     }
 
     const { title, description, type, visibility, tags, eventDate } = req.body;
 
-    // Update fields
     if (title !== undefined) media.title = title;
     if (description !== undefined) media.description = description;
     if (type !== undefined) media.type = type === 'reel' ? 'reel' : 'video';
@@ -213,7 +178,6 @@ const updateMedia = async (req, res) => {
     if (tags !== undefined) media.tags = formatTags(tags);
     if (eventDate !== undefined) media.eventDate = formatDate(eventDate);
 
-    // Update file if new one uploaded
     if (req.file) {
       const file = req.file;
       const uploaded = await uploadFileToS3({
@@ -240,56 +204,63 @@ const updateMedia = async (req, res) => {
     await media.save();
 
     return res.status(200).json({
+      success: true,
       message: 'Media updated successfully',
-      media
+      data: media
     });
   } catch (err) {
     console.error('updateMedia error:', err);
     return res.status(500).json({ 
+      success: false,
       message: 'Server error', 
-      error: err.message 
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 };
 
-// Delete media with proper authorization
+// DELETE MEDIA 
 const deleteMedia = async (req, res) => {
   try {
     const { id } = req.params;
-    const userRole = detectUserRole(req.user);
-    const userId = req.user._id;
+    const user = req.user;
+    const userType = detectUserType(user);
+    const userId = user._id;
 
     const media = await SchoolMedia.findById(id);
     if (!media) {
-      return res.status(404).json({ message: 'Media not found' });
-    }
-
-    // Authorization check
-    let isAuthorized = false;
-    
-    if (userRole === 'school') {
-      // School can only delete their own media
-      const schoolId = req.user._id || req.user.id;
-      isAuthorized = String(media.school) === String(schoolId) && 
-                    String(media.createdBy) === String(userId);
-    } 
-    else if (userRole === 'admin_office') {
-      // Admin office can delete their own media and school media from same school
-      const schoolId = req.user.school;
-      isAuthorized = String(media.school) === String(schoolId);
-    }
-    else if (userRole === 'superadmin') {
-      // Superadmin can delete any media
-      isAuthorized = true;
-    }
-
-    if (!isAuthorized) {
-      return res.status(403).json({ 
-        message: 'Not authorized to delete this media' 
+      return res.status(404).json({ 
+        success: false,
+        message: 'Media not found' 
       });
     }
 
-    // Delete file from S3
+    if (String(media.createdBy) !== String(userId)) {
+      return res.status(403).json({ 
+        success: false,
+        message: 'You can only delete media you uploaded' 
+      });
+    }
+
+    if (userType === 'school') {
+      const schoolId = getSchoolId(user, userType);
+      if (String(media.school) !== String(schoolId)) {
+        return res.status(403).json({ 
+          success: false,
+          message: 'Not authorized to delete this media' 
+        });
+      }
+    }
+
+    if (userType === 'admin_office') {
+      const adminSchoolId = user.school;
+      if (String(media.school) !== String(adminSchoolId)) {
+        return res.status(403).json({ 
+          success: false,
+          message: 'Not authorized to delete this media' 
+        });
+      }
+    }
+
     if (media.fileUrl) {
       try {
         await deleteFileFromS3(media.fileUrl);
@@ -301,8 +272,9 @@ const deleteMedia = async (req, res) => {
     await media.deleteOne();
 
     return res.status(200).json({ 
+      success: true,
       message: 'Media deleted successfully',
-      deletedMedia: {
+      data: {
         _id: media._id,
         title: media.title,
         type: media.type
@@ -311,53 +283,30 @@ const deleteMedia = async (req, res) => {
   } catch (err) {
     console.error('deleteMedia error:', err);
     return res.status(500).json({ 
+      success: false,
       message: 'Server error', 
-      error: err.message 
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 };
 
-// Get media by school (for admin office and school)
-const getBySchool = async (req, res) => {
+// GET OWN UPLOADS
+const getOwnUploads = async (req, res) => {
   try {
-    const userRole = detectUserRole(req.user);
-    const { schoolId } = req.params;
-    const { page = 1, limit = 20, type, q, createdBy } = req.query;
+    const user = req.user;
+    const userType = detectUserType(user);
+    const userId = user._id;
+
+    const { page = 1, limit = 20, type, q, visibility } = req.query;
     const skip = (page - 1) * limit;
 
-    // Authorization check
-    let authorizedSchoolId = schoolId;
-    
-    if (userRole === 'school') {
-      // School can only view their own media
-      const currentSchoolId = req.user._id || req.user.id;
-      if (schoolId && String(schoolId) !== String(currentSchoolId)) {
-        return res.status(403).json({ 
-          message: 'School can only view their own media' 
-        });
-      }
-      authorizedSchoolId = currentSchoolId;
-    } 
-    else if (userRole === 'admin_office') {
-      // Admin office can view media from their school
-      const adminSchoolId = req.user.school;
-      if (schoolId && String(schoolId) !== String(adminSchoolId)) {
-        return res.status(403).json({ 
-          message: 'Admin office can only view media from their school' 
-        });
-      }
-      authorizedSchoolId = adminSchoolId;
-    } else {
-      return res.status(403).json({ 
-        message: 'Not authorized' 
-      });
-    }
+    const filter = { createdBy: userId };
 
-    // Build filter
-    const filter = { school: authorizedSchoolId };
+    let schoolId = getSchoolId(user, userType);
+    filter.school = schoolId;
 
     if (type) filter.type = type;
-    if (createdBy) filter.createdBy = createdBy;
+    if (visibility) filter.visibility = visibility;
     
     if (q) {
       filter.$or = [
@@ -369,13 +318,12 @@ const getBySchool = async (req, res) => {
 
     const total = await SchoolMedia.countDocuments(filter);
     const media = await SchoolMedia.find(filter)
-      .populate('createdBy', 'name email role')
+      .populate('school', 'name')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit, 10))
       .lean();
 
-    // Format response
     const formattedMedia = media.map(item => ({
       _id: item._id,
       title: item.title,
@@ -385,56 +333,140 @@ const getBySchool = async (req, res) => {
       fileUrl: item.fileUrl,
       tags: item.tags,
       eventDate: item.eventDate,
-      createdBy: item.createdBy ? {
-        _id: item.createdBy._id,
-        name: item.createdBy.name,
-        email: item.createdBy.email,
-        role: item.createdBy.role
-      } : {
-        _id: item.createdBy,
-        name: item.createdByName
-      },
+      school: item.school ? {
+        _id: item.school._id,
+        name: item.school.name
+      } : null,
       createdAt: item.createdAt,
       updatedAt: item.updatedAt
     }));
 
     return res.status(200).json({
-      total,
-      page: Number(page),
-      totalPages: Math.ceil(total / limit),
-      limit: Number(limit),
-      school: authorizedSchoolId,
-      media: formattedMedia
+      success: true,
+      data: {
+        total,
+        page: Number(page),
+        totalPages: Math.ceil(total / limit),
+        limit: Number(limit),
+        media: formattedMedia
+      }
     });
   } catch (err) {
-    console.error('getBySchool error:', err);
+    console.error('getOwnUploads error:', err);
     return res.status(500).json({ 
+      success: false,
       message: 'Server error', 
-      error: err.message 
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 };
 
-// Get feed for teachers and students (their school's media)
+// const getBySchool = async (req, res) => {
+//   try {
+//     const user = req.user;
+//     const userType = detectUserType(user);
+    
+//     if (!['school', 'admin_office'].includes(userType)) {
+//       return res.status(403).json({ 
+//         success: false,
+//         message: 'Not authorized' 
+//       });
+//     }
+
+//     const { schoolId: paramSchoolId } = req.params;
+//     const { page = 1, limit = 20, type, q, createdBy } = req.query;
+//     const skip = (page - 1) * limit;
+
+//     let authorizedSchoolId = getSchoolId(user, userType);
+    
+//     if (paramSchoolId && String(paramSchoolId) !== String(authorizedSchoolId)) {
+//       return res.status(403).json({ 
+//         success: false,
+//         message: 'You can only view media from your school' 
+//       });
+//     }
+
+//     const filter = { school: authorizedSchoolId };
+
+//     if (type) filter.type = type;
+//     if (createdBy) filter.createdBy = createdBy;
+    
+//     if (q) {
+//       filter.$or = [
+//         { title: new RegExp(q, 'i') },
+//         { description: new RegExp(q, 'i') },
+//         { tags: new RegExp(q, 'i') }
+//       ];
+//     }
+
+//     const total = await SchoolMedia.countDocuments(filter);
+//     const media = await SchoolMedia.find(filter)
+//       .populate('createdBy', 'name email role')
+//       .populate('school', 'name')
+//       .sort({ createdAt: -1 })
+//       .skip(skip)
+//       .limit(parseInt(limit, 10))
+//       .lean();
+
+//     const formattedMedia = media.map(item => ({
+//       _id: item._id,
+//       title: item.title,
+//       description: item.description,
+//       type: item.type,
+//       visibility: item.visibility,
+//       fileUrl: item.fileUrl,
+//       tags: item.tags,
+//       eventDate: item.eventDate,
+//       school: item.school ? {
+//         _id: item.school._id,
+//         name: item.school.name
+//       } : null,
+//       createdAt: item.createdAt,
+//       updatedAt: item.updatedAt
+//     }));
+
+//     return res.status(200).json({
+//       success: true,
+//       data: {
+//         total,
+//         page: Number(page),
+//         totalPages: Math.ceil(total / limit),
+//         limit: Number(limit),
+//         school: authorizedSchoolId,
+//         media: formattedMedia
+//       }
+//     });
+//   } catch (err) {
+//     console.error('getBySchool error:', err);
+//     return res.status(500).json({ 
+//       success: false,
+//       message: 'Server error', 
+//       error: process.env.NODE_ENV === 'development' ? err.message : undefined
+//     });
+//   }
+// };
+
+// GET FEED for teachers and students
+
 const getFeed = async (req, res) => {
   try {
-    const userRole = detectUserRole(req.user);
+    const user = req.user;
+    const userType = detectUserType(user);
     
-    // Only teachers and students can access feed
-    if (!['teacher', 'student'].includes(userRole)) {
+    if (!['teacher', 'student'].includes(userType)) {
       return res.status(403).json({ 
+        success: false,
         message: 'Only teachers and students can access feed' 
       });
     }
 
-    const school = req.user.school; // Teacher/student's school
+    const schoolId = user.school; 
     const { page = 1, limit = 20, q, type } = req.query;
     const skip = (page - 1) * limit;
 
-    // Build filter: only media from their school
     const filter = { 
-      school,
-      visibility: { $in: ['school-only', 'public'] } // Both school-only and public
+      school: schoolId,
+      visibility: { $in: ['school-only', 'public'] } 
     };
 
     if (type) filter.type = type;
@@ -449,95 +481,91 @@ const getFeed = async (req, res) => {
     const total = await SchoolMedia.countDocuments(filter);
     const media = await SchoolMedia.find(filter)
       .populate('createdBy', 'name role')
+      .populate('school', 'name')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit, 10))
       .lean();
 
-    // Format response
     const formattedMedia = media.map(item => ({
       _id: item._id,
       title: item.title,
       description: item.description,
       type: item.type,
-      visibility: item.visibility,
       fileUrl: item.fileUrl,
       tags: item.tags,
       eventDate: item.eventDate,
-      createdBy: item.createdBy ? {
-        _id: item.createdBy._id,
-        name: item.createdBy.name,
-        role: item.createdBy.role === 'school' ? 'School' : 'Admin Office'
-      } : {
-        name: item.createdByName,
-        role: 'School'
-      },
+      school: item.school ? {
+        _id: item.school._id,
+        name: item.school.name
+      } : null,
       createdAt: item.createdAt
     }));
 
     return res.status(200).json({
-      total,
-      page: Number(page),
-      totalPages: Math.ceil(total / limit),
-      limit: Number(limit),
-      userRole,
-      media: formattedMedia
+      success: true,
+      data: {
+        total,
+        page: Number(page),
+        totalPages: Math.ceil(total / limit),
+        limit: Number(limit),
+        userRole: userType,
+        media: formattedMedia
+      }
     });
   } catch (err) {
     console.error('getFeed error:', err);
     return res.status(500).json({ 
+      success: false,
       message: 'Server error', 
-      error: err.message 
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 };
 
-// Get single media by ID with proper authorization
+// GET SINGLE MEDIA by ID
 const getById = async (req, res) => {
   try {
     const { id } = req.params;
-    const userRole = detectUserRole(req.user);
-    const userId = req.user?._id;
-    const userSchool = req.user?.school || (req.user._id);
+    const user = req.user;
+    const userType = detectUserType(user);
+    const schoolId = getSchoolId(user, userType);
 
     const media = await SchoolMedia.findById(id)
       .populate('createdBy', 'name email role')
+      .populate('school', 'name')
       .lean();
 
     if (!media) {
-      return res.status(404).json({ message: 'Media not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Media not found' 
+      });
     }
 
-    // Authorization check based on role
     let isAuthorized = false;
     
-    if (userRole === 'school') {
-      // School can view their own media
-      const schoolId = req.user._id || req.user.id;
+    if (userType === 'school') {
       isAuthorized = String(media.school) === String(schoolId);
     } 
-    else if (userRole === 'admin_office') {
-      // Admin office can view media from their school
-      const adminSchoolId = req.user.school;
-      isAuthorized = String(media.school) === String(adminSchoolId);
+    else if (userType === 'admin_office') {
+      isAuthorized = String(media.school) === String(schoolId);
     }
-    else if (['teacher', 'student'].includes(userRole)) {
-      // Teachers and students can view media from their school
-      isAuthorized = String(media.school) === String(userSchool) && 
+    else if (['teacher', 'student'].includes(userType)) {
+      isAuthorized = String(media.school) === String(schoolId) && 
                      media.visibility !== 'private';
     }
-    else if (userRole === 'superadmin') {
-      // Superadmin can view any media
+    else if (userType === 'superadmin') {
       isAuthorized = true;
     }
 
     if (!isAuthorized) {
       return res.status(403).json({ 
+        success: false,
         message: 'Not authorized to view this media' 
       });
     }
 
-    // Format response
     const response = {
       _id: media._id,
       title: media.title,
@@ -547,36 +575,33 @@ const getById = async (req, res) => {
       fileUrl: media.fileUrl,
       tags: media.tags,
       eventDate: media.eventDate,
-      createdBy: media.createdBy ? {
-        _id: media.createdBy._id,
-        name: media.createdBy.name,
-        email: media.createdBy.email,
-        role: media.createdBy.role
-      } : {
-        _id: media.createdBy,
-        name: media.createdByName
-      },
-      school: media.school,
+      school: media.school ? {
+        _id: media.school._id,
+        name: media.school.name
+      } : null,
       createdAt: media.createdAt,
       updatedAt: media.updatedAt
     };
 
-    return res.status(200).json({ media: response });
+    return res.status(200).json({ 
+      success: true,
+      data: response 
+    });
   } catch (err) {
     console.error('getById error:', err);
     return res.status(500).json({ 
+      success: false,
       message: 'Server error', 
-      error: err.message 
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 };
 
 module.exports = {
   createMedia,
-  createAdminMedia,
   updateMedia,
   deleteMedia,
-  getBySchool,
+  getOwnUploads,
   getFeed,
   getById
 };

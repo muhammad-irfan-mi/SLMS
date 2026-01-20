@@ -91,7 +91,6 @@ const getBatchClassSectionInfo = async (records, schoolId) => {
 const resolveUploader = async (uploadedById) => {
     if (!uploadedById) return null;
 
-    // Try to find as User first
     const user = await User.findById(uploadedById)
         .select("name email role")
         .lean();
@@ -242,15 +241,12 @@ const createSyllabus = async (req, res) => {
             sectionId,
             subjectId,
             $or: [
-                // current date is before expiry
                 {
                     expireDate: { $gte: formattedPublishDate }
                 },
-                // Syllabus has no expire date 
                 {
                     expireDate: null
                 },
-                // Current date falls within existing syllabus date range
                 {
                     publishDate: { $lte: formattedPublishDate },
                     expireDate: { $gte: formattedPublishDate }
