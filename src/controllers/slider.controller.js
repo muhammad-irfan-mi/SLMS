@@ -1,247 +1,544 @@
 const SliderImage = require("../models/SliderImage");
 const { uploadFileToS3, deleteFileFromS3 } = require("../services/s3.service");
 
+
+const detectUserType = (user) => {
+    if (user.schoolId && user.verified !== undefined) {
+        return 'school';
+    }
+    if (user.role) {
+        return user.role;
+    }
+    return 'unknown';
+};
+
+const getSchoolId = (user, userType) => {
+    if (userType === 'school') {
+        return user._id;
+    }
+    return user.school;
+};
+
+// Upload image helper
 async function uploadSingleImage(file) {
     if (!file) return null;
     return await uploadFileToS3({
         fileBuffer: file.buffer,
-        fileName: file.originalname,
+        fileName: `${Date.now()}-${file.originalname}`,
         mimeType: file.mimetype,
     });
 }
 
+// Delete image helper
 async function deleteImage(fileUrl) {
-    await deleteFileFromS3(fileUrl);
+    if (fileUrl) {
+        try {
+            await deleteFileFromS3(fileUrl);
+        } catch (error) {
+            console.warn('Failed to delete image from S3:', error.message);
+        }
+    }
 }
 
-// CREATE SLIDER
-const createSlider = async (req, res) => {
+// CREATE SLIDER - Superadmin
+const createSuperadminSlider = async (req, res) => {
     try {
         const user = req.user;
-        const { title, caption, link, order, category } = req.body;
+        const { title, caption, link, order, category = 'global' } = req.body;
 
-        if (!user.role) user.role = "school";
-        if (!title || !req.file)
-            return res.status(400).json({ message: "Title and image are required" });
-
-        let allowedCategories = [];
-        let selectedCategory = category;
-
-        if (user.role === "superadmin") {
-            allowedCategories = ["global"];
-            selectedCategory = "global";
-        }
-
-        if (user.role === "admin_office" || user.role === "school") {
-            allowedCategories = ["event", "notice", "general"];
-            if (!allowedCategories.includes(category))
-                return res.status(400).json({ message: "Invalid category for school admin" });
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'Image file is required'
+            });
         }
 
         const imageUrl = await uploadSingleImage(req.file);
 
-        // let school = null;
-        // if (user.role === "admin_office") school = user.school;
-
         const slider = await SliderImage.create({
             title,
-            caption,
-            link,
+            caption: caption || '',
+            link: link || '',
             order: order ? Number(order) : 0,
-            active: req.body.active !== undefined ? req.body.active === "true" : true,
+            active: true,
             image: imageUrl,
             uploadedBy: user._id,
-            uploadedByRole: user.role,
-            school: user.role === "school" ? user.id : user.role === "admin_office" ? user.school : null,
-            category: selectedCategory,
+            uploadedByRole: 'superadmin',
+            school: null, 
+            category: 'global' 
         });
 
-        return res.status(201).json({ message: "Slider created", slider });
+        return res.status(201).json({
+            success: true,
+            message: 'Slider created successfully',
+            data: slider
+        });
 
     } catch (err) {
-        return res.status(500).json({ message: err.message });
+        console.error('createSuperadminSlider error:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 };
 
+// CREATE SLIDER - School or Admin Office
+const createSchoolSlider = async (req, res) => {
+    try {
+        const user = req.user;
+        const userType = detectUserType(user);
+        const { title, caption, link, order, category, active = true } = req.body;
 
-// Get visible sliders for any logged-in user (students/teachers/admins)
+        if (!['school', 'admin_office'].includes(userType)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Only school and admin office can create sliders'
+            });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                message: 'Image file is required'
+            });
+        }
+
+        if (!['event', 'notice', 'general'].includes(category)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Invalid category. Must be event, notice, or general'
+            });
+        }
+
+        const schoolId = getSchoolId(user, userType);
+        if (!schoolId) {
+            return res.status(400).json({
+                success: false,
+                message: 'School ID not found'
+            });
+        }
+
+        const imageUrl = await uploadSingleImage(req.file);
+
+        const slider = await SliderImage.create({
+            title,
+            caption: caption || '',
+            link: link || '',
+            order: order ? Number(order) : 0,
+            active: active === 'true' || active === true,
+            image: imageUrl,
+            uploadedBy: user._id,
+            uploadedByRole: userType,
+            school: schoolId,
+            category
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: 'Slider created successfully',
+            data: slider
+        });
+
+    } catch (err) {
+        console.error('createSchoolSlider error:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    }
+};
+
+// GET VISIBLE SLIDERS (For Teachers, Students, and School Admins)
 const getVisibleSliders = async (req, res) => {
     try {
         const user = req.user;
+        const userType = detectUserType(user);
+        const { category, page = 1, limit = 20 } = req.query;
+        const skip = (page - 1) * limit;
+
         let filter = { active: true };
+        let schoolId = null;
 
-        const { category } = req.query;
-
-        if (user.school) {
-            filter.$or = [
-                { category: "global", uploadedByRole: "superadmin" },
-                { school: user.school }
-            ];
-
-            // If category filter exists
-            if (category) {
-                filter.$and = [
-                    { $or: filter.$or },
-                    { category: category }
-                ];
-                delete filter.$or;
-            }
+        if (['admin_office', 'teacher', 'student', 'school'].includes(userType)) {
+            schoolId = getSchoolId(user, userType);
         }
-        else {
+
+        if (schoolId) {
+            filter.$or = [
+                { category: 'global', uploadedByRole: 'superadmin' },
+                { school: schoolId, category: { $ne: 'global' } }
+            ];
+        } else if (userType === 'superadmin') {
+            filter = { active: true };
+        } else {
             filter = {
                 active: true,
-                category: "global",
-                uploadedByRole: "superadmin"
+                category: 'global',
+                uploadedByRole: 'superadmin'
             };
+        }
 
-            if (category) {
+        if (category) {
+            if (filter.$or) {
+                filter.$and = [
+                    { $or: filter.$or },
+                    { category }
+                ];
+                delete filter.$or;
+            } else {
                 filter.category = category;
             }
         }
 
-        const sliders = await SliderImage.find(filter)
-            .sort({ order: -1, createdAt: -1 });
+        const [total, sliders] = await Promise.all([
+            SliderImage.countDocuments(filter),
+            SliderImage.find(filter)
+                .sort({ order: -1, createdAt: -1 })
+                .skip(skip)
+                .limit(parseInt(limit, 10))
+                .lean()
+        ]);
 
-        return res.status(200).json({ sliders });
+        return res.status(200).json({
+            success: true,
+            data: {
+                total,
+                page: Number(page),
+                totalPages: Math.ceil(total / limit),
+                limit: Number(limit),
+                sliders
+            }
+        });
 
     } catch (err) {
-        console.error(err);
-        return res.status(500).json({ message: err.message });
+        console.error('getVisibleSliders error:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 };
 
-//  Get sliders uploaded by superadmin (only superadmin)
-const getSlidersForSuperadmin = async (req, res) => {
+// GET OWN UPLOADS - Superadmin
+const getSuperadminSliders = async (req, res) => {
     try {
         const user = req.user;
+        const userType = detectUserType(user);
+        const { page = 1, limit = 20, active, category } = req.query;
+        const skip = (page - 1) * limit;
 
-        const sliders = await SliderImage.find({
+        if (userType !== 'superadmin') {
+            return res.status(403).json({
+                success: false,
+                message: 'Only superadmin can access this endpoint'
+            });
+        }
+
+        const filter = {
             uploadedBy: user._id,
-            uploadedByRole: "superadmin"
-        }).sort({ createdAt: -1 });
+            uploadedByRole: 'superadmin'
+        };
 
-        return res.status(200).json({ sliders });
+        if (active !== undefined) filter.active = active === 'true';
+        if (category) filter.category = category;
+
+        const [total, sliders] = await Promise.all([
+            SliderImage.countDocuments(filter),
+            SliderImage.find(filter)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(parseInt(limit, 10))
+                .lean()
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                total,
+                page: Number(page),
+                totalPages: Math.ceil(total / limit),
+                limit: Number(limit),
+                sliders
+            }
+        });
 
     } catch (err) {
-        return res.status(500).json({ message: err.message });
+        console.error('getSuperadminSliders error:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 };
 
-//  Get sliders uploaded by a school admin (their uploads)
-const getSlidersForSchoolAdmin = async (req, res) => {
+// GET OWN UPLOADS - School or Admin Office
+const getSchoolAdminSliders = async (req, res) => {
     try {
         const user = req.user;
-        console.log('user', user)
-        console.log('user', user._id)
+        const userType = detectUserType(user);
+        const { page = 1, limit = 20, active, category } = req.query;
+        const skip = (page - 1) * limit;
 
-        const sliders = await SliderImage.find({
-            uploadedByRole: { $in: ["admin_office", "school"] },
-            school: user.school || user._id
-        }).sort({ createdAt: -1 });
+        if (!['school', 'admin_office'].includes(userType)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Only school and admin office can upload media'
+            });
+        }
 
-        return res.status(200).json({ sliders });
+        const schoolId = getSchoolId(user, userType);
+        if (!schoolId) {
+            return res.status(400).json({
+                success: false,
+                message: 'School ID not found'
+            });
+        }
+
+        const filter = {
+            school: schoolId,
+            uploadedByRole: { $in: ['school', 'admin_office'] }
+        };
+
+        if (active !== undefined) filter.active = active === 'true';
+        if (category) filter.category = category;
+
+        const [total, sliders] = await Promise.all([
+            SliderImage.countDocuments(filter),
+            SliderImage.find(filter)
+                .sort({ createdAt: -1 })
+                .skip(skip)
+                .limit(parseInt(limit, 10))
+                .lean()
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                total,
+                page: Number(page),
+                totalPages: Math.ceil(total / limit),
+                limit: Number(limit),
+                sliders
+            }
+        });
 
     } catch (err) {
-        return res.status(500).json({ message: err.message });
+        console.error('getSchoolAdminSliders error:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 };
 
-// Get slider by ID 
+// GET SLIDER BY ID
 const getSliderById = async (req, res) => {
     try {
-        const user = req.user;
         const { id } = req.params;
+        const user = req.user;
+        const userType = detectUserType(user);
 
         const slider = await SliderImage.findById(id).lean();
-        if (!slider) return res.status(404).json({ message: "Slider not found" });
+        if (!slider) {
+            return res.status(404).json({
+                success: false,
+                message: 'Slider not found'
+            });
+        }
 
-        // superadmin sees all
-        if (user.role === "superadmin") return res.status(200).json({ slider });
+        let isAuthorized = false;
 
-        // school admin can see their own uploads
-        if (user.role === "admin_office" || user.schoolId) {
-            if (String(slider.uploadedBy) === String(user._id) || String(slider.school) === String(user.school) || slider.school == null) {
-                return res.status(200).json({ slider });
-            } else {
-                return res.status(403).json({ message: "Access denied" });
+        if (userType === 'superadmin') {
+            isAuthorized = true;
+        } else if (userType === 'school' || userType === 'admin_office') {
+            const schoolId = getSchoolId(user, userType);
+            isAuthorized =
+                String(slider.uploadedBy) === String(user._id) || 
+                slider.category === 'global' || 
+                (slider.school && String(slider.school) === String(schoolId)); 
+        } else if (['teacher', 'student'].includes(userType)) {
+            const schoolId = getSchoolId(user, userType);
+            isAuthorized =
+                slider.category === 'global' || 
+                (slider.school && String(slider.school) === String(schoolId)); 
+        }
+
+        if (!isAuthorized) {
+            return res.status(403).json({
+                success: false,
+                message: 'Not authorized to view this slider'
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: slider
+        });
+
+    } catch (err) {
+        console.error('getSliderById error:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    }
+};
+
+// UPDATE SLIDER
+const updateSlider = async (req, res) => {
+    console.log(req.user)
+    try {
+        const { id } = req.params;
+        const user = req.user;
+        const userType = detectUserType(user);
+        const { title, caption, link, order, active, category } = req.body;
+
+        if (!['school', 'admin_office', "superadmin"].includes(userType)) {
+            return res.status(403).json({
+                success: false,
+                message: 'Only school and admin office can create sliders'
+            });
+        }
+
+        const slider = await SliderImage.findById(id);
+        if (!slider) {
+            return res.status(404).json({
+                success: false,
+                message: 'Slider not found'
+            });
+        }
+
+        if (String(slider.uploadedBy) !== String(user._id)) {
+            return res.status(403).json({
+                success: false,
+                message: 'You can only update sliders you uploaded'
+            });
+        }
+
+        if (slider.uploadedByRole !== userType) {
+            return res.status(403).json({
+                success: false,
+                message: 'User role mismatch'
+            });
+        }
+
+        if (category) {
+            if (userType === 'superadmin' && category !== 'global') {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Superadmin can only have global category'
+                });
+            }
+            if (['school', 'admin_office'].includes(userType) &&
+                !['event', 'notice', 'general'].includes(category)) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Invalid category for school/admin'
+                });
             }
         }
 
-        // teacher/student: visible if slider.school == null (superadmin) OR slider.school == user's school
-        if (user.role === "teacher" || user.role === "student" || user.role === "school") {
-            if (slider.school == null) return res.status(200).json({ slider });
-            if (user.school && String(slider.school) === String(user.school)) return res.status(200).json({ slider });
-            return res.status(403).json({ message: "Access denied" });
-        }
-
-        // default deny
-        return res.status(403).json({ message: "Access denied" });
-    } catch (err) {
-        console.error("getSliderById error:", err);
-        return res.status(500).json({ message: err.message || "Server error" });
-    }
-};
-
-// --- UPDATE SLIDER ---
-const updateSlider = async (req, res) => {
-    try {
-        const user = req.user;
-        const { id } = req.params;
-
-        const slider = await SliderImage.findById(id);
-        if (!slider) return res.status(404).json({ message: "Slider not found" });
-
-        if (String(slider.uploadedBy) !== String(user._id))
-            return res.status(403).json({ message: "Not authorized" });
-
-        // Update fields
-        ["title", "caption", "link", "order", "active"].forEach(f => {
-            if (req.body[f] !== undefined) slider[f] = req.body[f];
-        });
+        const updates = {};
+        if (title !== undefined) updates.title = title;
+        if (caption !== undefined) updates.caption = caption;
+        if (link !== undefined) updates.link = link;
+        if (order !== undefined) updates.order = Number(order);
+        if (active !== undefined) updates.active = active === 'true' || active === true;
+        if (category !== undefined) updates.category = category;
 
         if (req.file) {
             await deleteImage(slider.image);
-            slider.image = await uploadSingleImage(req.file);
+            updates.image = await uploadSingleImage(req.file);
         }
 
+        Object.keys(updates).forEach(key => {
+            slider[key] = updates[key];
+        });
+
         await slider.save();
-        res.json({ message: "Updated", slider });
+
+        return res.status(200).json({
+            success: true,
+            message: 'Slider updated successfully',
+            data: slider
+        });
 
     } catch (err) {
-        return res.status(500).json({ message: err.message });
+        console.error('updateSlider error:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 };
 
+// DELETE SLIDER
 const deleteSlider = async (req, res) => {
     try {
-        const user = req.user;
         const { id } = req.params;
+        const user = req.user;
+        const userType = detectUserType(user);
 
         const slider = await SliderImage.findById(id);
-        if (!slider) return res.status(404).json({ message: "Slider not found" });
+        if (!slider) {
+            return res.status(404).json({
+                success: false,
+                message: 'Slider not found'
+            });
+        }
 
-        if (String(slider.uploadedBy) !== String(user._id))
-            return res.status(403).json({ message: "Not authorized" });
+        if (String(slider.uploadedBy) !== String(user._id)) {
+            return res.status(403).json({
+                success: false,
+                message: 'You can only delete sliders you uploaded'
+            });
+        }
+
+        if (slider.uploadedByRole !== userType) {
+            return res.status(403).json({
+                success: false,
+                message: 'User role mismatch'
+            });
+        }
 
         await deleteImage(slider.image);
+
         await slider.deleteOne();
 
-        return res.status(200).json({ message: "Slider deleted" });
+        return res.status(200).json({
+            success: true,
+            message: 'Slider deleted successfully',
+            data: {
+                _id: slider._id,
+                title: slider.title
+            }
+        });
 
     } catch (err) {
-        return res.status(500).json({ message: err.message });
+        console.error('deleteSlider error:', err);
+        return res.status(500).json({
+            success: false,
+            message: 'Server error',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 };
 
-
-
-
 module.exports = {
-    createSlider,
+    createSuperadminSlider,
+    createSchoolSlider,
     getVisibleSliders,
-    getSlidersForSuperadmin,
-    getSlidersForSchoolAdmin,
+    getSuperadminSliders,
+    getSchoolAdminSliders,
     getSliderById,
     updateSlider,
-    deleteSlider,
+    deleteSlider
 };

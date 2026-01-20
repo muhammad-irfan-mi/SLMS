@@ -233,6 +233,10 @@ const allowedRoles = async (req, res, next) => {
       req.user.school = user._id;
       return next();
     }
+    
+    if (user.role === "superadmin") {
+      return next();
+    }
 
     if (req.user || req.user.role == "superadmin") {
       next();

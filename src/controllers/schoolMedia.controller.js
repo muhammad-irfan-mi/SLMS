@@ -51,14 +51,11 @@ const formatDate = (dateString) => {
 };
 
 const createMedia = async (req, res) => {
-  console.log('User object:', req.user);
-  console.log('User keys:', Object.keys(req.user));
   
   try {
     const user = req.user;
     const userType = detectUserType(user);
     
-    console.log('Detected user type:', userType);
     
     if (!['school', 'admin_office'].includes(userType)) {
       return res.status(403).json({ 
