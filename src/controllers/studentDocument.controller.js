@@ -1,4 +1,3 @@
-// controllers/studentDocument.controller.js
 const { DocumentRequest, StudentDocument } = require("../models/StudentDocument");
 const User = require("../models/User");
 const School = require("../models/School");
