@@ -1,83 +1,3 @@
-// const express = require("express");
-// const router = express.Router();
-
-// const {
-//   protect,
-//   isTeacherOrAdminOfficeOrSchool,
-//   allowedRoles
-// } = require("../middlewares/auth");
-
-// const validate = require("../middlewares/validate");
-
-// const {
-//   createSyllabusSchema,
-//   updateSyllabusSchema,
-//   getSyllabusQuerySchema,
-//   getSyllabusBySectionSchema,
-// } = require("../validators/syllabus.validation");
-
-// const {
-//   createSyllabus,
-//   getSyllabus,
-//   getSyllabusBySection,
-//   updateSyllabus,
-//   deleteSyllabus
-// } = require("../controllers/syllabusController");
-
-// router.post(
-//   "/",
-//   protect,
-//   isTeacherOrAdminOfficeOrSchool,
-//   validate(createSyllabusSchema),
-//   createSyllabus
-// );
-
-// router.get(
-//   "/",
-//   protect,
-//   isTeacherOrAdminOfficeOrSchool,
-//   validate(getSyllabusQuerySchema, "query"),
-//   getSyllabus
-// );
-
-// router.get(
-//   "/section/:sectionId",
-//   protect,
-//   allowedRoles,
-//   validate(getSyllabusBySectionSchema, "params"),
-//   getSyllabusBySection
-// );
-
-// router.put(
-//   "/:id",
-//   protect,
-//   isTeacherOrAdminOfficeOrSchool,
-//   validate(updateSyllabusSchema),
-//   updateSyllabus
-// );
-
-// router.delete(
-//   "/:id",
-//   protect,
-//   isTeacherOrAdminOfficeOrSchool,
-//   deleteSyllabus
-// );
-
-// module.exports = router;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const express = require("express");
 const router = express.Router();
 
@@ -105,7 +25,6 @@ const {
   isTeacherOrAdminOfficeOrSchool
 } = require("../middlewares/auth");
 
-// Admin/Office/School routes
 router.post("/",
   protect,
   isTeacherOrAdminOfficeOrSchool,
@@ -135,7 +54,6 @@ router.delete("/:syllabusId",
   deleteSyllabus
 );
 
-// Student/Teacher routes
 router.get("/section/:sectionId",
   protect,
   isTeacherOrStudent,

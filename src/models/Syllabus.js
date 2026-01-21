@@ -41,6 +41,17 @@ const syllabusSchema = new Schema(
       maxlength: 5000,
     },
 
+    uploadedBy: {
+      type: Schema.Types.ObjectId,
+      required: true,
+      refPath: 'uploadedByModel'
+    },
+    uploadedByModel: {
+      type: String,
+      required: true,
+      enum: ['User', 'School']
+    },
+
     publishDate: {
       type: String,
     },
@@ -62,5 +73,6 @@ syllabusSchema.index({ school: 1, classId: 1, sectionId: 1 });
 syllabusSchema.index({ school: 1, subjectId: 1 });
 syllabusSchema.index({ school: 1, status: 1, publishDate: -1 });
 syllabusSchema.index({ school: 1, sectionId: 1, status: 1 });
+syllabusSchema.index({ uploadedBy: 1, uploadedByModel: 1 });
 
 module.exports = mongoose.model("Syllabus", syllabusSchema);
