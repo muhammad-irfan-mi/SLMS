@@ -143,7 +143,6 @@ const createDocumentRequest = async (req, res) => {
             });
         }
 
-        // For teachers, verify they teach this class/section
         if (user.role === 'teacher') {
             if (user.classInfo?.id?.toString() !== classId || user.sectionInfo?.id?.toString() !== sectionId) {
                 return res.status(403).json({
@@ -469,15 +468,12 @@ const updateDocumentRequest = async (req, res) => {
             });
         }
 
-        // Check permissions
         let hasPermission = false;
 
-        // Check if user is the requester
         if (documentRequest.requestedBy.toString() === user._id.toString()) {
             hasPermission = true;
         }
-        // Admins and schools can update any request in their school
-        else if (['admin_office', 'superadmin'].includes(user.role) || !user.role) {
+        else if (['admin_office'].includes(user.role) || !user.role) {
             const requesterSchoolId = getSchoolId(user);
             const student = await User.findById(documentRequest.studentId);
             if (student) {
@@ -488,7 +484,6 @@ const updateDocumentRequest = async (req, res) => {
                 }
             }
         }
-        // Teachers can update requests from their class/section
         else if (user.role === 'teacher') {
             if (documentRequest.classId.toString() === user.classId?.toString() &&
                 documentRequest.sectionId.toString() === user.sectionId?.toString()) {
@@ -503,14 +498,28 @@ const updateDocumentRequest = async (req, res) => {
             });
         }
 
-        // Update fields
+        const isStatusChanging = status && status !== documentRequest.status;
+
         if (title) documentRequest.title = title;
         if (description) documentRequest.description = description;
-        if (dueDate) documentRequest.dueDate = new Date(dueDate);
+        if (dueDate) {
+            const newDueDate = new Date(dueDate);
+            documentRequest.dueDate = newDueDate;
 
-        // Status update requires additional checks
-        if (status && status !== documentRequest.status) {
-            // Only allow status changes if user is not the original requester
+            const now = new Date();
+            const isFutureDate = newDueDate > now;
+
+            if (documentRequest.status === 'expired' && isFutureDate && !isStatusChanging) {
+                documentRequest.status = 'pending';
+                documentRequest.reviewedBy = user._id;
+                documentRequest.reviewedAt = new Date();
+
+                documentRequest.reviewComments = reviewComments
+
+            }
+        }
+
+        if (isStatusChanging) {
             if (documentRequest.requestedBy.toString() !== user._id.toString()) {
                 documentRequest.status = status;
                 documentRequest.reviewedBy = user._id;
@@ -518,18 +527,44 @@ const updateDocumentRequest = async (req, res) => {
                 if (reviewComments) {
                     documentRequest.reviewComments = reviewComments;
                 }
+            } else {
+                if (status === 'cancelled' && ['pending', 'approved'].includes(documentRequest.status)) {
+                    documentRequest.status = status;
+                    documentRequest.reviewComments = reviewComments || "Cancelled by requester";
+                } else {
+                    return res.status(403).json({
+                        success: false,
+                        message: "You cannot change the status of your own document request"
+                    });
+                }
             }
+        }
+
+        const now = new Date();
+        if (documentRequest.dueDate < now && documentRequest.status === 'pending') {
+            documentRequest.status = 'expired';
+            documentRequest.reviewedBy = user._id;
+            documentRequest.reviewedAt = now;
+            
+            documentRequest.reviewComments = documentRequest.reviewComments
+
         }
 
         await documentRequest.save();
 
+        const updatedRequest = await DocumentRequest.findById(id)
+            .populate('requestedBy', 'name email role')
+            .populate('reviewedBy', 'name email role')
+            .populate('studentId', 'name email rollNumber')
+            .populate('classId', 'class')
+            .lean();
+
         res.status(200).json({
             success: true,
             message: "Document request updated successfully",
-            data: documentRequest
+            data: updatedRequest || documentRequest
         });
     } catch (err) {
-        console.error("Update Document Request Error:", err);
         res.status(500).json({
             success: false,
             message: "Server error",
