@@ -101,27 +101,28 @@ const {
 const { 
   protect, 
   isTeacherOrStudent,
-  isAdminOffice 
+  isAdminOffice, 
+  isTeacherOrAdminOfficeOrSchool
 } = require("../middlewares/auth");
 
 // Admin/Office/School routes
 router.post("/",
   protect,
-  isAdminOffice,
+  isTeacherOrAdminOfficeOrSchool,
   validate(createSyllabusSchema),
   createSyllabus
 );
 
 router.get("/",
   protect,
-  isAdminOffice,
+  isTeacherOrAdminOfficeOrSchool,
   validate(getSyllabusQuerySchema, "query"),
   getSyllabus
 );
 
 router.put("/:syllabusId",
   protect,
-  isAdminOffice,
+  isTeacherOrAdminOfficeOrSchool,
   validate(syllabusIdParamSchema, "params"),
   validate(updateSyllabusSchema),
   updateSyllabus
@@ -129,7 +130,7 @@ router.put("/:syllabusId",
 
 router.delete("/:syllabusId",
   protect,
-  isAdminOffice,
+  isTeacherOrAdminOfficeOrSchool,
   validate(syllabusIdParamSchema, "params"),
   deleteSyllabus
 );
