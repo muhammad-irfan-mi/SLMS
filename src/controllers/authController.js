@@ -73,14 +73,20 @@ const schoolLogin = async (req, res) => {
     if (!school) return res.status(404).json({ message: "School not found" });
     if (!school.verified)
       return res.status(401).json({ message: "Please set your password first." });
-    if(!school.password)
+    if (!school.password)
       return res.status(401).json({ message: "Please set your password first." });
 
     const validPass = await bcrypt.compare(password, school.password);
     if (!validPass) return res.status(400).json({ message: "Invalid password" });
 
+    if (school.isDeleted) {
+      return res.status(403).json({
+        message: "Your school is inactive. Please contact support."
+      });
+    }
+    
     const token = jwt.sign(
-      { id: school._id, role: "school" },
+      { id: school._id, role: "school", school: school._id, schoolTokenVersion: school.tokenVersion },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
     );
@@ -140,22 +146,22 @@ const setPasswordForStudent = async (req, res) => {
     await user.save();
 
     // Generate JWT token
-    const jwt = require('jsonwebtoken');
-    const token = jwt.sign(
-      {
-        id: user._id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        school: user.school
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    // const jwt = require('jsonwebtoken');
+    // const token = jwt.sign(
+    //   {
+    //     id: user._id,
+    //     email: user.email,
+    //     username: user.username,
+    //     role: user.role,
+    //     school: user.school
+    //   },
+    //   process.env.JWT_SECRET,
+    //   { expiresIn: "7d" }
+    // );
 
     return res.status(200).json({
       message: `Password set successfully for student ${user.name}`,
-      token: token,
+      // token: token,
       user: {
         id: user._id,
         name: user.name,
@@ -214,21 +220,21 @@ const setPasswordForStaff = async (req, res) => {
     await user.save();
 
     // Generate JWT token
-    const jwt = require('jsonwebtoken');
-    const token = jwt.sign(
-      {
-        id: user._id,
-        email: user.email,
-        role: user.role,
-        school: user.school
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    // const jwt = require('jsonwebtoken');
+    // const token = jwt.sign(
+    //   {
+    //     id: user._id,
+    //     email: user.email,
+    //     role: user.role,
+    //     school: user.school
+    //   },
+    //   process.env.JWT_SECRET,
+    //   { expiresIn: "7d" }
+    // );
 
     return res.status(200).json({
       message: `Password set successfully for ${user.role} ${user.name}`,
-      token: token,
+      // token: token,
       user: {
         id: user._id,
         name: user.name,
@@ -288,12 +294,21 @@ const staffLogin = async (req, res) => {
       return res.status(401).json({ message: "Invalid password" });
     }
 
+    const school = await School.findById(user.school);
+
+    if (school.isDeleted) {
+      return res.status(403).json({
+        message: "Your school is inactive. Contact administration."
+      });
+    }
+
     const token = jwt.sign(
       {
         id: user._id,
         email: user.email,
         role: user.role,
-        school: user.school
+        school: user.school,
+        schoolTokenVersion: school.tokenVersion
       },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
@@ -362,13 +377,22 @@ const studentLogin = async (req, res) => {
       return res.status(401).json({ message: "Invalid password" });
     }
 
+    const school = await School.findById(user.school);
+
+    if (school.isDeleted) {
+      return res.status(403).json({
+        message: "Your school is inactive. Contact administration."
+      });
+    }
+
     const token = jwt.sign(
       {
         id: user._id,
         username: user.username,
         email: user.email,
         role: user.role,
-        school: user.school
+        school: user.school,
+        schoolTokenVersion: school.tokenVersion
       },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }

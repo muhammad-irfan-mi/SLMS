@@ -706,7 +706,7 @@ const getProjectSubmissions = async (req, res) => {
 
     if (!project) return res.status(404).json({ message: "Project not found" });
 
-    const isCreator = String(project.assignedBy) === String(userId);
+    const isCreator = String(project.assignedBy._id) === String(userId);
     const isAdminOrSchool = ['admin_office', 'school'].includes(role);
     if (!isCreator && !isAdminOrSchool) return res.status(403).json({ message: "Not authorized to view submissions" });
 

@@ -63,6 +63,7 @@ const UserSchema = new Schema({
     verified: { type: Boolean, default: false }
   },
   verified: { type: Boolean, default: false },
+  isActive: { type: Boolean, default: true },
   parentEmail: { type: String },
   siblingGroupId: {
     type: Schema.Types.ObjectId,

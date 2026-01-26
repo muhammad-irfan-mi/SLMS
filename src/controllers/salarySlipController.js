@@ -37,6 +37,19 @@ const sendSalarySlip = async (req, res) => {
         if (!teacher)
             return res.status(404).json({ message: "Teacher not found in your school" });
 
+        const existingSlip = await SalarySlip.findOne({
+            teacherId,
+            month,
+            school: schoolId,
+            status: "approved"
+        });
+
+        if (existingSlip) {
+            return res.status(400).json({
+                message: `Salary slip for ${month} is already approved for this teacher`,
+            });
+        }
+
         const image = await uploadSlipImage(req.files);
 
         const slip = new SalarySlip({
@@ -157,106 +170,42 @@ const getTeacherSlips = async (req, res) => {
     }
 };
 
-// ADMIN: AUTO DELETE OLD MONTH SLIPS + return current month status
-// const getTeachersSalaryStatus = async (req, res) => {
-//     try {
-//         const schoolId = req.user.school;
-
-//         const currentMonth = new Date().toISOString().slice(0, 7);
-//         const slips = await SalarySlip.find({ school: schoolId });
-
-//         let oldMonthFound = false;
-
-//         slips.forEach((slip) => {
-//             if (slip.month !== currentMonth) oldMonthFound = true;
-//         });
-
-//         if (oldMonthFound) {
-//             for (let slip of slips) {
-//                 if (slip.image) await deleteFileFromS3(slip.image);
-//                 await SalarySlip.deleteOne({ _id: slip._id });
-//             }
-//             console.log("Auto-deleted old month salary slips");
-//         }
-
-//         // Fetch slips again for current month
-//         const monthSlips = await SalarySlip.find({
-//             school: schoolId,
-//             month: currentMonth,
-//         });
-
-//         const slipMap = {};
-//         monthSlips.forEach((s) => {
-//             slipMap[s.teacherId.toString()] = s;
-//         });
-
-//         const teachers = await User.find({
-//             school: schoolId,
-//             role: "teacher",
-//         }).select("_id name email");
-
-//         const result = teachers.map((t) => {
-//             const slip = slipMap[t._id.toString()];
-//             return {
-//                 teacherId: t._id,
-//                 name: t.name,
-//                 email: t.email,
-//                 month: currentMonth,
-//                 status: slip ? slip.status : "pending",
-//                 slip,
-//             };
-//         });
-
-//         return res.status(200).json({
-//             total: result.length,
-//             teachers: result,
-//         });
-//     } catch (err) {
-//         console.error("Error getting teacher salary status:", err);
-//         return res.status(500).json({ message: err.message });
-//     }
-// };
-
 const getTeachersSalaryStatus = async (req, res) => {
     try {
         const schoolId = req.user.school;
 
-        // Current timestamp
-        const now = Date.now();
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
 
-        // Get all salary slips
-        const slips = await SalarySlip.find({ school: schoolId });
-
-        let shouldDelete = false;
-
-        // Check if any slip is older than 2 minutes
-        slips.forEach((slip) => {
-            const slipAgeMs = now - new Date(slip.createdAt).getTime();
-            const twoMinMs = 2 * 60 * 1000;
-
-            if (slipAgeMs > twoMinMs) {
-                shouldDelete = true;
+        const slipsToDelete = await SalarySlip.find({
+            school: schoolId,
+            createdAt: {
+                $lt: new Date(currentYear, currentMonth, 1)
             }
         });
 
-        // AUTO DELETE IF OLDER THAN 2 MIN
-        if (shouldDelete) {
-            for (let slip of slips) {
+        if (slipsToDelete.length > 0) {
+            for (let slip of slipsToDelete) {
                 if (slip.image) await deleteFileFromS3(slip.image);
                 await SalarySlip.deleteOne({ _id: slip._id });
             }
-            console.log("Auto-deleted slips older than 2 minutes");
+            console.log(`Deleted ${slipsToDelete.length} slips from previous months`);
         }
 
-        // Re-fetch slips (after delete)
-        const monthSlips = await SalarySlip.find({ school: schoolId });
+        const monthSlips = await SalarySlip.find({
+            school: schoolId,
+            createdAt: {
+                $gte: new Date(currentYear, currentMonth, 1),
+                $lt: new Date(currentYear, currentMonth + 1, 1)
+            }
+        });
 
         const slipMap = {};
         monthSlips.forEach((s) => {
             slipMap[s.teacherId.toString()] = s;
         });
 
-        // Get all teachers
         const teachers = await User.find({
             school: schoolId,
             role: "teacher",
@@ -283,7 +232,6 @@ const getTeachersSalaryStatus = async (req, res) => {
         return res.status(500).json({ message: err.message });
     }
 };
-
 
 module.exports = {
     sendSalarySlip,

@@ -249,12 +249,13 @@ const checkSyllabusUpdatePermission = async (syllabus, userId, userRole, schoolI
         return { canUpdate: true };
     }
 
-    if (userRole === 'teacher') {
-        if (['admin_office'].includes(userRole)) {
-            return { canUpdate: true };
-        }
+    if (userRole === 'admin_office') {
+        return { canUpdate: true };
+    }
 
-        if (syllabus.uploadedBy.toString() === userId.toString() &&
+    if (userRole === 'teacher') {
+
+        if (syllabus.uploadedBy && syllabus.uploadedBy.toString() === userId.toString() &&
             syllabus.uploadedByModel === 'User') {
             return { canUpdate: true };
         }

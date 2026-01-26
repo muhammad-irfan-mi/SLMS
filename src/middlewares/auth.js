@@ -19,7 +19,6 @@ const protect = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Try to find user in both collections
     let user = await User.findById(decoded.id).select("-password");
     if (!user) {
       user = await School.findById(decoded.id).select("-password");
@@ -27,6 +26,25 @@ const protect = async (req, res, next) => {
 
     if (!user) {
       return res.status(401).json({ message: "Not authorized, user not found" });
+    }
+
+    const school = await School.findById(decoded.school)
+      .select("isDeleted tokenVersion");
+
+    if (!school) {
+      return res.status(401).json({ message: "School not found" });
+    }
+
+    if (school.isDeleted) {
+      return res.status(403).json({
+        message: "Your school is inactive"
+      });
+    }
+
+    if (decoded.schoolTokenVersion !== school.tokenVersion) {
+      return res.status(401).json({
+        message: "Session expired due to school deactivation"
+      });
     }
 
     req.user = user;
@@ -233,7 +251,7 @@ const allowedRoles = async (req, res, next) => {
       req.user.school = user._id;
       return next();
     }
-    
+
     if (user.role === "superadmin") {
       return next();
     }

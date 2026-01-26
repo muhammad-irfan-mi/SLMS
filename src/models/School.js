@@ -17,6 +17,7 @@ const SchoolSchema = new Schema({
   verified: { type: Boolean, default: false },
   isDeleted: { type: Boolean, default: false },
   deletedAt: { type: Date },
+  tokenVersion: { type: Number, default: 0 },
   location: {
     lat: Number,
     lon: Number,

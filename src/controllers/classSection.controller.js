@@ -8,7 +8,6 @@ const User = require("../models/User");
 const addMultipleClassesWithSections = async (req, res) => {
     try {
         const { schoolId, classes } = req.body;
-        console.log(req.user)
 
         // Check if user is authorized for this school
         if (req.user.school.toString() !== schoolId) {
@@ -20,35 +19,120 @@ const addMultipleClassesWithSections = async (req, res) => {
         const school = await School.findById(schoolId);
         if (!school) return res.status(404).json({ message: "School not found" });
 
-        const results = [];
+        const orderNumbers = classes.map(c => c.order);
+        const duplicateOrders = orderNumbers.filter((order, index) =>
+            orderNumbers.indexOf(order) !== index
+        );
 
-        for (const c of classes) {
-            const exists = await ClassSection.findOne({
-                school: schoolId,
-                class: c.className
+        if (duplicateOrders.length > 0) {
+            return res.status(400).json({
+                message: "Duplicate order numbers found",
+                duplicateOrders: [...new Set(duplicateOrders)]
             });
-            if (exists) {
-                results.push({ className: c.className, status: "Skipped", reason: "Class already exists" });
-                continue;
-            }
+        }
 
-            const formattedSections = c.sections.map((s) => ({ name: s }));
+        const classNames = classes.map(c => c.className.toLowerCase());
+        const duplicateClassNames = classNames.filter((name, index) =>
+            classNames.indexOf(name) !== index
+        );
+
+        if (duplicateClassNames.length > 0) {
+            return res.status(400).json({
+                message: "Duplicate class names found",
+                duplicateClassNames: [...new Set(duplicateClassNames)]
+            });
+        }
+
+        const existingClasses = await ClassSection.find({ school: schoolId });
+        const existingOrders = existingClasses.map(c => c.order);
+
+        const conflictingOrders = orderNumbers.filter(order =>
+            existingOrders.includes(order)
+        );
+
+        if (conflictingOrders.length > 0) {
+            return res.status(400).json({
+                message: "Order numbers already in use",
+                conflictingOrders,
+                existingClassesWithOrders: existingClasses.map(c => ({
+                    className: c.class,
+                    order: c.order
+                }))
+            });
+        }
+
+        // Check if any class names already exist
+        const existingClassNames = existingClasses.map(c => c.class.toLowerCase());
+        const conflictingClassNames = classNames.filter(name =>
+            existingClassNames.includes(name)
+        );
+
+        if (conflictingClassNames.length > 0) {
+            return res.status(400).json({
+                message: "Class names already exist",
+                conflictingClassNames,
+                existingClasses: existingClasses
+                    .filter(c => conflictingClassNames.includes(c.class.toLowerCase()))
+                    .map(c => ({ className: c.class, order: c.order }))
+            });
+        }
+
+        const results = [];
+        const createdClasses = [];
+
+        const sortedClasses = [...classes].sort((a, b) => a.order - b.order);
+
+        for (const c of sortedClasses) {
+            // Format sections
+            const formattedSections = c.sections.map((s, index) => ({
+                name: s.trim()
+            }));
+
+            // Create new class
             const newClass = await ClassSection.create({
                 school: schoolId,
                 class: c.className,
+                order: c.order,
                 sections: formattedSections,
             });
 
-            results.push({ className: c.className, status: "Created", id: newClass._id });
+            createdClasses.push(newClass);
+
+            results.push({
+                className: c.className,
+                status: "Created",
+                id: newClass._id,
+                order: newClass.order,
+                sections: newClass.sections.map(s => s.name)
+            });
         }
 
         res.status(201).json({
-            message: "Class creation completed",
-            summary: results,
+            message: "Classes created successfully",
+            totalCreated: createdClasses.length,
+            classes: createdClasses.sort((a, b) => a.order - b.order).map(cls => ({
+                _id: cls._id,
+                className: cls.class,
+                order: cls.order,
+                sections: cls.sections.map(s => s.name),
+                createdAt: cls.createdAt
+            })),
+            summary: results
         });
     } catch (err) {
         console.error("Error adding multiple classes:", err);
-        res.status(500).json({ message: "Server error", error: err.message });
+
+        if (err.code === 11000) {
+            return res.status(400).json({
+                message: "Duplicate class name or order detected",
+                error: "A class with this name or order already exists in this school"
+            });
+        }
+
+        res.status(500).json({
+            message: "Server error",
+            error: err.message
+        });
     }
 };
 
@@ -56,7 +140,6 @@ const updateAllClassesAndSections = async (req, res) => {
     try {
         const { schoolId, classes } = req.body;
 
-        // Check if user is authorized for this school
         if (req.user.school.toString() !== schoolId) {
             return res.status(403).json({
                 message: "Unauthorized access to this school"
@@ -66,49 +149,231 @@ const updateAllClassesAndSections = async (req, res) => {
         const school = await School.findById(schoolId);
         if (!school) return res.status(404).json({ message: "School not found" });
 
-        const existingClasses = await ClassSection.find({ school: schoolId });
-        const results = [];
-
-        const incomingClassNames = classes.map((c) => c.className.toLowerCase());
-
-        // Step 1: Delete classes that no longer exist in request
-        for (const oldClass of existingClasses) {
-            if (!incomingClassNames.includes(oldClass.class.toLowerCase())) {
-                await oldClass.deleteOne();
-                results.push({
-                    className: oldClass.class,
-                    status: "Deleted",
-                    reason: "Not included in update list",
+        for (const c of classes) {
+            if (c.order === undefined || c.order === null) {
+                return res.status(400).json({
+                    message: `Order is required for class: ${c.className || 'Unknown'}`
                 });
             }
         }
 
-        // Step 2: Add new or update existing classes
+        const orderNumbers = classes.map(c => c.order);
+        const duplicateOrders = orderNumbers.filter((order, index) =>
+            orderNumbers.indexOf(order) !== index
+        );
+
+        if (duplicateOrders.length > 0) {
+            return res.status(400).json({
+                message: "Duplicate order numbers found in request",
+                duplicateOrders: [...new Set(duplicateOrders)]
+            });
+        }
+
+        const existingClasses = await ClassSection.find({ school: schoolId });
+        const results = [];
+        const incomingClassNames = classes.map(c => c.className.toLowerCase());
+
+        for (const oldClass of existingClasses) {
+            if (!incomingClassNames.includes(oldClass.class.toLowerCase())) {
+                const hasStudents = await User.exists({
+                    school: schoolId,
+                    "classInfo.id": oldClass._id,
+                    role: "student"
+                });
+
+                if (hasStudents) {
+                    results.push({
+                        className: oldClass.class,
+                        order: oldClass.order,
+                        status: "Cannot Delete",
+                        reason: "Class has assigned students",
+                        action: "Kept in system"
+                    });
+                    classes.push({
+                        className: oldClass.class,
+                        order: oldClass.order,
+                        sections: oldClass.sections.map(s => s.name)
+                    });
+                } else {
+                    const hasTeachers = await User.exists({
+                        school: schoolId,
+                        "classInfo.id": oldClass._id,
+                        role: "teacher"
+                    });
+
+                    if (hasTeachers) {
+                        results.push({
+                            className: oldClass.class,
+                            order: oldClass.order,
+                            status: "Cannot Delete",
+                            reason: "Class has assigned teachers",
+                            action: "Kept in system"
+                        });
+                        classes.push({
+                            className: oldClass.class,
+                            order: oldClass.order,
+                            sections: oldClass.sections.map(s => s.name)
+                        });
+                    } else {
+                        await oldClass.deleteOne();
+                        results.push({
+                            className: oldClass.class,
+                            order: oldClass.order,
+                            status: "Deleted",
+                            reason: "No students/teachers assigned"
+                        });
+                    }
+                }
+            }
+        }
+
+        const finalOrderNumbers = classes.map(c => c.order);
+        const finalDuplicateOrders = finalOrderNumbers.filter((order, index) =>
+            finalOrderNumbers.indexOf(order) !== index
+        );
+
+        if (finalDuplicateOrders.length > 0) {
+            return res.status(400).json({
+                message: "Duplicate order numbers after adding back kept classes",
+                duplicateOrders: [...new Set(finalDuplicateOrders)]
+            });
+        }
+
         for (const c of classes) {
             const existingClass = await ClassSection.findOne({
                 school: schoolId,
-                class: c.className,
+                class: { $regex: new RegExp(`^${c.className}$`, 'i') },
             });
 
             if (!existingClass) {
-                // New class — create
-                const formattedSections = [...new Set(c.sections)].map((s) => ({ name: s }));
-                const newClass = await ClassSection.create({
+                const oldClass = await ClassSection.findOne({
                     school: schoolId,
-                    class: c.className,
-                    sections: formattedSections,
+                    _id: c.oldClassId
                 });
-                results.push({ className: c.className, status: "Created", id: newClass._id });
-            } else {
-                const newSections = [...new Set(c.sections.map((s) => s.trim()))];
 
-                existingClass.sections = newSections.map((s) => ({ name: s }));
+                if (oldClass && c.oldClassId) {
+                    const hasStudents = await User.exists({
+                        school: schoolId,
+                        "classInfo.id": oldClass._id,
+                        role: "student"
+                    });
+
+                    if (hasStudents) {
+                        results.push({
+                            className: c.className,
+                            oldClassName: oldClass.class,
+                            order: c.order,
+                            oldOrder: oldClass.order,
+                            status: "Cannot Rename",
+                            reason: "Class has assigned students"
+                        });
+                        continue;
+                    }
+
+                    const orderConflict = await ClassSection.findOne({
+                        school: schoolId,
+                        order: c.order,
+                        _id: { $ne: oldClass._id }
+                    });
+
+                    if (orderConflict) {
+                        results.push({
+                            className: c.className,
+                            order: c.order,
+                            status: "Cannot Update Order",
+                            reason: `Order ${c.order} is already used by class: ${orderConflict.class}`
+                        });
+                        continue;
+                    }
+
+                    oldClass.class = c.className;
+                    oldClass.order = c.order;
+
+                    const existingSectionNames = oldClass.sections.map(s => s.name);
+                    const newSectionsFromPayload = [...new Set(c.sections.map(s => s.trim()))];
+                    const allSections = [...new Set([...existingSectionNames, ...newSectionsFromPayload])];
+
+                    oldClass.sections = allSections.map(name => ({ name }));
+                    await oldClass.save();
+
+                    results.push({
+                        className: c.className,
+                        oldClassName: oldClass.class,
+                        status: "Renamed",
+                        id: oldClass._id,
+                        oldOrder: oldClass.order,
+                        newOrder: c.order,
+                        sectionsAdded: newSectionsFromPayload.filter(s => !existingSectionNames.includes(s))
+                    });
+                } else {
+                    const orderConflict = await ClassSection.findOne({
+                        school: schoolId,
+                        order: c.order
+                    });
+
+                    if (orderConflict) {
+                        results.push({
+                            className: c.className,
+                            order: c.order,
+                            status: "Cannot Create",
+                            reason: `Order ${c.order} is already used by class: ${orderConflict.class}`
+                        });
+                        continue;
+                    }
+
+                    const newClass = await ClassSection.create({
+                        school: schoolId,
+                        class: c.className,
+                        order: c.order,
+                        sections: [...new Set(c.sections.map(s => s.trim()))].map(name => ({ name })),
+                    });
+
+                    results.push({
+                        className: c.className,
+                        status: "Created",
+                        id: newClass._id,
+                        order: newClass.order,
+                        sections: newClass.sections.map(s => s.name)
+                    });
+                }
+            } else {
+               
+                if (c.order !== existingClass.order) {
+                    const orderConflict = await ClassSection.findOne({
+                        school: schoolId,
+                        order: c.order,
+                        _id: { $ne: existingClass._id }
+                    });
+
+                    if (orderConflict) {
+                        results.push({
+                            className: c.className,
+                            order: c.order,
+                            status: "Cannot Update Order",
+                            reason: `Order ${c.order} is already used by class: ${orderConflict.class}`
+                        });
+                        continue;
+                    }
+                }
+
+                const existingSectionNames = existingClass.sections.map(s => s.name);
+                const newSectionsFromPayload = [...new Set(c.sections.map(s => s.trim()))];
+
+                const allSections = [...new Set([...existingSectionNames, ...newSectionsFromPayload])];
+
+                const sectionsAdded = newSectionsFromPayload.filter(s => !existingSectionNames.includes(s));
+
+                existingClass.order = c.order;
+                existingClass.sections = allSections.map(name => ({ name }));
                 await existingClass.save();
 
                 results.push({
                     className: c.className,
                     status: "Updated",
-                    sectionCount: newSections.length,
+                    order: existingClass.order,
+                    existingSectionCount: existingSectionNames.length,
+                    newSectionsAdded: sectionsAdded,
+                    allSections: existingClass.sections.map(s => s.name)
                 });
             }
         }
@@ -119,7 +384,10 @@ const updateAllClassesAndSections = async (req, res) => {
         });
     } catch (err) {
         console.error("Error updating classes and sections:", err);
-        res.status(500).json({ message: "Server error", error: err.message });
+        res.status(500).json({
+            message: "Server error",
+            error: err.message
+        });
     }
 };
 
@@ -317,6 +585,199 @@ const assignSectionIncharge = async (req, res) => {
     }
 };
 
+const promoteStudentsToNextClass = async (req, res) => {
+    try {
+        const { fromClassId, fromSectionId, toClassId, toSectionId } = req.body;
+        const schoolId = req.user.school;
+
+        if (!fromClassId || !fromSectionId || !toClassId || !toSectionId) {
+            return res.status(400).json({
+                message: "Missing required fields. Need: fromClassId, fromSectionId, toClassId, toSectionId"
+            });
+        }
+
+        const fromClass = await ClassSection.findOne({
+            _id: fromClassId,
+            school: schoolId
+        });
+
+        if (!fromClass) {
+            return res.status(404).json({ message: "Source class not found" });
+        }
+
+        const fromSection = fromClass.sections.id(fromSectionId);
+        if (!fromSection) {
+            return res.status(404).json({
+                message: "Source section not found in class",
+                availableSections: fromClass.sections.map(s => ({ id: s._id, name: s.name }))
+            });
+        }
+
+        // Get destination class and section
+        const toClass = await ClassSection.findOne({
+            _id: toClassId,
+            school: schoolId
+        });
+
+        if (!toClass) {
+            return res.status(404).json({ message: "Destination class not found" });
+        }
+
+        const toSection = toClass.sections.id(toSectionId);
+        if (!toSection) {
+            return res.status(404).json({
+                message: "Destination section not found in class",
+            });
+        }
+
+        if (toClass.order <= fromClass.order) {
+            return res.status(400).json({
+                message: "Destination class must be higher order than source class",
+                fromClass: { name: fromClass.class, order: fromClass.order },
+                toClass: { name: toClass.class, order: toClass.order }
+            });
+        }
+
+        const existingStudents = await User.find({
+            school: schoolId,
+            "classInfo.id": toClassId,
+            "sectionInfo.id": toSectionId,
+            role: "student",
+            isActive: true
+        });
+
+        if (existingStudents.length > 0) {
+            return res.status(400).json({
+                message: "Destination section already has active students",
+                count: existingStudents.length,
+                students: existingStudents.map(s => ({ name: s.name, rollNo: s.rollNo }))
+            });
+        }
+
+        const studentsToPromote = await User.find({
+            school: schoolId,
+            "classInfo.id": fromClassId,
+            "sectionInfo.id": fromSectionId,
+            role: "student",
+            isActive: true
+        });
+
+        if (studentsToPromote.length === 0) {
+            return res.status(200).json({
+                message: "No active students found in source section",
+                from: `${fromClass.class}-${fromSection.name}`,
+                to: `${toClass.class}-${toSection.name}`
+            });
+        }
+
+        const rollNumbers = studentsToPromote.map(s => s.rollNo).filter(Boolean);
+        const existingRollNos = await User.find({
+            school: schoolId,
+            "classInfo.id": toClassId,
+            "sectionInfo.id": toSectionId,
+            rollNo: { $in: rollNumbers },
+            role: "student",
+            isActive: true
+        }).select("rollNo name");
+
+        if (existingRollNos.length > 0) {
+            return res.status(400).json({
+                message: "Some roll numbers already exist in destination",
+                duplicates: existingRollNos.map(s => ({ rollNo: s.rollNo, name: s.name }))
+            });
+        }
+
+        const results = {
+            successful: 0,
+            failed: 0,
+            errors: []
+        };
+
+        for (const student of studentsToPromote) {
+            try {
+                const inactiveStudent = await User.findOne({
+                    school: schoolId,
+                    "classInfo.id": toClassId,
+                    "sectionInfo.id": toSectionId,
+                    email: student.email,
+                    role: "student",
+                    isActive: false
+                });
+
+                if (inactiveStudent) {
+                    inactiveStudent.name = student.name;
+                    inactiveStudent.classInfo.id = toClassId;
+                    inactiveStudent.sectionInfo.id = toSectionId;
+                    inactiveStudent.isActive = true;
+                    inactiveStudent.rollNo = student.rollNo;
+                    inactiveStudent.promotedFrom = student._id;
+                    inactiveStudent.promotedAt = new Date();
+                    await inactiveStudent.save();
+                } else {
+                    const newStudent = new User({
+                        name: student.name,
+                        email: student.email,
+                        username: student.username,
+                        rollNo: student.rollNo,
+                        fatherName: student.fatherName,
+                        phone: student.phone,
+                        address: student.address,
+                        role: "student",
+                        school: student.school,
+                        classInfo: { id: toClassId },
+                        sectionInfo: { id: toSectionId },
+                        images: student.images,
+                        verified: student.verified,
+                        isActive: true,
+                        promotedFrom: student._id,
+                        promotedAt: new Date(),
+                        createdAt: new Date()
+                    });
+                    await newStudent.save();
+                }
+
+                student.isActive = false;
+                student.archivedAt = new Date();
+                student.archiveReason = `Promoted to ${toClass.class}-${toSection.name}`;
+                await student.save();
+
+                results.successful++;
+            } catch (error) {
+                console.error(`Error promoting student ${student._id}:`, error);
+                results.failed++;
+                results.errors.push({
+                    studentId: student._id,
+                    name: student.name,
+                    error: error.message
+                });
+            }
+        }
+
+        const response = {
+            message: results.failed > 0 ?
+                `Promotion completed with ${results.failed} error(s)` :
+                "All students promoted successfully",
+            results: {
+                total: studentsToPromote.length,
+                successful: results.successful,
+                failed: results.failed
+            }
+        };
+
+        if (results.errors.length > 0) {
+            response.errors = results.errors;
+        }
+
+        res.status(results.failed > 0 ? 207 : 200).json(response);
+
+    } catch (err) {
+        res.status(500).json({
+            message: "Server error",
+            error: err.message
+        });
+    }
+};
+
 module.exports = {
     addMultipleClassesWithSections,
     updateAllClassesAndSections,
@@ -324,4 +785,5 @@ module.exports = {
     assignSectionIncharge,
     getClassesBySchool,
     deleteClass,
+    promoteStudentsToNextClass
 };

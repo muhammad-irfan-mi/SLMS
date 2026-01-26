@@ -430,6 +430,7 @@ const deleteSchoolBySuperAdmin = async (req, res) => {
 
     school.isDeleted = true;
     school.deletedAt = new Date();
+    school.tokenVersion += 1;
 
     await school.save();
 

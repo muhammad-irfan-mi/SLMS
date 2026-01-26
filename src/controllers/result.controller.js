@@ -36,14 +36,30 @@ const getClassSectionInfo = async (classId, sectionId, schoolId) => {
 };
 
 // Check if user is section incharge
+// const isSectionIncharge = async (userId, sectionId, schoolId) => {
+//     const user = await User.findOne({
+//         _id: userId,
+//         school: schoolId,
+//         role: 'teacher',
+//         'sectionInfo.id': sectionId
+//     });
+//     return user !== null;
+// };
+
 const isSectionIncharge = async (userId, sectionId, schoolId) => {
     const user = await User.findOne({
         _id: userId,
         school: schoolId,
-        role: 'teacher',
-        'sectionInfo.id': sectionId
-    });
-    return user !== null;
+        role: 'teacher'
+    }).select('sectionInfo');
+
+    if (!user || !user.sectionInfo) return false;
+
+    if (Array.isArray(user.sectionInfo)) {
+        return user.sectionInfo.some(s => s.id?.toString() === sectionId.toString());
+    } else {
+        return user.sectionInfo.id?.toString() === sectionId.toString();
+    }
 };
 
 const handleResultImageUpload = async (file, oldImage = null) => {

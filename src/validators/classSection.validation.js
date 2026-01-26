@@ -14,6 +14,9 @@ const classWithSectionsSchema = Joi.object({
     'string.empty': 'Class name cannot be empty',
     'any.required': 'Class name is required',
   }),
+  order: Joi.number().integer().min(0).required().messages({
+    'any.required': 'Order is required for every class.Must be a positive integer',
+  }),
   sections: Joi.array().items(Joi.string().trim().required()).min(1).required().messages({
     'array.base': 'Sections must be an array',
     'array.min': 'At least one section is required',
@@ -31,6 +34,16 @@ const addMultipleClassesValidation = Joi.object({
     'array.base': 'Classes must be an array',
     'array.min': 'At least one class is required',
     'any.required': 'Classes are required',
+  }).custom((classes, helpers) => {
+    const orderNumbers = classes.map(c => c.order);
+    const duplicates = orderNumbers.filter((order, index) => orderNumbers.indexOf(order) !== index);
+
+    if (duplicates.length > 0) {
+      return helpers.error('array.uniqueOrder', { duplicates });
+    }
+    return classes;
+  }).messages({
+    'array.uniqueOrder': 'Duplicate order numbers found: {{#duplicates}}',
   }),
 });
 
@@ -77,6 +90,13 @@ const assignInchargeValidation = Joi.object({
   }),
 });
 
+const promoteStudentsSchema = Joi.object({
+  fromClassId: Joi.string().hex().length(24).required(),
+  fromSectionId: Joi.string().hex().length(24).required(),
+  toClassId: Joi.string().hex().length(24).required(),
+  toSectionId: Joi.string().hex().length(24).required()
+});
+
 const paginationQueryValidation = Joi.object({
   page: Joi.number().integer().min(1).default(1),
   limit: Joi.number().integer().min(1).max(100).default(20),
@@ -103,6 +123,7 @@ module.exports = {
   updateAllClassesValidation,
   deleteSectionValidation,
   assignInchargeValidation,
+  promoteStudentsSchema,
   paginationQueryValidation,
   idParamValidation,
   schoolIdParamValidation,

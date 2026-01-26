@@ -12,7 +12,7 @@ const SalarySlipSchema = new mongoose.Schema(
             ref: "School",
             required: true,
         },
-        month: { type: String, required: true }, // ex: "2025-12"
+        month: { type: String, required: true }, 
         title: { type: String, required: true },
         description: { type: String },
         salary: { type: Number, required: true },

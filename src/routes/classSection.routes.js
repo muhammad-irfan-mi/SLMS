@@ -7,6 +7,7 @@ const {
     addMultipleClassesWithSections,
     updateAllClassesAndSections,
     assignSectionIncharge,
+    promoteStudentsToNextClass,
 } = require("../controllers/classSection.controller");
 const { protect, isAdminOffice } = require("../middlewares/auth");
 const validate = require("../middlewares/validate");
@@ -18,6 +19,7 @@ const {
     paginationQueryValidation,
     idParamValidation,
     schoolIdParamValidation,
+    promoteStudentsSchema,
 } = require("../validators/classSection.validation");
 
 router.use(protect, isAdminOffice);
@@ -57,6 +59,12 @@ router.post(
     '/assign-incharge',
     validate(assignInchargeValidation),
     assignSectionIncharge
+);
+
+router.post(
+    '/promote-student',
+    validate(promoteStudentsSchema),
+    promoteStudentsToNextClass
 );
 
 module.exports = router;
