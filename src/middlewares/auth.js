@@ -28,6 +28,12 @@ const protect = async (req, res, next) => {
       return res.status(401).json({ message: "Not authorized, user not found" });
     }
 
+    if (user.isActive === false) {
+      return res.status(401).json({
+        message: "Your account is deactivated. Please contact administrator."
+      });
+    }
+
     const school = await School.findById(decoded.school)
       .select("isDeleted tokenVersion");
 

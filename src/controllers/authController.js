@@ -84,7 +84,7 @@ const schoolLogin = async (req, res) => {
         message: "Your school is inactive. Please contact support."
       });
     }
-    
+
     const token = jwt.sign(
       { id: school._id, role: "school", school: school._id, schoolTokenVersion: school.tokenVersion },
       process.env.JWT_SECRET,
@@ -266,7 +266,8 @@ const staffLogin = async (req, res) => {
 
     const user = await User.findOne({
       email: email.toLowerCase(),
-      role: { $in: ["teacher", "admin_office", "superadmin"] }
+      role: { $in: ["teacher", "admin_office", "superadmin"] },
+      isActive: true
     });
 
     if (!user) {
@@ -308,7 +309,8 @@ const staffLogin = async (req, res) => {
         email: user.email,
         role: user.role,
         school: user.school,
-        schoolTokenVersion: school.tokenVersion
+        schoolTokenVersion: school.tokenVersion,
+        tokenVersion: user.tokenVersion
       },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }
@@ -349,7 +351,8 @@ const studentLogin = async (req, res) => {
     const user = await User.findOne({
       email: email.toLowerCase(),
       username: username.toLowerCase(),
-      role: "student"
+      role: "student",
+      isActive: true
     });
 
     if (!user) {
@@ -392,7 +395,8 @@ const studentLogin = async (req, res) => {
         email: user.email,
         role: user.role,
         school: user.school,
-        schoolTokenVersion: school.tokenVersion
+        schoolTokenVersion: school.tokenVersion,
+        tokenVersion: user.tokenVersion
       },
       process.env.JWT_SECRET,
       { expiresIn: "7d" }

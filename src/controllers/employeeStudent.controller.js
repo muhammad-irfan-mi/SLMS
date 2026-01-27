@@ -278,7 +278,7 @@ const resendUserOTP = async (req, res) => {
         await emailService.sendUserOTPEmail(
             email,
             newOTP,
-            username? username : null,
+            username ? username : null,
             user.name || user.tempData?.name || "User"
         );
 
@@ -436,7 +436,126 @@ async function getClassSectionInfo(classId, sectionId, schoolId) {
     }
 }
 
-// ADD EMPLOYEE (Teacher / Admin Office) - No changes needed
+// ADD EMPLOYEE (Teacher / Admin Office) 
+// const addEmployeeBySchool = async (req, res) => {
+//     try {
+//         const {
+//             name,
+//             email,
+//             phone,
+//             address,
+//             cnic,
+//             role,
+//             salary,
+//             joiningDate,
+//             isIncharge,
+//             classId,
+//             sectionId,
+//         } = req.body;
+
+//         const schoolId = req.user.school;
+
+//         const existing = await User.findOne({ email, role: { $in: ["teacher", "admin_office"] } });
+//         if (existing)
+//             return res.status(400).json({ message: "User with this email already exists" });
+
+//         const images = await uploadFiles(req.files);
+
+//         let classInfo = null;
+//         let sectionInfo = null;
+
+//         if (role === "teacher" && isIncharge === "true" && classId) {
+//             const result = await getClassAndSection(classId, sectionId);
+//             if (result.error) {
+//                 return res.status(400).json({ message: result.error });
+//             }
+//             classInfo = result.classInfo;
+//             sectionInfo = result.sectionInfo;
+//         }
+
+//         const inchargeFlag = role === "teacher" ? isIncharge === "true" : undefined;
+
+//         const otpCode = generateOTP();
+//         const otpExpiry = calculateOTPExpiry(10);
+
+//         if (existing && !existing.verified) {
+//             existing.tempData = {
+//                 name,
+//                 email: email.toLowerCase(),
+//                 phone,
+//                 address,
+//                 cnic,
+//                 role,
+//                 salary: role === "teacher" ? salary : salary || null,
+//                 joiningDate,
+//                 isIncharge: inchargeFlag ?? false,
+//                 classInfo,
+//                 sectionInfo,
+//                 school: schoolId,
+//                 images,
+//             };
+//             existing.otp = {
+//                 code: otpCode,
+//                 expiresAt: otpExpiry,
+//                 attempts: 0,
+//                 lastAttempt: new Date()
+//             };
+//             await existing.save();
+//         } else {
+//             const newUser = new User({
+//                 name,
+//                 email: email.toLowerCase(),
+//                 phone,
+//                 address,
+//                 cnic,
+//                 role,
+//                 salary: role === "teacher" ? salary : salary || null,
+//                 joiningDate,
+//                 isIncharge: inchargeFlag ?? false,
+//                 classInfo,
+//                 sectionInfo,
+//                 school: schoolId,
+//                 images,
+//                 verified: false,
+//                 tempData: {
+//                     name,
+//                     email: email.toLowerCase(),
+//                     phone,
+//                     address,
+//                     cnic,
+//                     role,
+//                     salary: role === "teacher" ? salary : salary || null,
+//                     joiningDate,
+//                     isIncharge: inchargeFlag ?? false,
+//                     classInfo,
+//                     sectionInfo,
+//                     school: schoolId,
+//                     images,
+//                 },
+//                 otp: {
+//                     code: otpCode,
+//                     expiresAt: otpExpiry,
+//                     attempts: 0,
+//                     lastAttempt: new Date()
+//                 }
+//             });
+//             await newUser.save();
+//         }
+//         await emailService.sendUserOTPEmail(email, otpCode, name, schoolId, null, role);
+//         return res.status(201).json({
+//             message: "Employee added successfully. OTP sent to email for verification.",
+//             email,
+//             otpExpiry,
+//             note: "User must verify OTP before setting password"
+//         });
+//     } catch (err) {
+//         console.error("Error adding employee:", err);
+//         return res.status(500).json({
+//             message: err.message || "Server error while adding employee"
+//         });
+//     }
+// };
+
 const addEmployeeBySchool = async (req, res) => {
     try {
         const {
@@ -455,11 +574,10 @@ const addEmployeeBySchool = async (req, res) => {
 
         const schoolId = req.user.school;
 
-        const existing = await User.findOne({ email, role: { $in: ["teacher", "admin_office"] } });
-        if (existing)
-            return res.status(400).json({ message: "User with this email already exists" });
-
-        const images = await uploadFiles(req.files);
+        const existing = await User.findOne({
+            email: email.toLowerCase(),
+            role: { $in: ["teacher", "admin_office"] }
+        });
 
         let classInfo = null;
         let sectionInfo = null;
@@ -474,74 +592,84 @@ const addEmployeeBySchool = async (req, res) => {
         }
 
         const inchargeFlag = role === "teacher" ? isIncharge === "true" : undefined;
-
         const otpCode = generateOTP();
         const otpExpiry = calculateOTPExpiry(10);
 
-        if (existing && !existing.verified) {
-            existing.tempData = {
-                name,
-                email: email.toLowerCase(),
-                phone,
-                address,
-                cnic,
-                role,
-                salary: role === "teacher" ? salary : salary || null,
-                joiningDate,
-                isIncharge: inchargeFlag ?? false,
-                classInfo,
-                sectionInfo,
-                school: schoolId,
-                images,
-            };
+        if (existing) {
+            if (existing.isActive === true) {
+                return res.status(400).json({
+                    message: "Active user with this email already exists"
+                });
+            }
+
+            const images = await uploadFiles(req.files, existing.images);
+
+            existing.password = undefined;
+            existing.name = name;
+            existing.phone = phone;
+            existing.address = address;
+            existing.cnic = cnic;
+            existing.role = role;
+            existing.salary = role === "teacher" ? salary : salary || null;
+            existing.joiningDate = joiningDate;
+            existing.isIncharge = inchargeFlag ?? false;
+            existing.classInfo = classInfo;
+            existing.sectionInfo = sectionInfo;
+            existing.school = schoolId;
+            existing.images = images;
+            existing.isActive = true;
+            existing.tokenVersion = (existing.tokenVersion || 0) + 1;
+            existing.verified = false;
+            existing.createdAt = new Date();
             existing.otp = {
                 code: otpCode,
                 expiresAt: otpExpiry,
                 attempts: 0,
                 lastAttempt: new Date()
             };
+            existing.tempData = undefined;
+            existing.forgotPasswordOTP = undefined;
+
             await existing.save();
-        } else {
-            const newUser = new User({
-                name,
-                email: email.toLowerCase(),
-                phone,
-                address,
-                cnic,
-                role,
-                salary: role === "teacher" ? salary : salary || null,
-                joiningDate,
-                isIncharge: inchargeFlag ?? false,
-                classInfo,
-                sectionInfo,
-                school: schoolId,
-                images,
-                verified: false,
-                tempData: {
-                    name,
-                    email: email.toLowerCase(),
-                    phone,
-                    address,
-                    cnic,
-                    role,
-                    salary: role === "teacher" ? salary : salary || null,
-                    joiningDate,
-                    isIncharge: inchargeFlag ?? false,
-                    classInfo,
-                    sectionInfo,
-                    school: schoolId,
-                    images,
-                },
-                otp: {
-                    code: otpCode,
-                    expiresAt: otpExpiry,
-                    attempts: 0,
-                    lastAttempt: new Date()
-                }
+
+            await emailService.sendUserOTPEmail(email, otpCode, name, schoolId, null, role);
+
+            return res.status(201).json({
+                message: "Employee added successfully. OTP sent for verification.",
+                email,
+                otpExpiry,
             });
-            await newUser.save();
         }
+
+        const images = await uploadFiles(req.files);
+        const newUser = new User({
+            name,
+            email: email.toLowerCase(),
+            phone,
+            address,
+            cnic,
+            role,
+            salary: role === "teacher" ? salary : salary || null,
+            joiningDate,
+            isIncharge: inchargeFlag ?? false,
+            classInfo,
+            sectionInfo,
+            school: schoolId,
+            images,
+            verified: false,
+            isActive: true,
+            otp: {
+                code: otpCode,
+                expiresAt: otpExpiry,
+                attempts: 0,
+                lastAttempt: new Date()
+            }
+        });
+
+        await newUser.save();
+
         await emailService.sendUserOTPEmail(email, otpCode, name, schoolId, null, role);
+
         return res.status(201).json({
             message: "Employee added successfully. OTP sent to email for verification.",
             email,
@@ -549,14 +677,13 @@ const addEmployeeBySchool = async (req, res) => {
             note: "User must verify OTP before setting password"
         });
     } catch (err) {
-        console.error("Error adding employee:", err);
         return res.status(500).json({
             message: err.message || "Server error while adding employee"
         });
     }
 };
 
-// UPDATE EMPLOYEE - No changes needed
+// UPDATE EMPLOYEE
 const editEmployeeBySchool = async (req, res) => {
     try {
         const { id } = req.params;
@@ -567,7 +694,13 @@ const editEmployeeBySchool = async (req, res) => {
             return res.status(404).json({ message: "Employee not found" });
 
         if (existing.school.toString() !== schoolId.toString())
-            return res.status(403).json({ message: "Unauthorized" });
+            return res.status(403).json({ message: "Unauthorized to Update Employee" });
+
+        if (existing.isActive === false) {
+            return res.status(400).json({
+                message: "Employee not found in your school."
+            });
+        }
 
         const images = await uploadFiles(req.files, existing.images);
 
@@ -642,7 +775,9 @@ const editEmployeeBySchool = async (req, res) => {
         );
 
         return res.status(200).json({
-            message: "Employee updated. OTP sent to updated email.",
+            message: req.body.email
+                ? "Employee updated. OTP sent to updated email."
+                : "Employee updated successfully.",
         });
 
     } catch (err) {
@@ -653,7 +788,7 @@ const editEmployeeBySchool = async (req, res) => {
     }
 };
 
-// ADD STUDENT - UPDATED for sibling support
+// ADD STUDENT
 const addStudentBySchool = async (req, res) => {
     try {
         const {
@@ -671,10 +806,16 @@ const addStudentBySchool = async (req, res) => {
 
         const schoolId = req.user.school;
 
-        const emailInOtherSchool = await checkEmailInOtherSchool(email, schoolId);
+        const emailInOtherSchool = await User.findOne({
+            email: email.toLowerCase(),
+            school: { $ne: schoolId },
+            role: "student",
+            isActive: true
+        });
+
         if (emailInOtherSchool) {
             return res.status(400).json({
-                message: `Email ${email} is already registered in another school`
+                message: `Email ${email} is already registered as active student in another school`
             });
         }
 
@@ -705,17 +846,25 @@ const addStudentBySchool = async (req, res) => {
                 role: "student",
                 rollNo,
                 "classInfo.id": classInfo.id,
-                "sectionInfo.id": sectionInfo?.id || null
+                "sectionInfo.id": sectionInfo?.id || null,
+                isActive: true
             });
 
             if (rollExists) {
                 return res.status(400).json({
-                    message: `Roll number "${rollNo}" already exists in this class/section`
+                    message: `Roll number "${rollNo}" already exists for active student in this class/section`
                 });
             }
         }
 
-        const siblings = await User.find({
+        const activeSiblings = await User.find({
+            email: email.toLowerCase(),
+            school: schoolId,
+            role: "student",
+            isActive: true
+        });
+
+        const allSiblings = await User.find({
             email: email.toLowerCase(),
             school: schoolId,
             role: "student"
@@ -725,31 +874,85 @@ const addStudentBySchool = async (req, res) => {
             ? username.toLowerCase()
             : await generateUniqueUsername(name, email, schoolId);
 
-        if (username && siblings.some(s => s.username === finalUsername)) {
+        if (username && activeSiblings.some(s => s.username === finalUsername)) {
             return res.status(400).json({
-                message: `Username "${username}" already used by sibling`
+                message: `Username "${username}" already used by active sibling`
             });
         }
 
+        const inactiveStudent = allSiblings.find(s => s.isActive === false);
+
         let finalRollNo = rollNo;
-        if (!rollNo && siblings.length > 0) {
-            finalRollNo = `${email.split("@")[0]}-${siblings.length + 1}`;
+        if (!rollNo) {
+            if (activeSiblings.length > 0) {
+                finalRollNo = `${email.split("@")[0]}-${activeSiblings.length + 1}`;
+            } else {
+                finalRollNo = `${email.split("@")[0]}-1`;
+            }
         }
 
         let siblingGroupId = null;
-        if (siblings.length > 0) {
-            siblingGroupId = siblings[0].siblingGroupId || siblings[0]._id;
-
-            await User.updateMany(
-                { _id: { $in: siblings.map(s => s._id) } },
-                { $set: { siblingGroupId } }
-            );
+        if (allSiblings.length > 0) {
+            siblingGroupId = allSiblings[0].siblingGroupId || allSiblings[0]._id;
         }
 
         const images = await uploadFiles(req.files);
-
         const otpCode = generateOTP();
         const otpExpiry = calculateOTPExpiry(10);
+
+        if (inactiveStudent) {
+            inactiveStudent.password = undefined;
+            inactiveStudent.name = name;
+            inactiveStudent.username = finalUsername;
+            inactiveStudent.phone = phone;
+            inactiveStudent.address = address;
+            inactiveStudent.cnic = cnic;
+            inactiveStudent.fatherName = fatherName;
+            inactiveStudent.rollNo = finalRollNo;
+            inactiveStudent.classInfo = classInfo;
+            inactiveStudent.sectionInfo = sectionInfo;
+            inactiveStudent.images = images;
+            inactiveStudent.siblingGroupId = siblingGroupId;
+            inactiveStudent.isActive = true;
+            inactiveStudent.tokenVersion = (inactiveStudent.tokenVersion || 0) + 1;
+            inactiveStudent.verified = false;
+            inactiveStudent.createdAt = new Date();
+            inactiveStudent.otp = {
+                code: otpCode,
+                expiresAt: otpExpiry,
+                attempts: 0,
+                lastAttempt: new Date()
+            };
+
+            inactiveStudent.forgotPasswordOTP = undefined;
+
+            await inactiveStudent.save();
+
+            if (allSiblings.length > 1) {
+                await User.updateMany(
+                    {
+                        email: email.toLowerCase(),
+                        school: schoolId,
+                        role: "student"
+                    },
+                    { $set: { siblingGroupId: siblingGroupId } }
+                );
+            }
+
+            await School.findByIdAndUpdate(schoolId, { $inc: { noOfStudents: 1 } });
+
+            await emailService.sendStudentRegistrationEmail(
+                email,
+                otpCode,
+                name,
+                finalUsername,
+                schoolId
+            );
+
+            return res.status(201).json({
+                message: "student added successfully. OTP sent.",
+            });
+        }
 
         const student = new User({
             name,
@@ -767,6 +970,7 @@ const addStudentBySchool = async (req, res) => {
             images,
             siblingGroupId,
             verified: false,
+            isActive: true,
             otp: {
                 code: otpCode,
                 expiresAt: otpExpiry,
@@ -776,6 +980,19 @@ const addStudentBySchool = async (req, res) => {
         });
 
         await student.save();
+
+        if (allSiblings.length > 0) {
+            siblingGroupId = siblingGroupId || student._id;
+            await User.updateMany(
+                {
+                    email: email.toLowerCase(),
+                    school: schoolId,
+                    role: "student"
+                },
+                { $set: { siblingGroupId: siblingGroupId } }
+            );
+        }
+
         await School.findByIdAndUpdate(schoolId, { $inc: { noOfStudents: 1 } });
 
         await emailService.sendStudentRegistrationEmail(
@@ -785,20 +1002,20 @@ const addStudentBySchool = async (req, res) => {
             finalUsername,
             schoolId
         );
+
         return res.status(201).json({
             message: "Student added successfully. OTP sent.",
             student
         });
 
     } catch (err) {
-        console.error("Error adding student:", err);
         return res.status(500).json({
             message: err.message || "Server error"
         });
     }
 };
 
-// UPDATE STUDENT - UPDATED for sibling support
+// UPDATE STUDENT
 const editStudentBySchool = async (req, res) => {
     try {
         const { id } = req.params;
@@ -813,6 +1030,12 @@ const editStudentBySchool = async (req, res) => {
             return res.status(403).json({ message: "Unauthorized" });
         }
 
+        if (existing.isActive === false) {
+            return res.status(400).json({
+                message: "User not found in your school."
+            });
+        }
+
         const { email, rollNo, classId, sectionId, username } = req.body;
 
         // 1. Class / Section
@@ -820,6 +1043,13 @@ const editStudentBySchool = async (req, res) => {
         let sectionInfo = existing.sectionInfo;
 
         if (classId) {
+
+            if (!sectionId) {
+                return res.status(400).json({
+                    message: "Section ID is required when changing class"
+                });
+            }
+
             const result = await getClassAndSection(classId, sectionId, schoolId);
             if (result.error) {
                 return res.status(400).json({ message: result.error });
@@ -828,7 +1058,6 @@ const editStudentBySchool = async (req, res) => {
             sectionInfo = result.sectionInfo;
         }
 
-        // 2. Roll No uniqueness
         if (rollNo) {
             const rollExists = await User.findOne({
                 _id: { $ne: id },
@@ -836,7 +1065,8 @@ const editStudentBySchool = async (req, res) => {
                 role: "student",
                 rollNo,
                 "classInfo.id": classInfo.id,
-                "sectionInfo.id": sectionInfo?.id || null
+                "sectionInfo.id": sectionInfo?.id || null,
+                isActive: true
             });
 
             if (rollExists) {
@@ -846,10 +1076,26 @@ const editStudentBySchool = async (req, res) => {
             }
         }
 
-        // 3. Images
+        if (rollNo && !classId) {
+            const rollExists = await User.findOne({
+                _id: { $ne: id },
+                school: schoolId,
+                role: "student",
+                rollNo,
+                "classInfo.id": existing.classInfo?.id,
+                "sectionInfo.id": existing.sectionInfo?.id || null,
+                isActive: true
+            });
+
+            if (rollExists) {
+                return res.status(400).json({
+                    message: `Roll number "${rollNo}" already exists for active student in this class/section`
+                });
+            }
+        }
+
         const images = await uploadFiles(req.files, existing.images);
 
-        // 4. OTP logic (LIKE EMPLOYEE)
         let otpData = existing.otp;
         let verified = existing.verified;
 
@@ -870,7 +1116,6 @@ const editStudentBySchool = async (req, res) => {
             );
         }
 
-        // 5. Update
         const updated = await User.findByIdAndUpdate(
             id,
             {
@@ -895,7 +1140,6 @@ const editStudentBySchool = async (req, res) => {
             message: email
                 ? "Student updated. OTP sent to new email."
                 : "Student updated successfully",
-            student: updated
         });
 
     } catch (err) {
@@ -916,6 +1160,7 @@ const getStudentSiblingsByEmail = async (req, res) => {
         const siblings = await User.find({
             email,
             role: "student",
+            isActive: true,
             school: schoolId
         }).select("name email phone classInfo sectionInfo rollNo verified");
 
@@ -936,7 +1181,7 @@ const getStudentSiblingsByEmail = async (req, res) => {
     }
 };
 
-// GET STUDENT BY ID - UPDATED to include siblings
+// GET STUDENT BY ID
 const getStudentById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -1006,7 +1251,6 @@ const getStudentById = async (req, res) => {
     }
 };
 
-// GET STUDENTS BY PARENT EMAIL - NEW FUNCTION
 const getStudentsByParentEmail = async (req, res) => {
     try {
         const { email } = req.params;
@@ -1015,6 +1259,7 @@ const getStudentsByParentEmail = async (req, res) => {
         const students = await User.find({
             email,
             role: "student",
+            isActive: true,
             school: schoolId
         }).select("name classInfo sectionInfo rollNo verified")
             .populate('classInfo.id', 'className')
@@ -1049,13 +1294,13 @@ const getStudentsByParentEmail = async (req, res) => {
     }
 };
 
-// Existing functions (no changes needed)
 const getAllEmployeesBySchool = async (req, res) => {
     try {
         const schoolId = req.user.school;
         const employees = await User.find({
             school: schoolId,
             role: { $in: ["teacher", "admin_office"] },
+            isActive: true
         }).select("-password");
         return res.status(200).json({ employees });
     } catch (err) {
@@ -1132,16 +1377,18 @@ const getAllStudentsBySchool = async (req, res) => {
         const [students, total] = await Promise.all([
             User.find({
                 school: schoolId,
-                role: "student"
+                role: "student",
+                isActive: true
             })
-                .select("-password -forgotPasswordOTP -otp")
+                .select("-password -forgotPasswordOTP -otp -tokenVersion -isActive -isIncharge")
                 .skip(skip)
                 .limit(limit)
                 .lean(),
 
             User.countDocuments({
                 school: schoolId,
-                role: "student"
+                role: "student",
+                isActive: true
             })
         ]);
 
@@ -1192,8 +1439,9 @@ const getStudentsBySection = async (req, res) => {
         const students = await User.find({
             school: schoolId,
             role: "student",
+            isActive: true,
             "sectionInfo.id": sectionId,
-        }).select("-password");
+        }).select("-password -forgotPasswordOTP -otp -tokenVersion -isActive -isIncharge");
 
         if (!students.length) {
             return res.status(404).json({ message: "No students found in this section" });
@@ -1327,7 +1575,7 @@ const forgotPassword = async (req, res) => {
         await emailService.sendForgotPasswordOTPEmail(
             user.email,
             otpCode,
-            username  || user.name,
+            username || user.name,
         );
 
         return res.status(200).json({
@@ -1453,7 +1701,7 @@ const verifyForgotPasswordOTP = async (req, res) => {
     }
 };
 
-// Reset Password with OTP (for forgot password flow)
+// Reset Password with OTP 
 const resetPasswordWithOTP = async (req, res) => {
     try {
         const { email, otp, newPassword, username } = req.body;
@@ -1584,7 +1832,6 @@ const resetPassword = async (req, res) => {
 
         let user;
 
-        // ---------------- IDENTIFY USER ----------------
         if (username) {
             user = await User.findOne({ username: username.toLowerCase() });
 
@@ -1789,6 +2036,51 @@ const resendForgotPasswordOTP = async (req, res) => {
     }
 };
 
+const toggleUserStatus = async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const schoolId = req.user.school;
+
+        const user = await User.findOne({
+            _id: userId,
+            school: schoolId
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found in your school"
+            });
+        }
+
+        const newStatus = !user.isActive;
+        user.isActive = newStatus;
+
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+
+        await user.save();
+
+        return res.status(200).json({
+            success: true,
+            message: `User ${newStatus ? 'activated' : 'deactivated'} successfully`,
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                isActive: user.isActive,
+                tokenVersion: user.tokenVersion
+            }
+        });
+
+    } catch (err) {
+        return res.status(500).json({
+            success: false,
+            message: "Server error",
+        });
+    }
+};
+
 module.exports = {
     sendUserOTP,
     verifyUserOTP,
@@ -1812,5 +2104,6 @@ module.exports = {
     verifyForgotPasswordOTP,
     resetPasswordWithOTP,
     resetPassword,
-    resendForgotPasswordOTP
+    resendForgotPasswordOTP,
+    toggleUserStatus,
 };

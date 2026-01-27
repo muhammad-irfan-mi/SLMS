@@ -24,7 +24,8 @@ const {
     resetPassword,
     verifyForgotPasswordOTP,
     forgotPassword,
-    resetPasswordWithOTP
+    resetPasswordWithOTP,
+    toggleUserStatus
 } = require("../controllers/employeeStudent.controller");
 const { protect, isAdminOffice, isTeacherOrAdminOfficeOrSchool, allowedRoles } = require("../middlewares/auth");
 const { upload } = require("../utils/multer");
@@ -222,12 +223,11 @@ router.post(
     resendForgotPasswordOTP
 );
 
-// Protected password route
-// router.post(
-//     "/change-password",
-//     protect,
-//     validate(validationSchemas.changePassword),
-//     changePassword
-// );
+router.put(
+    "/diactivate/:userId",
+    protect,
+    isAdminOffice,
+    toggleUserStatus
+);
 
 module.exports = router;

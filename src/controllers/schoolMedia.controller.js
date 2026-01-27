@@ -1,6 +1,6 @@
 const SchoolMedia = require('../models/SchoolMedia');
 const User = require('../models/User');
-const School = require('../models/School'); 
+const School = require('../models/School');
 const { uploadFileToS3, deleteFileFromS3 } = require('../services/s3.service');
 
 const detectUserType = (user) => {
@@ -8,16 +8,16 @@ const detectUserType = (user) => {
     return 'school';
   }
   if (user.role) {
-    return user.role; 
+    return user.role;
   }
   return 'unknown';
 };
 
 const getSchoolId = (user, userType) => {
   if (userType === 'school') {
-    return user._id; 
+    return user._id;
   }
-  return user.school; 
+  return user.school;
 };
 
 const getUserName = (user, userType) => {
@@ -29,43 +29,43 @@ const getUserName = (user, userType) => {
 
 const formatTags = (tags) => {
   if (!tags) return [];
-  
+
   if (Array.isArray(tags)) {
     return tags.map(tag => tag.trim()).filter(tag => tag.length > 0);
   }
-  
+
   if (typeof tags === 'string') {
     return tags.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
   }
-  
+
   return [];
 };
 
 const formatDate = (dateString) => {
   if (!dateString) return null;
-  
+
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return null;
-  
-  return date.toISOString().split('T')[0]; 
+
+  return date.toISOString().split('T')[0];
 };
 
 const createMedia = async (req, res) => {
-  
+
   try {
     const user = req.user;
     const userType = detectUserType(user);
-    
-    
+
+
     if (!['school', 'admin_office'].includes(userType)) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
-        message: 'Only school and admin office can upload media' 
+        message: 'Only school and admin office can upload media'
       });
     }
 
     if (!req.file) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
         message: 'Video file is required',
         field: 'video'
@@ -86,7 +86,7 @@ const createMedia = async (req, res) => {
     console.log('School ID:', schoolId);
 
     const file = req.file;
-    
+
     const uploaded = await uploadFileToS3({
       fileBuffer: file.buffer,
       fileName: `${Date.now()}-${file.originalname}`,
@@ -108,16 +108,16 @@ const createMedia = async (req, res) => {
       eventDate: formatDate(eventDate),
     });
 
-    return res.status(201).json({ 
+    return res.status(201).json({
       success: true,
-      message: 'Media uploaded successfully', 
-      data: newMedia 
+      message: 'Media uploaded successfully',
+      data: newMedia
     });
   } catch (err) {
     console.error('createMedia error:', err);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
-      message: 'Server error', 
+      message: 'Server error',
       error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
@@ -133,25 +133,25 @@ const updateMedia = async (req, res) => {
 
     const media = await SchoolMedia.findById(id);
     if (!media) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'Media not found' 
+        message: 'Media not found'
       });
     }
 
     if (String(media.createdBy) !== String(userId)) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
-        message: 'You can only update media you uploaded' 
+        message: 'You can only update media you uploaded'
       });
     }
 
     if (userType === 'school') {
       const schoolId = getSchoolId(user, userType);
       if (String(media.school) !== String(schoolId)) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           success: false,
-          message: 'Not authorized to update this media' 
+          message: 'Not authorized to update this media'
         });
       }
     }
@@ -159,9 +159,9 @@ const updateMedia = async (req, res) => {
     if (userType === 'admin_office') {
       const adminSchoolId = user.school;
       if (String(media.school) !== String(adminSchoolId)) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           success: false,
-          message: 'Not authorized to update this media' 
+          message: 'Not authorized to update this media'
         });
       }
     }
@@ -207,9 +207,9 @@ const updateMedia = async (req, res) => {
     });
   } catch (err) {
     console.error('updateMedia error:', err);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
-      message: 'Server error', 
+      message: 'Server error',
       error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
@@ -225,25 +225,25 @@ const deleteMedia = async (req, res) => {
 
     const media = await SchoolMedia.findById(id);
     if (!media) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'Media not found' 
+        message: 'Media not found'
       });
     }
 
     if (String(media.createdBy) !== String(userId)) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
-        message: 'You can only delete media you uploaded' 
+        message: 'You can only delete media you uploaded'
       });
     }
 
     if (userType === 'school') {
       const schoolId = getSchoolId(user, userType);
       if (String(media.school) !== String(schoolId)) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           success: false,
-          message: 'Not authorized to delete this media' 
+          message: 'Not authorized to delete this media'
         });
       }
     }
@@ -251,9 +251,9 @@ const deleteMedia = async (req, res) => {
     if (userType === 'admin_office') {
       const adminSchoolId = user.school;
       if (String(media.school) !== String(adminSchoolId)) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           success: false,
-          message: 'Not authorized to delete this media' 
+          message: 'Not authorized to delete this media'
         });
       }
     }
@@ -268,7 +268,7 @@ const deleteMedia = async (req, res) => {
 
     await media.deleteOne();
 
-    return res.status(200).json({ 
+    return res.status(200).json({
       success: true,
       message: 'Media deleted successfully',
       data: {
@@ -279,9 +279,9 @@ const deleteMedia = async (req, res) => {
     });
   } catch (err) {
     console.error('deleteMedia error:', err);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
-      message: 'Server error', 
+      message: 'Server error',
       error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
@@ -289,6 +289,7 @@ const deleteMedia = async (req, res) => {
 
 // GET OWN UPLOADS
 const getOwnUploads = async (req, res) => {
+  console.log("object", req.user)
   try {
     const user = req.user;
     const userType = detectUserType(user);
@@ -304,7 +305,7 @@ const getOwnUploads = async (req, res) => {
 
     if (type) filter.type = type;
     if (visibility) filter.visibility = visibility;
-    
+
     if (q) {
       filter.$or = [
         { title: new RegExp(q, 'i') },
@@ -350,9 +351,9 @@ const getOwnUploads = async (req, res) => {
     });
   } catch (err) {
     console.error('getOwnUploads error:', err);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
-      message: 'Server error', 
+      message: 'Server error',
       error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
@@ -362,7 +363,7 @@ const getOwnUploads = async (req, res) => {
 //   try {
 //     const user = req.user;
 //     const userType = detectUserType(user);
-    
+
 //     if (!['school', 'admin_office'].includes(userType)) {
 //       return res.status(403).json({ 
 //         success: false,
@@ -375,7 +376,7 @@ const getOwnUploads = async (req, res) => {
 //     const skip = (page - 1) * limit;
 
 //     let authorizedSchoolId = getSchoolId(user, userType);
-    
+
 //     if (paramSchoolId && String(paramSchoolId) !== String(authorizedSchoolId)) {
 //       return res.status(403).json({ 
 //         success: false,
@@ -387,7 +388,7 @@ const getOwnUploads = async (req, res) => {
 
 //     if (type) filter.type = type;
 //     if (createdBy) filter.createdBy = createdBy;
-    
+
 //     if (q) {
 //       filter.$or = [
 //         { title: new RegExp(q, 'i') },
@@ -449,25 +450,25 @@ const getFeed = async (req, res) => {
   try {
     const user = req.user;
     const userType = detectUserType(user);
-    
+
     if (!['teacher', 'student'].includes(userType)) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
-        message: 'Only teachers and students can access feed' 
+        message: 'Only teachers and students can access feed'
       });
     }
 
-    const schoolId = user.school; 
+    const schoolId = user.school;
     const { page = 1, limit = 20, q, type } = req.query;
     const skip = (page - 1) * limit;
 
-    const filter = { 
+    const filter = {
       school: schoolId,
-      visibility: { $in: ['school-only', 'public'] } 
+      visibility: { $in: ['school-only', 'public'] }
     };
 
     if (type) filter.type = type;
-    
+
     if (q) {
       filter.$or = [
         { title: new RegExp(q, 'i') },
@@ -512,15 +513,14 @@ const getFeed = async (req, res) => {
     });
   } catch (err) {
     console.error('getFeed error:', err);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
-      message: 'Server error', 
+      message: 'Server error',
       error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 };
 
-// GET SINGLE MEDIA by ID
 const getById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -534,32 +534,32 @@ const getById = async (req, res) => {
       .lean();
 
     if (!media) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'Media not found' 
+        message: 'Media not found'
       });
     }
 
     let isAuthorized = false;
-    
+
     if (userType === 'school') {
       isAuthorized = String(media.school) === String(schoolId);
-    } 
+    }
     else if (userType === 'admin_office') {
       isAuthorized = String(media.school) === String(schoolId);
     }
     else if (['teacher', 'student'].includes(userType)) {
-      isAuthorized = String(media.school) === String(schoolId) && 
-                     media.visibility !== 'private';
+      isAuthorized = String(media.school) === String(schoolId) &&
+        media.visibility !== 'private';
     }
     else if (userType === 'superadmin') {
       isAuthorized = true;
     }
 
     if (!isAuthorized) {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
-        message: 'Not authorized to view this media' 
+        message: 'Not authorized to view this media'
       });
     }
 
@@ -580,19 +580,20 @@ const getById = async (req, res) => {
       updatedAt: media.updatedAt
     };
 
-    return res.status(200).json({ 
+    return res.status(200).json({
       success: true,
-      data: response 
+      data: response
     });
   } catch (err) {
     console.error('getById error:', err);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
-      message: 'Server error', 
+      message: 'Server error',
       error: process.env.NODE_ENV === 'development' ? err.message : undefined
     });
   }
 };
+
 
 module.exports = {
   createMedia,

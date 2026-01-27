@@ -64,31 +64,13 @@ const UserSchema = new Schema({
   },
   verified: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
+  tokenVersion: { type: Number, default: 0 },
   parentEmail: { type: String },
   siblingGroupId: {
     type: Schema.Types.ObjectId,
     ref: "User",
     default: null
   },
-  // tempData: { 
-  //   name: String,
-  //   username: String,
-  //   email: String,
-  //   phone: String,
-  //   address: String,
-  //   cnic: String,
-  //   fatherName: String,
-  //   role: String,
-  //   salary: Number,
-  //   joiningDate: Date,
-  //   isIncharge: Boolean,
-  //   classInfo: Object,
-  //   sectionInfo: Object,
-  //   rollNo: String,
-  //   school: Schema.Types.ObjectId,
-  //   images: Object,
-  //   siblingGroupId: Schema.Types.ObjectId
-  // },
   createdAt: { type: Date, default: Date.now },
 });
 
