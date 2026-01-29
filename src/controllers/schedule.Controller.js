@@ -69,9 +69,7 @@ const formatScheduleResponse = (schedule) => {
 // Add new schedule
 const addSchedule = async (req, res) => {
   try {
-    console.log(req.user)
     const schoolId = req.user.school || req.user._id;
-    console.log("schoolId", schoolId)
     const { schedules } = req.body;
 
     const createdSchedules = [];
@@ -104,11 +102,11 @@ const addSchedule = async (req, res) => {
         }
       }
 
-      // Validate subject exists and belongs to school if provided
       if (subjectId && type === 'subject') {
         const subject = await Subject.findOne({
           _id: subjectId,
-          school: schoolId
+          school: schoolId,
+          isActive: true
         });
 
         if (!subject) {
@@ -118,7 +116,6 @@ const addSchedule = async (req, res) => {
         }
       }
 
-      // Validate teacher exists and belongs to school if provided
       if (teacherId && type === 'subject') {
         const teacher = await User.findOne({
           _id: teacherId,
@@ -135,7 +132,6 @@ const addSchedule = async (req, res) => {
 
       // Create schedule for each section
       for (const sectionId of sectionIds) {
-        // Check for time overlaps and delete overlapping schedules
         const existingSchedules = await Schedule.find({
           school: schoolId,
           classId,
@@ -202,14 +198,23 @@ const getSchedule = async (req, res) => {
     const total = await Schedule.countDocuments(filter);
 
     const schedules = await Schedule.find(filter)
-      .populate("subjectId", "name code")
+      // .populate("subjectId", "name code")
+      .populate({
+        path: "subjectId",
+        select: "name code",
+        match: { isActive: true }
+      })
       .populate("teacherId", "name email")
       .populate("classId", "class sections")
       .skip((page - 1) * limit)
       .limit(limit)
       .sort({ day: 1, startTime: 1 });
 
-    const formattedSchedules = schedules.map(schedule =>
+    const validSchedules = schedules.filter(schedule =>
+      schedule.type !== 'subject' || schedule.subjectId !== null
+    );
+
+    const formattedSchedules = validSchedules.map(schedule =>
       formatScheduleResponse(schedule)
     );
 
@@ -253,14 +258,22 @@ const getScheduleBySection = async (req, res) => {
     const total = await Schedule.countDocuments(filter);
 
     const schedules = await Schedule.find(filter)
-      .populate("subjectId", "name code")
+      .populate({
+        path: "subjectId",
+        select: "name code",
+        match: { isActive: true }
+      })
       .populate("teacherId", "name email")
       .populate("classId", "class sections")
       .skip((page - 1) * limit)
       .limit(limit)
       .sort({ day: 1, startTime: 1 });
 
-    const formattedSchedules = schedules.map(schedule =>
+    const validSchedules = schedules.filter(schedule =>
+      schedule.type !== 'subject' || schedule.subjectId !== null
+    );
+
+    const formattedSchedules = validSchedules.map(schedule =>
       formatScheduleResponse(schedule)
     );
 
@@ -302,13 +315,25 @@ const getScheduleByTeacher = async (req, res) => {
     const total = await Schedule.countDocuments(filter);
 
     const schedules = await Schedule.find(filter)
-      .populate("subjectId", "name code")
+      .populate({
+        path: "subjectId",
+        select: "name code",
+        match: { isActive: true }
+      })
       .populate("classId", "class sections")
       .skip((page - 1) * limit)
       .limit(limit)
       .sort({ day: 1, startTime: 1 });
 
-    const formattedSchedules = schedules.map(schedule => {
+    const validSchedules = schedules.filter(schedule =>
+      schedule.type !== 'subject' || schedule.subjectId !== null
+    );
+
+    // const formattedSchedules = validSchedules.map(schedule =>
+    //   formatScheduleResponse(schedule)
+    // );
+
+    const formattedSchedules = validSchedules.map(schedule => {
       const formatted = formatScheduleResponse(schedule);
       return {
         _id: formatted._id,
@@ -367,14 +392,22 @@ const getScheduleByStudent = async (req, res) => {
     const total = await Schedule.countDocuments(filter);
 
     const schedules = await Schedule.find(filter)
-      .populate("subjectId", "name code")
+      .populate({
+        path: "subjectId",
+        select: "name code",
+        match: { isActive: true }
+      })
       .populate("teacherId", "name email")
       .populate("classId", "class sections")
       .skip((page - 1) * limit)
       .limit(limit)
       .sort({ day: 1, startTime: 1 });
 
-    const formattedSchedules = schedules.map(schedule => {
+    const validSchedules = schedules.filter(schedule =>
+      schedule.type !== 'subject' || schedule.subjectId !== null
+    );
+
+    const formattedSchedules = validSchedules.map(schedule => {
       const formatted = formatScheduleResponse(schedule);
       return {
         _id: formatted._id,
@@ -426,7 +459,6 @@ const updateSchedule = async (req, res) => {
       });
     }
 
-    // If classId is being updated, validate it belongs to school
     if (updateData.classId && updateData.classId !== schedule.classId.toString()) {
       const classResult = await getClassSectionData(updateData.classId, schoolId);
       if (classResult.error) {
@@ -436,7 +468,6 @@ const updateSchedule = async (req, res) => {
       }
     }
 
-    // If sectionId is being updated, validate it belongs to class
     if (updateData.sectionId) {
       const classId = updateData.classId || schedule.classId;
       const classResult = await getClassSectionData(classId, schoolId, updateData.sectionId);

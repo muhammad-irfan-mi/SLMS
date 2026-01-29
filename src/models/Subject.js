@@ -10,6 +10,7 @@ const SubjectSchema = new Schema(
     school: { type: Schema.Types.ObjectId, ref: "School", required: true },
     class: { type: Schema.Types.ObjectId, ref: "ClassSection", required: true },
     sectionId: { type: Schema.Types.ObjectId },
+    isActive: { type: Boolean, default: true },
   },
   { timestamps: true }
 );

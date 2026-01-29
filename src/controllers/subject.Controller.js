@@ -95,7 +95,6 @@ const addSubject = async (req, res) => {
     const schoolId = req.user.school;
     const { name, code, description, classId, sectionId } = req.body;
 
-    // Validate class belongs to the user's school
     const classDoc = await ClassSection.findOne({
       _id: classId,
       school: schoolId
@@ -107,7 +106,6 @@ const addSubject = async (req, res) => {
       });
     }
 
-    // Validate section belongs to the class if provided
     if (sectionId) {
       const sectionExists = classDoc.sections.some(
         section => section._id.toString() === sectionId
@@ -120,12 +118,12 @@ const addSubject = async (req, res) => {
       }
     }
 
-    // Check for duplicate subject name (case-insensitive)
     const existing = await Subject.findOne({
       school: schoolId,
       name: { $regex: new RegExp(`^${name}$`, "i") },
       class: classId,
       sectionId: sectionId || null,
+      isActive: true
     });
 
     if (existing) {
@@ -141,6 +139,7 @@ const addSubject = async (req, res) => {
       school: schoolId,
       class: classId,
       sectionId: sectionId || null,
+      isActive: true
     });
 
     res.status(201).json({
@@ -161,14 +160,14 @@ const getSubjects = async (req, res) => {
     const schoolId = req.user.school;
     const { classId, sectionId, page = 1, limit = 10 } = req.query;
 
-    // Build filter based on user's school
-    const filter = { school: schoolId };
-    
-    // Validate class if classId is provided
+    const filter = {
+      school: schoolId,
+      isActive: true
+    };
+
     if (classId) {
       filter.class = classId;
-      
-      // Validate section if sectionId is provided
+
       if (sectionId) {
         filter.sectionId = sectionId;
       }
@@ -177,7 +176,6 @@ const getSubjects = async (req, res) => {
     const skip = (parseInt(page) - 1) * parseInt(limit);
     const total = await Subject.countDocuments(filter);
 
-    // Get subjects
     const subjects = await Subject.find(filter)
       .populate({
         path: "class",
@@ -188,10 +186,8 @@ const getSubjects = async (req, res) => {
       .limit(parseInt(limit))
       .lean();
 
-    // Format subjects with class and section data
     const formattedSubjects = await Promise.all(
       subjects.map(async (subject) => {
-        // Get class and section data using helper
         const classSectionResult = await getClassSectionData(
           subject.class._id || subject.class,
           schoolId,
@@ -209,7 +205,6 @@ const getSubjects = async (req, res) => {
           __v: subject.__v || 0
         };
 
-        // Add class and section data if no error
         if (!classSectionResult.error) {
           response.class = classSectionResult.data.class;
           response.section = classSectionResult.data.section;
@@ -241,7 +236,8 @@ const getSubjectById = async (req, res) => {
 
     const subject = await Subject.findOne({
       _id: id,
-      school: schoolId
+      school: schoolId,
+      isActive: true
     })
       .populate({
         path: "class",
@@ -250,8 +246,8 @@ const getSubjectById = async (req, res) => {
       .lean();
 
     if (!subject) {
-      return res.status(404).json({ 
-        message: "Subject not found in your school" 
+      return res.status(404).json({
+        message: "Subject not found in your school"
       });
     }
 
@@ -262,8 +258,8 @@ const getSubjectById = async (req, res) => {
     );
 
     if (classSectionResult.error) {
-      return res.status(classSectionResult.error.status).json({ 
-        message: classSectionResult.error.message 
+      return res.status(classSectionResult.error.status).json({
+        message: classSectionResult.error.message
       });
     }
 
@@ -293,6 +289,7 @@ const getSubjectById = async (req, res) => {
 
 const getSubjectsByTeacher = async (req, res) => {
   try {
+    console.log(req.user)
     const teacherId = req.user._id;
     const schoolId = req.user.school;
     const { page = 1, limit = 20 } = req.query;
@@ -301,13 +298,14 @@ const getSubjectsByTeacher = async (req, res) => {
     const limitNum = parseInt(limit);
     const skip = (pageNum - 1) * limitNum;
 
-    const schedules = await Schedule.find({ 
-      school: schoolId, 
-      teacherId 
+    const schedules = await Schedule.find({
+      school: schoolId,
+      teacherId
     })
       .populate({
         path: "subjectId",
-        select: "name code description class sectionId",
+        select: "name code description class sectionId isActive",
+        match: { isActive: true },
         populate: {
           path: "class",
           select: "class",
@@ -317,8 +315,8 @@ const getSubjectsByTeacher = async (req, res) => {
       .lean();
 
     if (!schedules.length) {
-      return res.status(404).json({ 
-        message: "No subjects found for this teacher" 
+      return res.status(404).json({
+        message: "No subjects found for this teacher"
       });
     }
 
@@ -329,13 +327,11 @@ const getSubjectsByTeacher = async (req, res) => {
       const subject = schedule.subjectId;
       const classDoc = schedule.classId;
 
-      // Skip if subject or class doesn't exist
       if (!subject || !classDoc) continue;
 
       if (!seen.has(subject._id.toString())) {
         seen.add(subject._id.toString());
-        
-        // Get class and section data using helper
+
         const classSectionResult = await getClassSectionData(
           classDoc._id,
           schoolId,
@@ -344,7 +340,6 @@ const getSubjectsByTeacher = async (req, res) => {
 
         if (classSectionResult.error) continue;
 
-        // Format the subject data
         const formattedSubject = {
           _id: subject._id,
           name: subject.name,
@@ -362,7 +357,6 @@ const getSubjectsByTeacher = async (req, res) => {
       }
     }
 
-    // Apply pagination
     const total = uniqueSubjects.length;
     const paginated = uniqueSubjects.slice(skip, skip + limitNum);
 
@@ -386,10 +380,10 @@ const updateSubject = async (req, res) => {
     const schoolId = req.user.school;
     const updateData = req.body;
 
-    // Find the subject and ensure it belongs to user's school
     const subject = await Subject.findOne({
       _id: id,
-      school: schoolId
+      school: schoolId,
+      isActive: true
     });
 
     if (!subject) {
@@ -398,7 +392,6 @@ const updateSubject = async (req, res) => {
       });
     }
 
-    // If classId is being updated, validate it belongs to user's school
     if (updateData.classId && updateData.classId !== subject.class.toString()) {
       const classDoc = await ClassSection.findOne({
         _id: updateData.classId,
@@ -411,7 +404,6 @@ const updateSubject = async (req, res) => {
         });
       }
 
-      // Validate section belongs to new class if sectionId is provided
       if (updateData.sectionId) {
         const sectionExists = classDoc.sections.some(
           section => section._id.toString() === updateData.sectionId
@@ -425,7 +417,6 @@ const updateSubject = async (req, res) => {
       }
     }
 
-    // If only sectionId is being updated, validate it belongs to the current class
     if (updateData.sectionId && (!updateData.classId || updateData.classId === subject.class.toString())) {
       const currentClass = await ClassSection.findOne({
         _id: subject.class,
@@ -445,7 +436,6 @@ const updateSubject = async (req, res) => {
       }
     }
 
-    // Check for duplicate subject name if name is being updated
     if (updateData.name && updateData.name !== subject.name) {
       const duplicate = await Subject.findOne({
         school: schoolId,
@@ -462,7 +452,6 @@ const updateSubject = async (req, res) => {
       }
     }
 
-    // Update the subject
     const updatedSubject = await Subject.findByIdAndUpdate(
       id,
       updateData,
@@ -484,11 +473,15 @@ const deleteSubject = async (req, res) => {
     const { id } = req.params;
     const schoolId = req.user.school;
 
-    // Find and delete subject, ensuring it belongs to user's school
-    const deleted = await Subject.findOneAndDelete({
-      _id: id,
-      school: schoolId
-    });
+    const deleted = await Subject.findByIdAndUpdate(
+      {
+        _id: id,
+        school: schoolId,
+        isActive: true
+      },
+      { isActive: false },
+      { new: true }
+    );
 
     if (!deleted) {
       return res.status(404).json({
@@ -509,7 +502,7 @@ module.exports = {
   addSubject,
   getSubjects,
   getSubjectById,
-  getSubjectsByTeacher,
   updateSubject,
-  deleteSubject
+  deleteSubject,
+  getSubjectsByTeacher,
 };

@@ -5,8 +5,8 @@ const {
   getSubjects, 
   updateSubject, 
   deleteSubject, 
-  getSubjectsByTeacher, 
-  getSubjectById
+  getSubjectById,
+  getSubjectsByTeacher
 } = require("../controllers/subject.Controller");
 const { isAdminOffice, protect, isTeacher } = require("../middlewares/auth");
 const validate = require("../middlewares/validate");
@@ -18,7 +18,6 @@ const {
   idParamValidation,
 } = require("../validators/subject.validation");
 
-// Admin/Office routes
 router.post(
   "/",
   protect,
@@ -33,6 +32,14 @@ router.get(
   isAdminOffice,
   validate(getSubjectsValidation, 'query'),
   getSubjects
+);
+
+router.get(
+  "/teacher",
+  protect,
+  isTeacher,
+  validate(getSubjectsByTeacherValidation, 'query'),
+  getSubjectsByTeacher
 );
 
 router.get(
@@ -60,13 +67,6 @@ router.delete(
   deleteSubject
 );
 
-// Teacher routes
-router.get(
-  "/teacher",
-  protect,
-  isTeacher,
-  validate(getSubjectsByTeacherValidation, 'query'),
-  getSubjectsByTeacher
-);
+
 
 module.exports = router;
