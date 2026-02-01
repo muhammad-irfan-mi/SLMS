@@ -24,7 +24,6 @@ const {
   validateFiles
 } = require("../controllers/studentDocument.controller");
 const {
-  // Schemas
   createDocumentRequestSchema,
   updateDocumentRequestSchema,
   uploadForRequestSchema,

@@ -34,6 +34,11 @@ const protect = async (req, res, next) => {
       });
     }
 
+    if (user.role === "superadmin") {
+      req.user = user;
+      return next();
+    }
+    
     const school = await School.findById(decoded.school)
       .select("isDeleted tokenVersion");
 

@@ -44,9 +44,41 @@ const getSchoolId = (user) => {
     }
 };
 
+const getClassSectionInfo = async (classId, sectionId, schoolId) => {
+    const classSection = await ClassSection.findOne({
+        _id: classId,
+        school: schoolId
+    }).lean();
+
+    if (!classSection) {
+        return { class: null, section: null };
+    }
+
+    const classInfo = {
+        _id: classSection._id,
+        name: classSection.class
+    };
+
+    let sectionInfo = null;
+    if (sectionId && classSection.sections) {
+        const section = classSection.sections.find(
+            sec => sec._id.toString() === sectionId.toString()
+        );
+        if (section) {
+            sectionInfo = {
+                _id: section._id,
+                name: section.name
+            };
+        }
+    }
+
+    return { class: classInfo, section: sectionInfo };
+};
+
 const populateClassSectionInfo = async (documents) => {
     return Promise.all(documents.map(async (doc) => {
         const docObj = { ...doc };
+        console.log(doc)
 
         if (doc.classId && typeof doc.classId === 'string') {
             const classInfo = await ClassSection.findById(doc.classId)
@@ -288,28 +320,49 @@ const getDocumentRequests = async (req, res) => {
         const formattedRequests = await Promise.all(requests.map(async (request) => {
             const reqObj = { ...request };
 
+            let schoolId = null;
+            if (reqObj.studentId && reqObj.studentId.school) {
+                schoolId = reqObj.studentId.school;
+            }
+
+            if (reqObj.classId) {
+                const classSectionInfo = await getClassSectionInfo(
+                    reqObj.classId,
+                    reqObj.sectionId,
+                    schoolId
+                );
+
+                if (classSectionInfo.class) {
+                    reqObj.classInfo = {
+                        id: classSectionInfo.class._id,
+                        name: classSectionInfo.class.name
+                    };
+                }
+
+                if (classSectionInfo.section) {
+                    reqObj.sectionInfo = {
+                        id: classSectionInfo.section._id,
+                        name: classSectionInfo.section.name
+                    };
+                }
+
+                if (reqObj.classInfo) {
+                    delete reqObj.classId;
+                }
+                if (reqObj.sectionInfo) {
+                    delete reqObj.sectionId;
+                }
+            }
+
             if (reqObj.studentId) {
                 reqObj.studentInfo = {
                     _id: reqObj.studentId._id,
                     name: reqObj.studentId.name,
                     email: reqObj.studentId.email,
-                    rollNo: reqObj.studentId.rollNo
+                    rollNo: reqObj.studentId.rollNo,
+                    school: reqObj.studentId.school
                 };
                 delete reqObj.studentId;
-            }
-
-            if (reqObj.classId) {
-                reqObj.classInfo = {
-                    id: reqObj.classId
-                };
-                delete reqObj.classId;
-            }
-
-            if (reqObj.sectionId) {
-                reqObj.sectionInfo = {
-                    id: reqObj.sectionId
-                };
-                delete reqObj.sectionId;
             }
 
             if (reqObj.requesterInfo) {
@@ -330,8 +383,6 @@ const getDocumentRequests = async (req, res) => {
                 page: Number(page),
                 limit: Number(limit),
                 totalPages: Math.ceil(total / limit),
-                hasNextPage: Number(page) < Math.ceil(total / limit),
-                hasPrevPage: Number(page) > 1
             }
         });
     } catch (err) {
@@ -364,7 +415,6 @@ const getStudentDocumentRequests = async (req, res) => {
 
         const skip = (Number(page) - 1) * Number(limit);
 
-        // Get student info first
         const student = await User.findById(studentId)
             .select('name email rollNo classInfo sectionInfo school')
             .lean();
@@ -376,7 +426,6 @@ const getStudentDocumentRequests = async (req, res) => {
             });
         }
 
-        // Get document requests
         const query = DocumentRequest.find(filter)
             .populate({
                 path: 'requesterInfo',
@@ -396,45 +445,51 @@ const getStudentDocumentRequests = async (req, res) => {
             query.lean()
         ]);
 
-        // Format response with transformed structure
-        const formattedRequests = requests.map(request => {
+        const formattedRequests = await Promise.all(requests.map(async (request) => {
             const reqObj = { ...request };
 
-            // Remove the original studentId, classId, sectionId fields
             delete reqObj.studentId;
-            delete reqObj.classId;
-            delete reqObj.sectionId;
 
-            // Add studentInfo
             reqObj.studentInfo = {
                 _id: student._id,
                 name: student.name,
                 email: student.email,
-                rollNo: student.rollNo
+                rollNo: student.rollNo,
+                school: student.school
             };
 
-            // Add classInfo from student's classInfo
             if (student.classInfo && student.classInfo.id) {
-                reqObj.classInfo = {
-                    id: student.classInfo.id
-                };
+                const classSectionInfo = await getClassSectionInfo(
+                    student.classInfo.id,
+                    student.sectionInfo ? student.sectionInfo.id : null,
+                    student.school
+                );
+
+                if (classSectionInfo.class) {
+                    reqObj.classInfo = {
+                        id: classSectionInfo.class._id,
+                        name: classSectionInfo.class.name
+                    };
+                }
+
+                if (classSectionInfo.section) {
+                    reqObj.sectionInfo = {
+                        id: classSectionInfo.section._id,
+                        name: classSectionInfo.section.name
+                    };
+                }
+
+                delete reqObj.classId;
+                delete reqObj.sectionId;
             }
 
-            // Add sectionInfo from student's sectionInfo
-            if (student.sectionInfo && student.sectionInfo.id) {
-                reqObj.sectionInfo = {
-                    id: student.sectionInfo.id
-                };
-            }
-
-            // Format requester info
             if (reqObj.requesterInfo) {
                 reqObj.requestedBy = reqObj.requesterInfo;
                 delete reqObj.requesterInfo;
             }
 
             return reqObj;
-        });
+        }));
 
         res.status(200).json({
             total,
@@ -545,7 +600,7 @@ const updateDocumentRequest = async (req, res) => {
             documentRequest.status = 'expired';
             documentRequest.reviewedBy = user._id;
             documentRequest.reviewedAt = now;
-            
+
             documentRequest.reviewComments = documentRequest.reviewComments
 
         }
@@ -620,7 +675,6 @@ const deleteDocumentRequest = async (req, res) => {
 };
 
 // STUDENT DOCUMENTS
-// Student upload document for a specific request
 const uploadDocumentForRequest = async (req, res) => {
     try {
         validateFiles(req.files, 5, 10);

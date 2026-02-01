@@ -49,7 +49,6 @@ const sliderBaseSchema = {
 // Validation schemas
 const createSuperadminSliderSchema = Joi.object({
     ...sliderBaseSchema,
-    // Superadmin can only create global category
     category: Joi.string()
         .valid('global')
         .default('global')

@@ -26,9 +26,7 @@ const {
 } = require("../validators/quiz.validator");
 const { upload } = require("../utils/multer");
 
-// Middleware to detect user role
 const detectRole = (req, res, next) => {
-  // School detection
   if (!req.user.role) {
     if (req.user.schoolId) {
       req.user.role = 'school';
@@ -39,26 +37,24 @@ const detectRole = (req, res, next) => {
   next();
 };
 
-// Quiz creation with file upload (School, Admin Office, Teacher)
 router.post("/",
   protect,
   detectRole,
-  (req, res, next) => {
-    const allowed = ['school', 'admin_office', 'teacher'];
-    if (!allowed.includes(req.user.role)) {
-      return res.status(403).json({ 
-        message: 'Only school, admin office, or teachers can create quizzes' 
-      });
-    }
-    next();
-  },
-  upload.single('file'), // Field name: questionsFile
+  // (req, res, next) => {
+  //   const allowed = ['school', 'admin_office', 'teacher'];
+  //   if (!allowed.includes(req.user.role)) {
+  //     return res.status(403).json({ 
+  //       message: 'Only school, admin office, or teachers can create quizzes' 
+  //     });
+  //   }
+  //   next();
+  // },
+  upload.single('file'), 
   validateFile,
   validateQuizGroup,
   createQuizGroup
 );
 
-// Update quiz
 router.put("/:id",
   protect,
   detectRole,
@@ -66,14 +62,12 @@ router.put("/:id",
   updateQuizGroup
 );
 
-// Delete quiz
 router.delete("/:id",
   protect,
   detectRole,
   deleteQuizGroup
 );
 
-// Get quiz groups with filters
 router.get("/",
   protect,
   detectRole,
@@ -81,7 +75,6 @@ router.get("/",
   getGroups
 );
 
-// Get single quiz for attempt (all authenticated users)
 router.get("/:id",
   protect,
   detectRole,

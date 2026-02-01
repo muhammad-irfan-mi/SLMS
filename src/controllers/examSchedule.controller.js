@@ -259,6 +259,7 @@ const addExamSchedule = async (req, res) => {
         const subject = await Subject.findOne({
           _id: subjectId,
           class: classId,
+          isActive: true,
           $or: [
             { sectionId: sectionId },
             { sectionId: null }
@@ -426,22 +427,37 @@ const getSchedule = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
-    const total = await ExamSchedule.countDocuments(filter);
+    // const total = await ExamSchedule.countDocuments(filter);
 
     const schedules = await ExamSchedule.find(filter)
+      // .populate("subjectId", "name code")
+      .populate({
+        path: "subjectId",
+        select: "name code isActive"
+      })
       .populate("classId", "class sections")
-      .populate("subjectId", "name code")
       .populate("teacherId", "name email")
       .sort({ [sortBy]: sortDirection, startTime: 1 })
       .skip(skip)
       .limit(Number(limit))
       .lean();
 
-    const formatted = schedules.map(schedule => ({
+    const filteredSchedules = schedules.filter(schedule => {
+      if (!schedule.subjectId) return false;
+      return schedule.subjectId.isActive !== false;
+    });
+
+    const formatted = filteredSchedules.map(schedule => ({
       _id: schedule._id,
       class: schedule.classId.class,
       section: extractSection(schedule.classId, schedule.sectionId),
-      subject: schedule.subjectId,
+      // subject: schedule.subjectId,
+      subject: {
+        _id: schedule.subjectId._id,
+        name: schedule.subjectId.name,
+        code: schedule.subjectId.code,
+        // Don't include isActive in response if you don't want to show it
+      },
       teacher: schedule.teacherId,
       examDate: schedule.examDate,
       day: schedule.day,
@@ -454,7 +470,22 @@ const getSchedule = async (req, res) => {
       updatedAt: schedule.updatedAt
     }));
 
+    // const totalPages = Math.ceil(total / Number(limit));
+    const totalQuery = ExamSchedule.find(filter)
+      .populate({
+        path: "subjectId",
+        select: "isActive"
+      })
+      .lean();
+
+    const allSchedulesForCount = await totalQuery;
+    const total = allSchedulesForCount.filter(schedule => {
+      if (!schedule.subjectId) return false;
+      return schedule.subjectId.isActive !== false;
+    }).length;
+
     const totalPages = Math.ceil(total / Number(limit));
+
 
     res.json({
       success: true,
@@ -510,19 +541,24 @@ const getScheduleByTeacher = async (req, res) => {
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    const [total, schedules] = await Promise.all([
-      ExamSchedule.countDocuments(filter),
-      ExamSchedule.find(filter)
-        .populate("classId", "class sections")
-        .populate("subjectId", "name code")
-        .populate("teacherId", "name email")
-        .sort({ examDate: 1, startTime: 1 })
-        .skip(skip)
-        .limit(Number(limit))
-        .lean()
-    ]);
+    const schedules = await ExamSchedule.find(filter)
+      .populate({
+        path: "subjectId",
+        select: "name code isActive"
+      })
+      .populate("classId", "class sections")
+      .populate("teacherId", "name email")
+      .sort({ examDate: 1, startTime: 1 })
+      .lean();
 
-    const formatted = schedules.map(schedule => ({
+    const filteredSchedules = schedules.filter(schedule => {
+      if (!schedule.subjectId) return false;
+      return schedule.subjectId.isActive !== false;
+    });
+
+    const paginatedSchedules = filteredSchedules.slice(skip, skip + Number(limit));
+
+    const formatted = paginatedSchedules.map(schedule => ({
       _id: schedule._id,
       class: {
         _id: schedule.classId._id,
@@ -548,6 +584,7 @@ const getScheduleByTeacher = async (req, res) => {
       status: schedule.status
     }));
 
+    const total = filteredSchedules.length;
     const totalPages = Math.ceil(total / Number(limit));
 
     res.status(200).json({
@@ -613,19 +650,25 @@ const getScheduleByStudent = async (req, res) => {
 
     const skip = (Number(page) - 1) * Number(limit);
 
-    const [total, schedules] = await Promise.all([
-      ExamSchedule.countDocuments(filter),
-      ExamSchedule.find(filter)
-        .populate("classId", "class sections")
-        .populate("subjectId", "name code")
-        .populate("teacherId", "name email")
-        .sort({ examDate: 1, startTime: 1 })
-        .skip(skip)
-        .limit(Number(limit))
-        .lean()
-    ]);
+    // Get all schedules first
+    const schedules = await ExamSchedule.find(filter)
+      .populate({
+        path: "subjectId",
+        select: "name code isActive"
+      })
+      .populate("classId", "class sections")
+      .populate("teacherId", "name email")
+      .sort({ examDate: 1, startTime: 1 })
+      .lean();
 
-    const formatted = schedules.map(schedule => ({
+    const filteredSchedules = schedules.filter(schedule => {
+      if (!schedule.subjectId) return false;
+      return schedule.subjectId.isActive !== false;
+    });
+
+    const paginatedSchedules = filteredSchedules.slice(skip, skip + Number(limit));
+
+    const formatted = paginatedSchedules.map(schedule => ({
       _id: schedule._id,
       class: {
         _id: schedule.classId._id,
@@ -651,6 +694,7 @@ const getScheduleByStudent = async (req, res) => {
       status: schedule.status
     }));
 
+    const total = filteredSchedules.length;
     const totalPages = Math.ceil(total / Number(limit));
 
     res.status(200).json({

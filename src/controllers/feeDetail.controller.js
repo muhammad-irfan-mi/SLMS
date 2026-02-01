@@ -1,3 +1,5 @@
+const BankAccount = require("../models/BankAccount");
+const ClassSection = require("../models/ClassSection");
 const FeeDetail = require("../models/FeeDetail");
 const User = require("../models/User");
 const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
@@ -23,6 +25,37 @@ async function uploadImage(files, fieldName, existingImage = null) {
 
   return image;
 }
+
+const getClassSectionInfo = async (classId, sectionId, schoolId) => {
+  const classSection = await ClassSection.findOne({
+    _id: classId,
+    school: schoolId
+  }).lean();
+
+  if (!classSection) {
+    return { class: null, section: null };
+  }
+
+  const classInfo = {
+    _id: classSection._id,
+    name: classSection.class
+  };
+
+  let sectionInfo = null;
+  if (sectionId && classSection.sections) {
+    const section = classSection.sections.find(
+      sec => sec._id.toString() === sectionId.toString()
+    );
+    if (section) {
+      sectionInfo = {
+        _id: section._id,
+        name: section.name
+      };
+    }
+  }
+
+  return { class: classInfo, section: sectionInfo };
+};
 
 const createFeeDetail = async (req, res) => {
   try {
@@ -186,7 +219,7 @@ const getAllFeeDetails = async (req, res) => {
 
     const [fees, total] = await Promise.all([
       FeeDetail.find(filter)
-        .populate("studentId", "name email classId sectionId")
+        .populate("studentId", "name email rollNo school classInfo sectionInfo")
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
@@ -195,12 +228,56 @@ const getAllFeeDetails = async (req, res) => {
       FeeDetail.countDocuments(filter),
     ]);
 
+    const formattedFees = await Promise.all(fees.map(async (fee) => {
+      const feeObj = { ...fee };
+
+      let schoolId = null;
+      if (feeObj.studentId && feeObj.studentId.school) {
+        schoolId = feeObj.studentId.school;
+      }
+
+      if (feeObj.studentId && feeObj.studentId.classInfo && feeObj.studentId.classInfo.id) {
+        const classSectionInfo = await getClassSectionInfo(
+          feeObj.studentId.classInfo.id,
+          feeObj.studentId.sectionInfo ? feeObj.studentId.sectionInfo.id : null,
+          schoolId
+        );
+
+        if (classSectionInfo.class) {
+          feeObj.classInfo = {
+            id: classSectionInfo.class._id,
+            name: classSectionInfo.class.name
+          };
+        }
+
+        if (classSectionInfo.section) {
+          feeObj.sectionInfo = {
+            id: classSectionInfo.section._id,
+            name: classSectionInfo.section.name
+          };
+        }
+      }
+
+      if (feeObj.studentId) {
+        feeObj.studentInfo = {
+          _id: feeObj.studentId._id,
+          name: feeObj.studentId.name,
+          email: feeObj.studentId.email,
+          rollNo: feeObj.studentId.rollNo,
+          school: feeObj.studentId.school
+        };
+        delete feeObj.studentId;
+      }
+
+      return feeObj;
+    }));
+
     return res.status(200).json({
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit),
-      fees,
+      fees: formattedFees,
     });
   } catch (err) {
     console.error("Error fetching all fee records:", err);
@@ -220,7 +297,15 @@ const getMyFeeDetails = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    const [fees, total, student] = await Promise.all([
+    const student = await User.findById(studentId)
+      .select("name email school classInfo sectionInfo")
+      .lean();
+
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    const [fees, total, bankAccounts] = await Promise.all([
       FeeDetail.find({ studentId })
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -229,9 +314,14 @@ const getMyFeeDetails = async (req, res) => {
 
       FeeDetail.countDocuments({ studentId }),
 
-      User.findById(studentId).select("name email"),
+      BankAccount.find({
+        school: student.school,
+        isActive: true
+      })
+        .select('accountHolderName accountNumber bankName branchName accountType ifscCode')
+        .sort({ createdAt: -1 })
+        .lean()
     ]);
-    console.log(fees, "fees")
 
     return res.status(200).json({
       total,
@@ -242,15 +332,16 @@ const getMyFeeDetails = async (req, res) => {
         _id: student._id,
         name: student.name,
         email: student.email,
+        classInfo: student.classInfo,
+        sectionInfo: student.sectionInfo,
+        fees,
+        bankAccounts
       },
-      fees,
     });
   } catch (err) {
-    console.error("Error fetching student fees:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
-
 
 module.exports = {
   createFeeDetail,

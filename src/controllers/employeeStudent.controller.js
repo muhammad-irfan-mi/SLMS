@@ -6,6 +6,7 @@ const School = require("../models/School");
 const ClassSection = require("../models/ClassSection");
 const { uploadFileToS3, deleteFileFromS3 } = require("../services/s3.service");
 const emailService = require("../services/email.service");
+const { sendProfileUpdateNotification, sendEmailChangeNotification } = require("../utils/notificationService");
 
 // Helper for S3 uploads
 async function uploadFiles(files, existingImages = {}) {
@@ -436,126 +437,6 @@ async function getClassSectionInfo(classId, sectionId, schoolId) {
     }
 }
 
-// ADD EMPLOYEE (Teacher / Admin Office) 
-// const addEmployeeBySchool = async (req, res) => {
-//     try {
-//         const {
-//             name,
-//             email,
-//             phone,
-//             address,
-//             cnic,
-//             role,
-//             salary,
-//             joiningDate,
-//             isIncharge,
-//             classId,
-//             sectionId,
-//         } = req.body;
-
-//         const schoolId = req.user.school;
-
-//         const existing = await User.findOne({ email, role: { $in: ["teacher", "admin_office"] } });
-//         if (existing)
-//             return res.status(400).json({ message: "User with this email already exists" });
-
-//         const images = await uploadFiles(req.files);
-
-//         let classInfo = null;
-//         let sectionInfo = null;
-
-//         if (role === "teacher" && isIncharge === "true" && classId) {
-//             const result = await getClassAndSection(classId, sectionId);
-//             if (result.error) {
-//                 return res.status(400).json({ message: result.error });
-//             }
-//             classInfo = result.classInfo;
-//             sectionInfo = result.sectionInfo;
-//         }
-
-//         const inchargeFlag = role === "teacher" ? isIncharge === "true" : undefined;
-
-//         const otpCode = generateOTP();
-//         const otpExpiry = calculateOTPExpiry(10);
-
-//         if (existing && !existing.verified) {
-//             existing.tempData = {
-//                 name,
-//                 email: email.toLowerCase(),
-//                 phone,
-//                 address,
-//                 cnic,
-//                 role,
-//                 salary: role === "teacher" ? salary : salary || null,
-//                 joiningDate,
-//                 isIncharge: inchargeFlag ?? false,
-//                 classInfo,
-//                 sectionInfo,
-//                 school: schoolId,
-//                 images,
-//             };
-//             existing.otp = {
-//                 code: otpCode,
-//                 expiresAt: otpExpiry,
-//                 attempts: 0,
-//                 lastAttempt: new Date()
-//             };
-//             await existing.save();
-//         } else {
-//             const newUser = new User({
-//                 name,
-//                 email: email.toLowerCase(),
-//                 phone,
-//                 address,
-//                 cnic,
-//                 role,
-//                 salary: role === "teacher" ? salary : salary || null,
-//                 joiningDate,
-//                 isIncharge: inchargeFlag ?? false,
-//                 classInfo,
-//                 sectionInfo,
-//                 school: schoolId,
-//                 images,
-//                 verified: false,
-//                 tempData: {
-//                     name,
-//                     email: email.toLowerCase(),
-//                     phone,
-//                     address,
-//                     cnic,
-//                     role,
-//                     salary: role === "teacher" ? salary : salary || null,
-//                     joiningDate,
-//                     isIncharge: inchargeFlag ?? false,
-//                     classInfo,
-//                     sectionInfo,
-//                     school: schoolId,
-//                     images,
-//                 },
-//                 otp: {
-//                     code: otpCode,
-//                     expiresAt: otpExpiry,
-//                     attempts: 0,
-//                     lastAttempt: new Date()
-//                 }
-//             });
-//             await newUser.save();
-//         }
-//         await emailService.sendUserOTPEmail(email, otpCode, name, schoolId, null, role);
-//         return res.status(201).json({
-//             message: "Employee added successfully. OTP sent to email for verification.",
-//             email,
-//             otpExpiry,
-//             note: "User must verify OTP before setting password"
-//         });
-//     } catch (err) {
-//         console.error("Error adding employee:", err);
-//         return res.status(500).json({
-//             message: err.message || "Server error while adding employee"
-//         });
-//     }
-// };
-
 const addEmployeeBySchool = async (req, res) => {
     try {
         const {
@@ -707,43 +588,97 @@ const editEmployeeBySchool = async (req, res) => {
         let classInfo = existing.classInfo;
         let sectionInfo = existing.sectionInfo;
 
-        if (
-            existing.role === "teacher" &&
-            req.body.isIncharge === "true" &&
-            req.body.classId
-        ) {
+        const changes = [];
+
+        if (existing.role === "teacher" && req.body.classId) {
             const result = await getClassAndSection(req.body.classId, req.body.sectionId);
             if (result.error) {
                 return res.status(400).json({ message: result.error });
             }
+
+            if (classInfo && classInfo.id && classInfo.id.toString() !== req.body.classId) {
+                changes.push(`Class assignment changed to ${result.classInfo.name}`);
+            }
+            if (sectionInfo && sectionInfo.id && sectionInfo.id.toString() !== req.body.sectionId) {
+                changes.push(`Section assignment changed to ${result.sectionInfo.name}`);
+            }
+
             classInfo = result.classInfo;
             sectionInfo = result.sectionInfo;
         }
 
+        if (req.body.name && req.body.name !== existing.name) {
+            changes.push(`Name changed from "${existing.name}" to "${req.body.name}"`);
+        }
+        if (req.body.phone && req.body.phone !== existing.phone) {
+            changes.push(`Phone number updated`);
+        }
+        if (req.body.address && req.body.address !== existing.address) {
+            changes.push(`Address updated`);
+        }
+        if (req.body.cnic && req.body.cnic !== existing.cnic) {
+            changes.push(`CNIC updated`);
+        }
+        if (req.body.salary && req.body.salary !== existing.salary) {
+            changes.push(`Salary updated`);
+        }
+        if (req.body.joiningDate && req.body.joiningDate !== existing.joiningDate) {
+            changes.push(`Joining date updated`);
+        }
+
+        const isInchargeValue = req.body.isIncharge !== undefined
+            ? req.body.isIncharge === "true"
+            : existing.isIncharge;
+
+        if (isInchargeValue !== existing.isIncharge) {
+            changes.push(`In-charge status: ${existing.isIncharge ? 'Removed' : 'Assigned'}`);
+        }
+
         let otpData = existing.otp;
         let verified = existing.verified;
+        let emailChanged = false;
+        let oldEmail = null;
 
         if (req.body.email) {
             const newEmail = req.body.email.toLowerCase();
 
-            const otpCode = generateOTP();
-            otpData = {
-                code: otpCode,
-                expiresAt: calculateOTPExpiry(10),
-                attempts: 0,
-                lastAttempt: new Date()
-            };
+            if (newEmail !== existing.email.toLowerCase()) {
+                oldEmail = existing.email;
+                emailChanged = true;
+                changes.push(`Email changed from ${existing.email} to ${newEmail}`);
 
-            verified = false;
+                const emailExists = await User.findOne({
+                    _id: { $ne: id },
+                    email: newEmail,
+                    school: schoolId,
+                    role: existing.role,
+                    isActive: true
+                });
 
-            await emailService.sendUserOTPEmail(
-                newEmail,
-                otpCode,
-                req.body.name || existing.name
-            );
+                if (emailExists) {
+                    return res.status(400).json({
+                        message: `Email "${newEmail}" already exists for another ${existing.role}`
+                    });
+                }
+                const otpCode = generateOTP();
+                otpData = {
+                    code: otpCode,
+                    expiresAt: calculateOTPExpiry(10),
+                    attempts: 0,
+                    lastAttempt: new Date()
+                };
+
+                verified = false;
+
+                await emailService.sendUserOTPEmail(
+                    newEmail,
+                    otpCode,
+                    req.body.name || existing.name
+                );
+            }
         }
 
-        const updatedFields = {
+        const updateFields = {
             name: req.body.name ?? existing.name,
             email: req.body.email
                 ? req.body.email.toLowerCase()
@@ -753,31 +688,70 @@ const editEmployeeBySchool = async (req, res) => {
             cnic: req.body.cnic ?? existing.cnic,
             salary: req.body.salary ?? existing.salary,
             joiningDate: req.body.joiningDate ?? existing.joiningDate,
-            isIncharge:
-                req.body.isIncharge !== undefined
-                    ? req.body.isIncharge === "true"
-                    : existing.isIncharge,
+            isIncharge: isInchargeValue,
             classInfo,
             sectionInfo,
             images,
             otp: otpData,
-            verified
+            verified,
+            updatedAt: new Date()
         };
 
         if (req.body.password) {
-            updatedFields.password = await bcrypt.hash(req.body.password, 10);
+            changes.push("Password reset requested");
+            updateFields.password = await bcrypt.hash(req.body.password, 10);
         }
 
         const updatedUser = await User.findByIdAndUpdate(
             id,
-            updatedFields,
-            { new: true }
+            updateFields,
+            { new: true, runValidators: true }
         );
 
+        let notificationsSent = {
+            profileUpdate: false,
+            emailChange: false
+        };
+
+        try {
+            if (changes.length > 0) {
+                await sendProfileUpdateNotification({
+                    user: {
+                        _id: existing._id,
+                        name: req.body.name || existing.name,
+                        email: req.body.email || existing.email,
+                        school: schoolId,
+                        role: existing.role
+                    },
+                    updatedBy: req.user._id,
+                    changes,
+                    updateType: existing.role === 'teacher' ? 'selected_teachers' : 'all'
+                });
+                notificationsSent.profileUpdate = true;
+            }
+
+            if (emailChanged && oldEmail) {
+                await sendEmailChangeNotification({
+                    user: {
+                        _id: existing._id,
+                        name: req.body.name || existing.name,
+                        school: schoolId,
+                        role: existing.role
+                    },
+                    oldEmail,
+                    newEmail: req.body.email.toLowerCase(),
+                    updatedBy: req.user._id
+                });
+                notificationsSent.emailChange = true;
+            }
+        } catch (notificationError) {
+            console.error('Error sending notifications:', notificationError.message);
+        }
+
         return res.status(200).json({
-            message: req.body.email
-                ? "Employee updated. OTP sent to updated email."
-                : "Employee updated successfully.",
+            message: emailChanged
+                ? `${existing.role.charAt(0).toUpperCase() + existing.role.slice(1)} updated. OTP sent to new email for verification.`
+                : `${existing.role.charAt(0).toUpperCase() + existing.role.slice(1)} updated successfully.`,
         });
 
     } catch (err) {
@@ -1038,7 +1012,8 @@ const editStudentBySchool = async (req, res) => {
 
         const { email, rollNo, classId, sectionId, username } = req.body;
 
-        // 1. Class / Section
+        const changes = [];
+
         let classInfo = existing.classInfo;
         let sectionInfo = existing.sectionInfo;
 
@@ -1054,8 +1029,41 @@ const editStudentBySchool = async (req, res) => {
             if (result.error) {
                 return res.status(400).json({ message: result.error });
             }
+
+            if (classInfo && classInfo.id && classInfo.id.toString() !== classId) {
+                changes.push(`Class changed from ${existing.classInfo?.name || 'Previous class'} to ${result.classInfo.name}`);
+            }
+
+            if (sectionInfo && sectionInfo.id && sectionInfo.id.toString() !== sectionId) {
+                changes.push(`Section changed from ${existing.sectionInfo?.name || 'Previous section'} to ${result.sectionInfo.name}`);
+            }
+
             classInfo = result.classInfo;
             sectionInfo = result.sectionInfo;
+        }
+
+        if (rollNo && rollNo !== existing.rollNo) {
+            changes.push(`Roll number changed from "${existing.rollNo || 'Not set'}" to "${rollNo}"`);
+        }
+
+        if (username && username.toLowerCase() !== existing.username?.toLowerCase()) {
+            changes.push(`Username changed from "${existing.username || 'Not set'}" to "${username}"`);
+        }
+
+        if (req.body.name && req.body.name !== existing.name) {
+            changes.push(`Name changed from "${existing.name}" to "${req.body.name}"`);
+        }
+        if (req.body.phone && req.body.phone !== existing.phone) {
+            changes.push(`Phone number updated`);
+        }
+        if (req.body.address && req.body.address !== existing.address) {
+            changes.push(`Address updated`);
+        }
+        if (req.body.fatherName && req.body.fatherName !== existing.fatherName) {
+            changes.push(`Father's name updated`);
+        }
+        if (req.body.cnic && req.body.cnic !== existing.cnic) {
+            changes.push(`CNIC updated`);
         }
 
         if (rollNo) {
@@ -1098,8 +1106,29 @@ const editStudentBySchool = async (req, res) => {
 
         let otpData = existing.otp;
         let verified = existing.verified;
+        let emailChanged = false;
+        let oldEmail = null;
 
         if (email && email.toLowerCase() !== existing.email.toLowerCase()) {
+
+            oldEmail = existing.email;
+            emailChanged = true;
+            changes.push(`Email changed from ${existing.email} to ${email}`);
+
+            const emailExists = await User.findOne({
+                _id: { $ne: id },
+                email: email.toLowerCase(),
+                school: schoolId,
+                role: "student",
+                isActive: true
+            });
+
+            if (emailExists) {
+                return res.status(400).json({
+                    message: `Email "${email}" already exists for another student`
+                });
+            }
+
             const otpCode = generateOTP();
             otpData = {
                 code: otpCode,
@@ -1116,29 +1145,72 @@ const editStudentBySchool = async (req, res) => {
             );
         }
 
+        const updateData = {
+            name: req.body.name ?? existing.name,
+            email: email ? email.toLowerCase() : existing.email,
+            phone: req.body.phone ?? existing.phone,
+            address: req.body.address ?? existing.address,
+            cnic: req.body.cnic ?? existing.cnic,
+            fatherName: req.body.fatherName ?? existing.fatherName,
+            username: username ? username.toLowerCase() : existing.username,
+            rollNo: rollNo ?? existing.rollNo,
+            classInfo,
+            sectionInfo,
+            images,
+            otp: otpData,
+            verified,
+            updatedAt: new Date()
+        };
+
         const updated = await User.findByIdAndUpdate(
             id,
-            {
-                name: req.body.name ?? existing.name,
-                email: email ? email.toLowerCase() : existing.email,
-                phone: req.body.phone ?? existing.phone,
-                address: req.body.address ?? existing.address,
-                cnic: req.body.cnic ?? existing.cnic,
-                fatherName: req.body.fatherName ?? existing.fatherName,
-                username: username ? username.toLowerCase() : existing.username,
-                rollNo: rollNo ?? existing.rollNo,
-                classInfo,
-                sectionInfo,
-                images,
-                otp: otpData,
-                verified
-            },
-            { new: true }
+            updateData,
+            { new: true, runValidators: true }
         );
 
+        let notificationsSent = {
+            profileUpdate: false,
+            emailChange: false
+        };
+
+        try {
+            if (changes.length > 0) {
+                await sendProfileUpdateNotification({
+                    user: {
+                        _id: existing._id,
+                        name: req.body.name || existing.name,
+                        email: req.body.email || existing.email,
+                        school: schoolId,
+                        role: existing.role
+                    },
+                    updatedBy: req.user._id,
+                    changes,
+                    updateType: existing.role === 'student' ? 'selected_students' : 'all_students'
+                });
+                notificationsSent.profileUpdate = true;
+            }
+
+            if (emailChanged && oldEmail) {
+                await sendEmailChangeNotification({
+                    user: {
+                        _id: existing._id,
+                        name: req.body.name || existing.name,
+                        school: schoolId,
+                        role: existing.role
+                    },
+                    oldEmail,
+                    newEmail: req.body.email.toLowerCase(),
+                    updatedBy: req.user._id
+                });
+                notificationsSent.emailChange = true;
+            }
+        } catch (notificationError) {
+            console.error('Error sending notifications:', notificationError.message);
+        }
+
         return res.status(200).json({
-            message: email
-                ? "Student updated. OTP sent to new email."
+            message: emailChanged
+                ? "Student updated successfully. OTP sent to new email for verification."
                 : "Student updated successfully",
         });
 

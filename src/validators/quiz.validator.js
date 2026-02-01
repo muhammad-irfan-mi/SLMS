@@ -323,7 +323,61 @@ const validateQuizGroup = (req, res, next) => {
 };
 
 const validateQuizSubmission = (req, res, next) => {
-    const { error } = quizSubmissionSchema.validate(req.body, { abortEarly: false });
+    const { answers } = req.body;
+
+    // Don't require type in the request - we can determine it from the quiz
+    const simplifiedSchema = Joi.object({
+        answers: Joi.array()
+            .items(
+                Joi.object({
+                    questionId: Joi.string()
+                        .hex()
+                        .length(24)
+                        .required()
+                        .messages({
+                            'string.hex': 'Question ID must be a valid MongoDB ObjectId',
+                            'string.length': 'Question ID must be 24 characters'
+                        }),
+
+                    // Make type optional - we'll determine it from the quiz
+                    type: Joi.string()
+                        .valid('mcq', 'fill')
+                        .optional()
+                        .messages({
+                            'any.only': 'Answer type must be either "mcq" or "fill"'
+                        }),
+
+                    chosenIndex: Joi.number()
+                        .integer()
+                        .min(0)
+                        .optional()
+                        .messages({
+                            'number.base': 'Chosen index must be a number for MCQ',
+                            'number.min': 'Chosen index cannot be negative'
+                        }),
+
+                    answerText: Joi.string()
+                        .max(500)
+                        .optional()
+                        .allow('')
+                        .messages({
+                            'string.max': 'Answer text cannot exceed 500 characters'
+                        })
+                })
+                    .or('chosenIndex', 'answerText') // At least one of these must be present
+                    .messages({
+                        'object.missing': 'Either chosenIndex or answerText is required'
+                    })
+            )
+            .min(1)
+            .required()
+            .messages({
+                'array.min': 'At least one answer is required',
+                'array.base': 'Answers must be an array'
+            })
+    });
+
+    const { error } = simplifiedSchema.validate(req.body, { abortEarly: false });
 
     if (error) {
         const errors = error.details.map(detail => ({

@@ -31,6 +31,7 @@ const islamicAttendanceRoutes = require('./src/routes/dailyIslamicAttendance.rou
 const aiYusahRoutes = require('./src/routes/aiYusah.routes');
 const imageSliderRoutes = require('./src/routes/slider.routes');
 const quizRoutes = require('./src/routes/quiz.routes');
+const bankAccount = require('./src/routes/bankAccount.routes');
 const seedSuperAdmin = require('./src/seed/seedSuperAdmin');
 
 const app = express();
@@ -76,6 +77,7 @@ app.use('/api/nmazQuran', islamicAttendanceRoutes);
 app.use('/api/aiYusha', aiYusahRoutes);
 app.use('/api/slider', imageSliderRoutes);
 app.use('/api/quiz', quizRoutes);
+app.use('/api/bankAccount', bankAccount);
 
 app.get('/', (req, res) => res.send('School Auth Microservice API'));
 
