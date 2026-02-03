@@ -8,6 +8,7 @@ const {
     validateBody,
     validateQuery
 } = require("../validators/studentDocument.validation");
+const { sendDocumentRequestNotification, sendDocumentUploadNotification } = require("../utils/notificationService");
 
 async function handleFilesUpload(files, maxFiles = 5) {
     if (!files || files.length === 0) return [];
@@ -122,7 +123,6 @@ const populateClassSectionInfo = async (documents) => {
     }));
 };
 
-
 // Create document request
 const createDocumentRequest = async (req, res) => {
     try {
@@ -184,7 +184,17 @@ const createDocumentRequest = async (req, res) => {
             }
         }
 
+        // Ensure we have school ID to save with document request
+        const schoolId = requesterSchoolId || studentSchoolId;
+        if (!schoolId) {
+            return res.status(400).json({
+                success: false,
+                message: "School information not found"
+            });
+        }
+
         const documentRequest = await DocumentRequest.create({
+            school: schoolId,
             requestedBy: requestedById,
             requestedByModel,
             studentId,
@@ -195,8 +205,27 @@ const createDocumentRequest = async (req, res) => {
             requestType,
             documentType,
             dueDate: dueDate ? new Date(dueDate) : null,
-            status: 'pending'
+            status: 'pending',
+            school: schoolId // Make sure school is saved with the document request
         });
+
+        console.log('Document request created:', {
+            id: documentRequest._id,
+            school: documentRequest.school,
+            requestedBy: documentRequest.requestedBy,
+            studentId: documentRequest.studentId,
+            createdByRole: user.role
+        });
+
+        // ALWAYS notify student when document request is created
+        // (regardless of who creates it - teacher, admin, or school)
+        const notification = await sendDocumentRequestNotification({
+            documentRequest: documentRequest,
+            actor: req.user,
+            targetType: 'student' // Always student for document request creation
+        });
+
+        console.log('Notification result:', notification ? 'Success' : 'Failed');
 
         const populatedRequest = await DocumentRequest.findById(documentRequest._id)
             .populate({
@@ -220,7 +249,8 @@ const createDocumentRequest = async (req, res) => {
         res.status(201).json({
             success: true,
             message: "Document request created successfully",
-            data: formattedRequest
+            data: formattedRequest,
+            notificationSent: !!notification
         });
     } catch (err) {
         console.error("Create Document Request Error:", err);
@@ -607,6 +637,14 @@ const updateDocumentRequest = async (req, res) => {
 
         await documentRequest.save();
 
+        if (isStatusChanging) {
+            const notification = await sendDocumentRequestNotification({
+                documentRequest: documentRequest,
+                actor: req.user,
+                targetType: 'admin'
+            });
+        }
+
         const updatedRequest = await DocumentRequest.findById(id)
             .populate('requestedBy', 'name email role')
             .populate('reviewedBy', 'name email role')
@@ -682,6 +720,8 @@ const uploadDocumentForRequest = async (req, res) => {
         const { requestId } = req.params;
         const { text } = req.body;
         const studentId = req.user._id;
+        const user = req.user;
+
 
         const documentRequest = await DocumentRequest.findById(requestId);
         if (!documentRequest) {
@@ -725,11 +765,42 @@ const uploadDocumentForRequest = async (req, res) => {
             uploadedFor = 'school';
         } else if (documentRequest.requestedByModel === 'User') {
             const requester = await User.findById(documentRequest.requestedBy);
-            if (requester && requester.role === 'teacher') {
-                uploadedFor = 'teacher';
-            } else if (requester && (requester.role === 'admin_office' || requester.role === 'superadmin')) {
-                uploadedFor = 'admin_office';
+            if (requester) {
+
+                if (requester.role === 'teacher') {
+                    uploadedFor = 'teacher';
+                } else if (requester.role === 'admin_office' || requester.role === 'superadmin') {
+                    uploadedFor = 'admin_office';
+                }
+            } else {
+                console.log('Requester not found for ID:', documentRequest.requestedBy);
             }
+        }
+
+        // FIX: Get school ID properly
+        let schoolId = documentRequest.school;
+
+        if (!schoolId) {
+            const student = await User.findById(documentRequest.studentId).select('school');
+            if (student && student.school) {
+                schoolId = student.school;
+            } else {
+                if (documentRequest.requestedByModel === 'User') {
+                    const requester = await User.findById(documentRequest.requestedBy).select('school');
+                    if (requester && requester.school) {
+                        schoolId = requester.school;
+                    }
+                }
+            }
+        } else {
+            console.log('Using school from document request:', schoolId);
+        }
+
+        if (!schoolId) {
+            return res.status(400).json({
+                success: false,
+                message: "School information not found"
+            });
         }
 
         const studentDocument = await StudentDocument.create({
@@ -743,13 +814,20 @@ const uploadDocumentForRequest = async (req, res) => {
             requestedByModel: documentRequest.requestedByModel,
             requestType: documentRequest.requestType,
             requestDetails: documentRequest.description,
-            status: 'submitted'
+            status: 'submitted',
+            school: schoolId
         });
+
 
         documentRequest.uploadedDocument = studentDocument._id;
         documentRequest.uploadedAt = new Date();
         documentRequest.status = 'uploaded';
         await documentRequest.save();
+
+        const notification = await sendDocumentUploadNotification({
+            studentDocument: studentDocument,
+            actor: req.user
+        });
 
         res.status(201).json({
             success: true,
@@ -757,10 +835,10 @@ const uploadDocumentForRequest = async (req, res) => {
             data: {
                 document: studentDocument,
                 request: documentRequest
-            }
+            },
+            notificationSent: !!notification
         });
     } catch (err) {
-        console.error("Upload Document For Request Error:", err);
 
         if (req.files && req.files.length > 0) {
             for (const file of req.files) {
@@ -832,9 +910,7 @@ const uploadGeneralDocument = async (req, res) => {
             data: document
         });
     } catch (err) {
-        console.error("Upload General Document Error:", err);
 
-        // Cleanup uploaded files on error
         if (req.files && req.files.length > 0) {
             for (const file of req.files) {
                 await deleteFileFromS3(file.key || file.location).catch(console.error);
@@ -855,12 +931,10 @@ const updateDocument = async (req, res) => {
         const { id } = req.params;
         const { text, uploadedFor } = req.body;
 
-        // Validate files if present
         if (req.files && req.files.length > 0) {
             validateFiles(req.files, 5, 10);
         }
 
-        // Find document
         const document = await StudentDocument.findById(id);
         if (!document) {
             return res.status(404).json({
@@ -869,7 +943,6 @@ const updateDocument = async (req, res) => {
             });
         }
 
-        // Check if student owns this document
         if (document.studentId.toString() !== req.user._id.toString()) {
             return res.status(403).json({
                 success: false,
@@ -877,7 +950,6 @@ const updateDocument = async (req, res) => {
             });
         }
 
-        // Check if document is still editable
         if (document.status !== 'submitted' && document.status !== 'pending') {
             return res.status(400).json({
                 success: false,
@@ -885,24 +957,19 @@ const updateDocument = async (req, res) => {
             });
         }
 
-        // Handle file updates
         if (req.files && req.files.length > 0) {
-            // Delete old files
             if (document.files && document.files.length > 0) {
                 for (const file of document.files) {
                     await deleteFileFromS3(file).catch(console.error);
                 }
             }
 
-            // Upload new files
             document.files = await handleFilesUpload(req.files);
         }
 
-        // Update fields
         if (text !== undefined) document.text = text;
         if (uploadedFor) document.uploadedFor = uploadedFor;
 
-        // Update status based on if it's for a request
         const documentRequest = await DocumentRequest.findOne({ uploadedDocument: id });
         if (documentRequest) {
             document.status = 'pending';
@@ -918,7 +985,6 @@ const updateDocument = async (req, res) => {
             data: document
         });
     } catch (err) {
-        console.error("Update Document Error:", err);
         res.status(500).json({
             success: false,
             message: err.message || "Server error",
@@ -940,7 +1006,6 @@ const deleteDocument = async (req, res) => {
             });
         }
 
-        // Check if student owns this document
         if (document.studentId.toString() !== req.user._id.toString()) {
             return res.status(403).json({
                 success: false,
@@ -948,14 +1013,12 @@ const deleteDocument = async (req, res) => {
             });
         }
 
-        // Delete files from S3
         if (document.files && document.files.length > 0) {
             for (const file of document.files) {
                 await deleteFileFromS3(file).catch(console.error);
             }
         }
 
-        // If document is linked to a request, update the request
         const documentRequest = await DocumentRequest.findOne({ uploadedDocument: id });
         if (documentRequest) {
             documentRequest.uploadedDocument = null;
@@ -971,7 +1034,6 @@ const deleteDocument = async (req, res) => {
             message: "Document deleted successfully"
         });
     } catch (err) {
-        console.error("Delete Document Error:", err);
         res.status(500).json({
             success: false,
             message: err.message || "Server error",
@@ -980,7 +1042,6 @@ const deleteDocument = async (req, res) => {
     }
 };
 
-// Get student's own documents
 const getStudentDocuments = async (req, res) => {
     try {
         const studentId = req.user._id;
@@ -995,7 +1056,6 @@ const getStudentDocuments = async (req, res) => {
 
         const filter = { studentId };
 
-        // Optional filters
         if (uploadedFor) filter.uploadedFor = uploadedFor;
         if (requestedBy) filter.requestedBy = requestedBy;
         if (requestType) filter.requestType = requestType;
@@ -1022,11 +1082,9 @@ const getStudentDocuments = async (req, res) => {
             query.lean()
         ]);
 
-        // Format the response and populate class/section info
         const formattedDocuments = await populateClassSectionInfo(documents.map(doc => {
             const docObj = { ...doc };
 
-            // Format requestedBy info
             if (doc.requestedByInfo) {
                 docObj.requestedBy = doc.requestedByInfo;
                 delete docObj.requestedByInfo;

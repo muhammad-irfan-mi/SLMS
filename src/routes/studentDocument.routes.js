@@ -21,7 +21,6 @@ const {
   // Validation functions
   validateBody,
   validateQuery,
-  validateFiles
 } = require("../controllers/studentDocument.controller");
 const {
   createDocumentRequestSchema,
@@ -51,8 +50,6 @@ router.put("/request/:id", protect, isTeacherOrAdminOfficeOrSchool, validateBody
 
 router.delete("/request/:id", protect, isTeacherOrAdminOfficeOrSchool, deleteDocumentRequest);
 
-
-// upload by student for a specific request
 router.post(
   "/upload/request/:requestId",
   protect,
@@ -62,7 +59,6 @@ router.post(
   uploadDocumentForRequest
 );
 
-// Student: Upload general document
 router.post(
   "/upload",
   protect,
@@ -72,7 +68,6 @@ router.post(
   uploadGeneralDocument
 );
 
-// Student: Update document
 router.put(
   "/:id",
   protect,
@@ -82,7 +77,6 @@ router.put(
   updateDocument
 );
 
-// Student: Delete document
 router.delete(
   "/:id",
   protect,
@@ -90,7 +84,6 @@ router.delete(
   deleteDocument
 );
 
-// Student: Get their documents
 router.get(
   "/student",
   protect,
@@ -99,7 +92,6 @@ router.get(
   getStudentDocuments
 );
 
-// Teacher/Admin/School: Get documents
 router.get(
   "/",
   protect,
@@ -108,7 +100,6 @@ router.get(
   getDocuments
 );
 
-// Teacher/Admin/School: Get documents for a specific request
 router.get(
   "/request/:requestId/documents",
   protect,
@@ -116,7 +107,6 @@ router.get(
   getDocumentsForRequest
 );
 
-// Teacher/Admin/School: Update document status
 router.patch(
   "/:id/status",
   protect,

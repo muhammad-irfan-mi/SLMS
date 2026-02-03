@@ -4,16 +4,20 @@ const leaveSchema = new mongoose.Schema(
   {
     school: { type: mongoose.Schema.Types.ObjectId, ref: "School", required: true },
 
-    studentId: { type: mongoose.Schema.Types.ObjectId, ref: "User"},
+    studentId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     studentName: String,
     classId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection" },
     sectionId: { type: mongoose.Schema.Types.ObjectId },
 
-    teacherId: { type: mongoose.Schema.Types.ObjectId, ref: "User"},
+    teacherId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     teacherName: String,
 
     userType: { type: String, enum: ["student", "teacher"], default: "student" },
-    date: { type: String, required: true },
+    dates: [{
+      type: String,
+      required: true,
+      match: /^\d{4}-\d{2}-\d{2}$/ 
+    }],
     subject: { type: String, required: true },
     reason: { type: String, required: true },
     appliedAt: { type: Date, default: Date.now },
@@ -29,6 +33,11 @@ const leaveSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-leaveSchema.index({ school: 1, studentId: 1, date: 1 }, { unique: false });
+leaveSchema.index({ school: 1, userType: 1, status: 1 });
+leaveSchema.index({ school: 1, studentId: 1 });
+leaveSchema.index({ school: 1, teacherId: 1 });
+
+// Index for checking specific dates
+leaveSchema.index({ "dates": 1 });
 
 module.exports = mongoose.model("Leave", leaveSchema);

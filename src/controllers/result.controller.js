@@ -2,6 +2,7 @@ const ClassSection = require("../models/ClassSection");
 const Result = require("../models/Result");
 const User = require("../models/User");
 const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
+const { sendResultNotification } = require("../utils/notificationService");
 
 // Get class and section info
 const getClassSectionInfo = async (classId, sectionId, schoolId) => {
@@ -36,16 +37,6 @@ const getClassSectionInfo = async (classId, sectionId, schoolId) => {
 };
 
 // Check if user is section incharge
-// const isSectionIncharge = async (userId, sectionId, schoolId) => {
-//     const user = await User.findOne({
-//         _id: userId,
-//         school: schoolId,
-//         role: 'teacher',
-//         'sectionInfo.id': sectionId
-//     });
-//     return user !== null;
-// };
-
 const isSectionIncharge = async (userId, sectionId, schoolId) => {
     const user = await User.findOne({
         _id: userId,
@@ -231,6 +222,12 @@ const addResult = async (req, res) => {
             image
         });
 
+        const notification = await sendResultNotification({
+            result: newResult,
+            actor: req.user,
+            action: 'creation'
+        });
+
         const populatedResult = await Result.findById(newResult._id).populate({
             path: 'studentId',
             select: 'name email rollNo admissionNo'
@@ -285,6 +282,12 @@ const updateResult = async (req, res) => {
         ).populate({
             path: 'studentId',
             select: 'name email rollNo admissionNo'
+        });
+
+        const notification = await sendResultNotification({
+            result: updatedResult,
+            actor: req.user,
+            action: 'update'
         });
 
         const transformedResult = await transformResult(updatedResult, schoolId);

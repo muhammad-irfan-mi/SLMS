@@ -253,7 +253,7 @@ const getNotices = async (req, res) => {
       query.lean()
     ]);
 
-      const processedNotices = await Promise.all(
+    const processedNotices = await Promise.all(
       notices.map(async (notice) => {
         const noticeObj = { ...notice };
 
@@ -277,12 +277,12 @@ const getNotices = async (req, res) => {
         if (userRole === "teacher") {
           delete noticeObj.targetTeacherIds;
           delete noticeObj.targetStudentIds;
-          
+
           delete noticeObj.readBy;
-          
+
           if (notice.target === "selected_teachers" || notice.target === "selected_students") {
             if (notice.target === "selected_teachers" && Array.isArray(notice.targetTeacherIds)) {
-              noticeObj.isTargetedToMe = notice.targetTeacherIds.some(id => 
+              noticeObj.isTargetedToMe = notice.targetTeacherIds.some(id =>
                 id.toString() === userId.toString()
               );
             } else if (notice.target === "selected_students") {
@@ -351,6 +351,96 @@ const getNotices = async (req, res) => {
 
   } catch (err) {
     console.error("getNotices error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+};
+
+const getAdminNotices = async (req, res) => {
+  try {
+    const user = req.user;
+    const schoolId = user.school || user.schoolId || (user.schoolInfo && user.schoolInfo.id);
+    const userId = user._id || user.id;
+    const userRole = user.role;
+
+    if (!["admin_office", "school", "superadmin"].includes(userRole)) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Admin privileges required."
+      });
+    }
+
+    const {
+      category,
+      activeOnly,
+      startDate,
+      endDate,
+      search,
+      page = 1,
+      limit = 10,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const now = new Date();
+    const filter = {
+      school: schoolId,
+      target: "admin"
+    };
+
+    if (category) filter.category = category;
+
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) {
+        filter.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        const endDateObj = new Date(endDate);
+        endDateObj.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = endDateObj;
+      }
+    }
+
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const sortDirection = sortOrder === "asc" ? 1 : -1;
+
+    const query = Notice.find(filter)
+      .populate("createdBy", "name email role")
+      .populate("classId", "class")
+      .populate("targetTeacherIds", "name email role")
+      .populate("targetStudentIds", "name email rollNo")
+      .populate({
+        path: 'readBy.user',
+        select: 'name email role',
+      })
+      .sort({
+        pinned: -1,
+        createdAt: sortDirection
+      })
+      .skip(skip)
+      .limit(Number(limit));
+
+    const [total, notices] = await Promise.all([
+      Notice.countDocuments(filter),
+      query.lean()
+    ]);
+
+    const totalPages = Math.ceil(total / Number(limit));
+
+    return res.status(200).json({
+      success: true,
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      totalPages,
+    });
+
+  } catch (err) {
     return res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -460,7 +550,7 @@ const getNoticesForStudent = async (req, res) => {
     const query = Notice.find(filter)
       .populate("createdBy", "name email role")
       .populate("classId", "class")
-      .select('-targetTeacherIds -targetStudentIds -createdBy') 
+      .select('-targetTeacherIds -targetStudentIds -createdBy')
       .sort({ pinned: -1, createdAt: -1 })
       .skip(skip)
       .limit(Number(limit));
@@ -475,11 +565,11 @@ const getNoticesForStudent = async (req, res) => {
     const readNotices = await Notice.find({
       _id: { $in: noticeIds },
       'readBy.user': studentId
-    }).select('_id readBy.$'); 
+    }).select('_id readBy.$');
 
     const readMap = new Map();
     readNotices.forEach(notice => {
-      const readEntry = notice.readBy.find(read => 
+      const readEntry = notice.readBy.find(read =>
         read.user.toString() === studentId.toString()
       );
       if (readEntry) {
@@ -492,7 +582,7 @@ const getNoticesForStudent = async (req, res) => {
 
       const readAt = readMap.get(notice._id.toString());
       noticeObj.isRead = !!readAt;
-      
+
       if (readAt) {
         noticeObj.readAt = readAt;
       }
@@ -505,7 +595,7 @@ const getNoticesForStudent = async (req, res) => {
       }
 
       if (notice.target === "selected_students" || notice.target === "custom") {
-        noticeObj.isTargetedToMe = true; 
+        noticeObj.isTargetedToMe = true;
       } else {
         noticeObj.isTargetedToMe = true;
       }
@@ -733,92 +823,11 @@ const markAsRead = async (req, res) => {
   }
 };
 
-// Mark multiple notices as read
-const markMultipleAsRead = async (req, res) => {
-  try {
-    const { noticeIds } = req.body;
-    const userId = req.user._id || req.user.id;
-
-    if (!Array.isArray(noticeIds) || noticeIds.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Please provide an array of notice IDs"
-      });
-    }
-
-    const invalidIds = noticeIds.filter(id => !mongoose.Types.ObjectId.isValid(id));
-    if (invalidIds.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid notice IDs: ${invalidIds.join(', ')}`
-      });
-    }
-
-    const notices = await Notice.find({ _id: { $in: noticeIds } });
-
-    const results = [];
-    const bulkOps = [];
-
-    for (const notice of notices) {
-      const alreadyRead = notice.readBy.some(read =>
-        read.user.toString() === userId.toString()
-      );
-
-      if (!alreadyRead) {
-        bulkOps.push({
-          updateOne: {
-            filter: {
-              _id: notice._id,
-              "readBy.user": { $ne: userId }
-            },
-            update: {
-              $push: {
-                readBy: {
-                  user: userId,
-                  readAt: new Date()
-                }
-              }
-            }
-          }
-        });
-      }
-
-      results.push({
-        noticeId: notice._id,
-        noticeTitle: notice.title,
-        alreadyRead: alreadyRead,
-        success: !alreadyRead
-      });
-    }
-
-    if (bulkOps.length > 0) {
-      await Notice.bulkWrite(bulkOps);
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "Notices processed successfully",
-      data: {
-        total: results.length,
-        markedAsRead: results.filter(r => r.success).length,
-        alreadyRead: results.filter(r => r.alreadyRead).length,
-        details: results
-      }
-    });
-
-  } catch (err) {
-    console.error("markMultipleAsRead error:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
-  }
-};
 
 module.exports = {
   createNotice,
   getNotices,
+  getAdminNotices,
   getNoticesForStudent,
   updateNotice,
   deleteNotice,

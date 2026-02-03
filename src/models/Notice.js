@@ -3,16 +3,22 @@ const { Schema } = mongoose;
 
 const noticeSchema = new Schema({
   school: { type: Schema.Types.ObjectId, ref: "School", required: true },
+  requestedByModel: {
+    type: String,
+    enum: ['User', 'School'],
+    default: 'User'
+  },
   title: { type: String, required: true },
   message: { type: String, required: true },
   createdBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
   target: {
     type: String,
-    enum: ["all_teachers", "selected_teachers", "all_students", "selected_students", "all", "custom", 'class'],
+    enum: ["all_teachers", "selected_teachers", "all_students", "selected_students", "all", "custom", 'class', 'admin'],
     default: "all"
   },
   targetTeacherIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
   targetStudentIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
+  targetAdminIds: [{ type: Schema.Types.ObjectId, ref: "User" }],
   classId: { type: Schema.Types.ObjectId, ref: "ClassSection" },
   sectionId: { type: Schema.Types.ObjectId },
   category: { type: String, enum: ["notice", "meeting", "holiday", "general"], default: "notice" },

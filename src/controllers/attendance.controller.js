@@ -93,6 +93,31 @@ const validateStudentEnrollment = async (studentIds, classId, sectionId, school)
     }
 };
 
+const getApprovedLeavesForDate = async (school, studentIds, date) => {
+    try {
+        const leaves = await Leave.find({
+            school,
+            studentId: { $in: studentIds },
+            dates: date, 
+            status: "approved",
+            userType: "student"
+        }).select('studentId dates').lean();
+
+        const leaveMap = new Map();
+
+        leaves.forEach(leave => {
+            if (leave.dates.includes(date)) {
+                leaveMap.set(String(leave.studentId), true);
+            }
+        });
+
+        return leaveMap;
+    } catch (error) {
+        console.error("Error fetching approved leaves:", error);
+        return new Map();
+    }
+};
+
 const markAttendance = async (req, res) => {
     try {
         const { classId, sectionId, students, date } = req.body;
@@ -158,37 +183,35 @@ const markAttendance = async (req, res) => {
             });
         }
 
-        // Fetch student details and approved leaves in parallel
-        const [users, leaves] = await Promise.all([
+        // Fetch student details and check for approved leaves
+        const [users, leaveMap] = await Promise.all([
             User.find({
                 _id: { $in: studentIds },
                 school
             })
                 .select("name email")
                 .lean(),
-
-            Leave.find({
-                school,
-                studentId: { $in: studentIds },
-                date: attendanceDate,
-                status: "approved"
-            }).lean()
+            getApprovedLeavesForDate(school, studentIds, attendanceDate)
         ]);
 
-        // Create maps for quick lookups
-        const leaveSet = new Set(leaves.map(l => String(l.studentId)));
+        // Create map for quick lookups
         const userMap = new Map(users.map(u => [String(u._id), u]));
 
         // Prepare final student records with automatic leave status
         const finalStudents = students.map(s => {
             const user = userMap.get(String(s.studentId));
-            const hasApprovedLeave = leaveSet.has(String(s.studentId));
+            const hasApprovedLeave = leaveMap.has(String(s.studentId));
+
+            // If student has approved leave for this date, override status to "leave"
+            const status = hasApprovedLeave ? "leave" : (s.status || "present");
 
             return {
                 studentId: s.studentId,
                 name: user?.name || "Unknown",
                 email: user?.email || "N/A",
-                status: hasApprovedLeave ? "leave" : (s.status || "present")
+                status: status,
+                originalStatus: hasApprovedLeave ? "leave (auto)" : s.status,
+                hasApprovedLeave: hasApprovedLeave
             };
         });
 
@@ -214,7 +237,13 @@ const markAttendance = async (req, res) => {
                 present: finalStudents.filter(s => s.status === "present").length,
                 absent: finalStudents.filter(s => s.status === "absent").length,
                 leave: finalStudents.filter(s => s.status === "leave").length,
-                students: finalStudents,
+                autoLeaveCount: finalStudents.filter(s => s.originalStatus === "leave (auto)").length,
+                students: finalStudents.map(s => ({
+                    studentId: s.studentId,
+                    name: s.name,
+                    status: s.status,
+                    hasApprovedLeave: s.hasApprovedLeave
+                })),
                 createdAt: attendance.createdAt
             }
         });
@@ -296,14 +325,7 @@ const updateAttendance = async (req, res) => {
         }
 
         // Fetch approved leaves for this date
-        const leaves = await Leave.find({
-            school,
-            studentId: { $in: studentIds },
-            date: attendance.date,
-            status: "approved"
-        }).lean();
-
-        const leaveSet = new Set(leaves.map(l => String(l.studentId)));
+        const leaveSet = await getApprovedLeavesForDate(school, studentIds, attendance.date);
 
         // Create a map of existing students
         const existingStudentMap = new Map(
@@ -330,13 +352,14 @@ const updateAttendance = async (req, res) => {
             const studentIdStr = String(s.studentId);
             const hasApprovedLeave = leaveSet.has(studentIdStr);
 
-            // Determine final status (respect approved leaves)
+            // Determine final status (respect approved leaves - they override manual status)
             const finalStatus = hasApprovedLeave ? "leave" : s.status;
 
             if (existingStudentMap.has(studentIdStr)) {
                 // Update existing student
                 const existingStudent = existingStudentMap.get(studentIdStr);
                 existingStudent.status = finalStatus;
+                existingStudent.hasApprovedLeave = hasApprovedLeave;
                 updatedStudents.push(existingStudent);
             } else {
                 // Add new student
@@ -345,7 +368,8 @@ const updateAttendance = async (req, res) => {
                     studentId: s.studentId,
                     name: user?.name || "Unknown",
                     email: user?.email || "N/A",
-                    status: finalStatus
+                    status: finalStatus,
+                    hasApprovedLeave: hasApprovedLeave
                 };
                 existingStudentMap.set(studentIdStr, newStudent);
                 updatedStudents.push(newStudent);
@@ -367,7 +391,13 @@ const updateAttendance = async (req, res) => {
                 present: updatedStudents.filter(s => s.status === "present").length,
                 absent: updatedStudents.filter(s => s.status === "absent").length,
                 leave: updatedStudents.filter(s => s.status === "leave").length,
-                students: updatedStudents,
+                autoLeaveCount: updatedStudents.filter(s => s.hasApprovedLeave).length,
+                students: updatedStudents.map(s => ({
+                    studentId: s.studentId,
+                    name: s.name,
+                    status: s.status,
+                    hasApprovedLeave: s.hasApprovedLeave
+                })),
                 updatedAt: attendance.updatedAt
             }
         });

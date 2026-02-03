@@ -8,10 +8,8 @@ const objectId = Joi.string().custom((value, helpers) => {
     return value;
 }, "ObjectId validation");
 
-// Common date format validation (YYYY-MM-DD)
 const dateFormat = Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).message("Date must be in YYYY-MM-DD format");
 
-// Apply leave validation
 exports.applyLeaveSchema = Joi.object({
     classId: objectId.required()
         .messages({
@@ -25,9 +23,9 @@ exports.applyLeaveSchema = Joi.object({
         }),
     dates: Joi.array().items(
         Joi.alternatives().try(
-            Joi.string().isoDate(), 
+            Joi.string().isoDate(),
             dateFormat,
-            Joi.date() 
+            Joi.date()
         )
     ).min(1).max(30).required()
         .custom((value, helpers) => {
@@ -66,11 +64,34 @@ exports.applyLeaveSchema = Joi.object({
 
 // Update leave validation
 exports.updateLeaveSchema = Joi.object({
-    date: Joi.alternatives().try(
-        Joi.string().isoDate(),
-        dateFormat,
-        Joi.date()
-    ).optional(),
+    dates: Joi.array().items(
+        Joi.alternatives().try(
+            Joi.string().isoDate(),
+            dateFormat,
+            Joi.date()
+        )
+    ).min(1).max(30).optional()
+        .custom((value, helpers) => {
+            if (value) {
+                const stringDates = value.map(date => {
+                    const d = new Date(date);
+                    return d.toISOString().split('T')[0];
+                });
+
+                const uniqueDates = [...new Set(stringDates)];
+                if (stringDates.length !== uniqueDates.length) {
+                    return helpers.error('any.custom', {
+                        message: 'Duplicate dates found in the request'
+                    });
+                }
+            }
+            return value;
+        })
+        .messages({
+            'array.min': 'At least one date is required if dates field is provided',
+            'array.max': 'Cannot have more than 30 dates',
+            'array.base': 'Dates must be an array'
+        }),
 
     subject: Joi.string().min(1).max(200).optional()
         .messages({
@@ -84,9 +105,9 @@ exports.updateLeaveSchema = Joi.object({
             'string.max': 'Reason cannot exceed 1000 characters'
         })
 })
-    .or('date', 'subject', 'reason')
+    .or('dates', 'subject', 'reason')
     .messages({
-        'object.missing': 'At least one field (date, subject, or reason) is required'
+        'object.missing': 'At least one field (dates, subject, or reason) is required'
     });
 
 
@@ -119,19 +140,16 @@ exports.getLeavesQuerySchema = Joi.object({
     page: Joi.number().integer().min(1).default(1),
     limit: Joi.number().integer().min(1).max(100).default(10)
 }).custom((value, helpers) => {
-    // If startDate is provided, endDate must also be provided
     if (value.startDate && !value.endDate) {
         return helpers.error('any.custom', {
             message: 'endDate is required when startDate is provided'
         });
     }
-    // If endDate is provided, startDate must also be provided
     if (value.endDate && !value.startDate) {
         return helpers.error('any.custom', {
             message: 'startDate is required when endDate is provided'
         });
     }
-    // If both dates are provided, startDate must be before or equal to endDate
     if (value.startDate && value.endDate) {
         if (value.startDate > value.endDate) {
             return helpers.error('any.custom', {
@@ -177,7 +195,6 @@ exports.getLeavesByStudentQuerySchema = Joi.object({
 });
 
 // Teacher leave application validation
-// Teacher leave application validation
 exports.applyTeacherLeaveSchema = Joi.object({
     dates: Joi.array().items(
         Joi.alternatives().try(
@@ -187,10 +204,9 @@ exports.applyTeacherLeaveSchema = Joi.object({
         )
     ).min(1).max(30).required()
         .custom((value, helpers) => {
-            // Check for duplicate dates
             const stringDates = value.map(date => {
                 const d = new Date(date);
-                return d.toISOString().split('T')[0]; // YYYY-MM-DD format
+                return d.toISOString().split('T')[0]; 
             });
 
             const uniqueDates = [...new Set(stringDates)];

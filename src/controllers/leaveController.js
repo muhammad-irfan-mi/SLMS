@@ -1,22 +1,19 @@
-// controllers/leaveController.js
 const mongoose = require("mongoose");
 const Leave = require("../models/Leave");
 const AttendanceImported = require("../models/Attendance");
 const User = require("../models/User");
 const ClassSection = require("../models/ClassSection");
 const School = require("../models/School");
+const { sendStudentLeaveNotification, sendTeacherLeaveNotification } = require("../utils/notificationService");
 const Attendance = AttendanceImported.default || AttendanceImported;
 
-// Date formatter
 const formatDate = (date) => {
     if (!date) return null;
 
-    // If already in YYYY-MM-DD format, return as is
     if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) {
         return date;
     }
 
-    // If ISO string or date object
     const d = new Date(date);
     if (isNaN(d.getTime())) {
         throw new Error("Invalid date");
@@ -137,7 +134,15 @@ const applyLeave = async (req, res) => {
         const studentName = req.user.name;
         const { classId, sectionId, dates, subject, reason } = req.body;
 
-        console.log("DEBUG - Original dates from request:", dates);
+        console.log("DEBUG - Leave application request:", {
+            studentId,
+            studentName,
+            dates,
+            classId,
+            sectionId,
+            subject,
+            reason
+        });
 
         // Validate student enrollment
         const enrollmentCheck = await validateStudentClassSection(studentId, classId, sectionId, school);
@@ -147,97 +152,176 @@ const applyLeave = async (req, res) => {
             });
         }
 
-        // Format and deduplicate dates
+        // Format and validate all dates
         const formattedDates = [];
-        const dateSet = new Set(); // To track duplicates
+        const validationErrors = [];
 
         for (const date of dates) {
             try {
-                const formattedDate = formatDate(date);
-
-                // Check for duplicates
-                if (dateSet.has(formattedDate)) {
-                    return res.status(400).json({
-                        message: `Duplicate date found: ${formattedDate}`,
-                        duplicateDate: formattedDate
-                    });
+                // Ensure we get a consistent format
+                let formattedDate;
+                if (date instanceof Date) {
+                    formattedDate = formatDate(date);
+                } else if (typeof date === 'string') {
+                    // Parse the date string
+                    const parsedDate = new Date(date);
+                    if (isNaN(parsedDate.getTime())) {
+                        throw new Error("Invalid date string");
+                    }
+                    formattedDate = formatDate(parsedDate);
+                } else {
+                    throw new Error("Invalid date type");
                 }
 
-                dateSet.add(formattedDate);
+                // Check for past dates
+                const today = formatDate(new Date());
+                if (formattedDate < today) {
+                    validationErrors.push({
+                        date: date,
+                        error: `Cannot apply leave for past date: ${formattedDate}`
+                    });
+                    continue;
+                }
+
                 formattedDates.push(formattedDate);
             } catch (error) {
-                return res.status(400).json({
-                    message: "Invalid date format",
-                    error: error.message,
-                    invalidDate: date
+                validationErrors.push({
+                    date: date,
+                    error: `Invalid date format: ${error.message}`
                 });
             }
         }
 
-        console.log("DEBUG - Formatted unique dates:", formattedDates);
-
-        // Prevent applying for past dates
-        const today = formatDate(new Date());
-        const pastDates = formattedDates.filter(d => d < today);
-        if (pastDates.length > 0) {
+        // Return validation errors if any
+        if (validationErrors.length > 0) {
             return res.status(400).json({
-                message: "Cannot apply leave for past dates",
-                pastDates
+                message: "Some dates have validation errors",
+                errors: validationErrors,
+                validDatesCount: formattedDates.length
             });
         }
 
-        // Check for existing leaves
-        const existing = await Leave.find({
+        if (formattedDates.length === 0) {
+            return res.status(400).json({
+                message: "No valid dates provided for leave application"
+            });
+        }
+
+        // Check for duplicate dates in the request - using a Set for proper deduplication
+        const uniqueDatesSet = new Set(formattedDates);
+        if (uniqueDatesSet.size !== formattedDates.length) {
+            // Find the duplicates
+            const seen = new Set();
+            const duplicates = [];
+
+            for (const date of formattedDates) {
+                if (seen.has(date)) {
+                    duplicates.push(date);
+                } else {
+                    seen.add(date);
+                }
+            }
+
+            return res.status(400).json({
+                message: "Duplicate dates found in request",
+                duplicates: duplicates,
+                uniqueDates: Array.from(uniqueDatesSet)
+            });
+        }
+
+        console.log("DEBUG - Valid formatted dates:", formattedDates);
+
+        // Check for existing leaves that overlap with any of the requested dates
+        // Since you're using an array of dates, we need to check if any existing leave
+        // has dates that overlap with our requested dates
+        const existingLeaves = await Leave.find({
             school,
             studentId,
-            date: { $in: formattedDates },
+            dates: { $in: formattedDates },
             status: { $in: ["pending", "approved"] }
-        }).select('date').lean();
+        }).select('dates status').lean();
 
-        if (existing.length > 0) {
-            const conflictDates = existing.map(e => e.date);
-            return res.status(409).json({
-                message: "Leave already applied for some dates",
-                conflictDates
+        if (existingLeaves.length > 0) {
+            // Find overlapping dates
+            const overlappingDates = [];
+            existingLeaves.forEach(leave => {
+                leave.dates.forEach(date => {
+                    if (formattedDates.includes(date) && !overlappingDates.includes(date)) {
+                        overlappingDates.push(date);
+                    }
+                });
             });
+
+            if (overlappingDates.length > 0) {
+                return res.status(409).json({
+                    message: "Leave already exists for some dates",
+                    overlappingDates: overlappingDates,
+                    availableDates: formattedDates.filter(date => !overlappingDates.includes(date))
+                });
+            }
         }
 
-        // Create leave documents
-        const leaveDocs = formattedDates.map(date => ({
+        // Create single leave object with all dates
+        const leaveData = {
             school,
             studentId,
             studentName,
             classId,
             sectionId,
-            date,
+            dates: formattedDates,
             subject,
             reason,
             status: "pending",
-            appliedAt: new Date()
-        }));
+            appliedAt: new Date(),
+            userType: "student"
+        };
 
-        console.log("DEBUG - Creating leaves for dates:", formattedDates);
+        console.log("DEBUG - Creating leave with dates:", formattedDates);
 
-        const createdLeaves = await Leave.insertMany(leaveDocs);
+        // Create the leave document
+        const createdLeave = await Leave.create(leaveData);
+
+        // Send notification
+        await sendStudentLeaveNotification({
+            leave: createdLeave,
+            actor: req.user,
+            action: 'create'
+        });
 
         return res.status(201).json({
-            message: "Leave applied successfully",
-            total: createdLeaves.length,
-            leaves: createdLeaves.map(leave => ({
-                _id: leave._id,
-                date: leave.date,
-                subject: leave.subject,
-                reason: leave.reason,
-                status: leave.status,
-                appliedAt: leave.appliedAt
-            }))
+            success: true,
+            message: `Leave applied successfully for ${createdLeave.dates.length} date(s)`,
+            leave: {
+                _id: createdLeave._id,
+                dates: createdLeave.dates,
+                subject: createdLeave.subject,
+                reason: createdLeave.reason,
+                status: createdLeave.status,
+                appliedAt: createdLeave.appliedAt
+            }
         });
 
     } catch (err) {
         console.error("applyLeave error:", err);
+
+        // Check if it's a validation error
+        if (err.name === 'ValidationError') {
+            const validationErrors = Object.values(err.errors).map(error => ({
+                field: error.path,
+                message: error.message
+            }));
+
+            return res.status(400).json({
+                success: false,
+                message: "Validation failed",
+                errors: validationErrors
+            });
+        }
+
         return res.status(500).json({
+            success: false,
             message: "Server error",
-            error: err.message
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
     }
 };
@@ -248,7 +332,7 @@ const updateLeave = async (req, res) => {
         const school = req.user.school;
         const studentId = req.user._id;
         const { id } = req.params;
-        const { date, subject, reason } = req.body;
+        const { dates, subject, reason } = req.body; // Changed from 'date' to 'dates'
 
         const leave = await Leave.findOne({
             _id: id,
@@ -268,60 +352,144 @@ const updateLeave = async (req, res) => {
             });
         }
 
-        if (date) {
-            const formattedDate = formatDate(date);
-            const today = formatDate(new Date());
+        let updatedDates = leave.dates; // Keep existing dates by default
+        let dateUpdates = {};
 
-            if (formattedDate < today) {
+        // If new dates are provided, process them
+        if (dates && Array.isArray(dates) && dates.length > 0) {
+            // Format and validate all new dates
+            const formattedDates = [];
+            const validationErrors = [];
+
+            for (const date of dates) {
+                try {
+                    const formattedDate = formatDate(date);
+                    const today = formatDate(new Date());
+
+                    // Check for past dates
+                    if (formattedDate < today) {
+                        validationErrors.push({
+                            date: date,
+                            error: `Cannot update leave to include past date: ${formattedDate}`
+                        });
+                        continue;
+                    }
+
+                    formattedDates.push(formattedDate);
+                } catch (error) {
+                    validationErrors.push({
+                        date: date,
+                        error: `Invalid date format: ${error.message}`
+                    });
+                }
+            }
+
+            // Return validation errors if any
+            if (validationErrors.length > 0) {
                 return res.status(400).json({
-                    message: "Cannot update leave to a past date"
+                    message: "Some dates have validation errors",
+                    errors: validationErrors
                 });
             }
 
-            const conflict = await Leave.findOne({
+            // Remove duplicates from new dates
+            const uniqueNewDates = [...new Set(formattedDates)];
+
+            // Check for date conflicts (excluding the current leave)
+            const existingLeaves = await Leave.find({
                 _id: { $ne: id },
                 school,
                 studentId,
-                date: formattedDate,
+                dates: { $in: uniqueNewDates },
                 status: { $in: ["pending", "approved"] }
-            });
+            }).select('dates').lean();
 
-            if (conflict) {
-                return res.status(409).json({
-                    message: "Leave already exists for this date",
-                    conflictDate: formattedDate
+            if (existingLeaves.length > 0) {
+                // Find overlapping dates
+                const overlappingDates = [];
+                existingLeaves.forEach(existingLeave => {
+                    existingLeave.dates.forEach(date => {
+                        if (uniqueNewDates.includes(date) && !overlappingDates.includes(date)) {
+                            overlappingDates.push(date);
+                        }
+                    });
                 });
+
+                if (overlappingDates.length > 0) {
+                    return res.status(409).json({
+                        message: "Leave already exists for some dates",
+                        conflictDates: overlappingDates,
+                        availableDates: uniqueNewDates.filter(date => !overlappingDates.includes(date))
+                    });
+                }
             }
 
-            leave.date = formattedDate;
+            updatedDates = uniqueNewDates.sort(); // Update with new sorted dates
+            dateUpdates = { dates: updatedDates };
         }
 
-        if (subject) leave.subject = subject;
-        if (reason) leave.reason = reason;
+        // Prepare update object
+        const updateData = {
+            ...(subject !== undefined && { subject }),
+            ...(reason !== undefined && { reason }),
+            ...dateUpdates,
+            updatedAt: new Date()
+        };
 
-        leave.updatedAt = new Date();
+        // Check if at least one field is being updated
+        if (Object.keys(updateData).length === 1 && updateData.updatedAt) {
+            return res.status(400).json({
+                message: "No fields to update provided"
+            });
+        }
 
-        await leave.save();
+        // Update the leave
+        const updatedLeave = await Leave.findOneAndUpdate(
+            { _id: id, school, studentId },
+            { $set: updateData },
+            { new: true, runValidators: true }
+        );
+
+        // Send notification
+        await sendStudentLeaveNotification({
+            leave: updatedLeave,
+            actor: req.user,
+            action: 'update'
+        });
 
         return res.status(200).json({
             message: "Leave updated successfully",
             leave: {
-                _id: leave._id,
-                date: leave.date,
-                subject: leave.subject,
-                reason: leave.reason,
-                status: leave.status
+                _id: updatedLeave._id,
+                dates: updatedLeave.dates,
+                subject: updatedLeave.subject,
+                reason: updatedLeave.reason,
+                status: updatedLeave.status,
+                updatedAt: updatedLeave.updatedAt
             }
         });
 
     } catch (err) {
         console.error("updateLeave error:", err);
+
+        if (err.name === 'ValidationError') {
+            const validationErrors = Object.values(err.errors).map(error => ({
+                field: error.path,
+                message: error.message
+            }));
+
+            return res.status(400).json({
+                message: "Validation failed",
+                errors: validationErrors
+            });
+        }
+
         return res.status(500).json({
             message: "Server error",
             error: err.message
         });
     }
-};
+}
 
 // Student can cancel their leave (if pending or approved).
 const cancelLeave = async (req, res) => {
@@ -330,23 +498,19 @@ const cancelLeave = async (req, res) => {
         const studentId = req.user._id;
         const { id } = req.params;
 
-        // Find the leave
         const leave = await Leave.findById(id);
         if (!leave) {
             return res.status(404).json({ message: "Leave not found" });
         }
 
-        // Check school access
         if (String(leave.school) !== String(school)) {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        // Check if student owns this leave
         if (String(leave.studentId) !== String(studentId)) {
             return res.status(403).json({ message: "You can only cancel your own leave" });
         }
 
-        // Validate student enrollment (in case class/section changed)
         const enrollmentCheck = await validateStudentClassSection(
             studentId,
             leave.classId,
@@ -359,7 +523,6 @@ const cancelLeave = async (req, res) => {
             });
         }
 
-        // Check leave status
         if (leave.status === "cancelled") {
             return res.status(400).json({ message: "Leave already cancelled" });
         }
@@ -368,44 +531,58 @@ const cancelLeave = async (req, res) => {
             return res.status(400).json({ message: "Cannot cancel a rejected leave" });
         }
 
-        // Check if it's a past date
+        // Check if any dates are in the past
         const today = formatDate(new Date());
-        if (leave.date < today) {
-            return res.status(400).json({ message: "Cannot cancel leave for past date" });
+        const pastDates = leave.dates.filter(d => d < today);
+        if (pastDates.length > 0) {
+            return res.status(400).json({
+                message: "Cannot cancel leave for past dates",
+                pastDates: pastDates
+            });
         }
 
-        // Update leave status
         leave.status = "cancelled";
         leave.reviewedAt = new Date();
         await leave.save();
 
-        // If leave was approved, update attendance status
+        await sendStudentLeaveNotification({
+            leave: leave,
+            actor: req.user,
+            action: 'cancel'
+        });
+
+        // If leave was approved, update attendance status for all dates
         if (leave.status === "approved") {
-            const attendance = await Attendance.findOne({
-                school,
-                classId: leave.classId,
-                sectionId: leave.sectionId,
-                date: leave.date,
+            const updatePromises = leave.dates.map(async (date) => {
+                const attendance = await Attendance.findOne({
+                    school,
+                    classId: leave.classId,
+                    sectionId: leave.sectionId,
+                    date: date,
+                });
+
+                if (attendance) {
+                    const student = attendance.students.find(
+                        (s) => String(s.studentId) === String(leave.studentId)
+                    );
+
+                    if (student && student.status === "leave") {
+                        // Change status back to present (or as per your policy)
+                        student.status = "present";
+                        student.hasApprovedLeave = false;
+                        await attendance.save();
+                    }
+                }
             });
 
-            if (attendance) {
-                const student = attendance.students.find(
-                    (s) => String(s.studentId) === String(leave.studentId)
-                );
-
-                if (student && student.status === "leave") {
-                    // Change status back to present (or as per your policy)
-                    student.status = "present";
-                    await attendance.save();
-                }
-            }
+            await Promise.all(updatePromises);
         }
 
         return res.status(200).json({
             message: "Leave cancelled successfully",
             leave: {
                 _id: leave._id,
-                date: leave.date,
+                dates: leave.dates,
                 status: leave.status,
                 cancelledAt: leave.reviewedAt
             }
@@ -584,7 +761,6 @@ const getLeaves = async (req, res) => {
     }
 };
 
-
 // Approve leave (teacher).
 const approveLeave = async (req, res) => {
     try {
@@ -595,18 +771,19 @@ const approveLeave = async (req, res) => {
         const { id } = req.params;
         const { remark } = req.body;
 
-        // Find the leave
         const leave = await Leave.findById(id);
         if (!leave) {
             return res.status(404).json({ message: "Leave not found" });
         }
 
-        // Check school access
         if (String(leave.school) !== String(schoolId)) {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        // Check if user has permission to approve this leave
+        if (leave.userType === "teacher") {
+            return approveTeacherLeave(req, res);
+        }
+
         if (reviewerRole === 'teacher') {
             const teacherCheck = await validateTeacherClassSection(reviewerId, schoolId);
             if (!teacherCheck.valid) {
@@ -620,7 +797,6 @@ const approveLeave = async (req, res) => {
                     message: "Teachers cannot approve teacher leaves"
                 });
             }
-            // Teacher can only approve leaves from their assigned class/section
             if (String(leave.classId) !== String(teacherCheck.classId) ||
                 String(leave.sectionId) !== String(teacherCheck.sectionId)) {
                 return res.status(403).json({
@@ -629,7 +805,6 @@ const approveLeave = async (req, res) => {
             }
         }
 
-        // Check leave status
         if (leave.status === "approved") {
             return res.status(400).json({ message: "Leave already approved" });
         }
@@ -642,13 +817,16 @@ const approveLeave = async (req, res) => {
             return res.status(400).json({ message: "Cannot approve a rejected leave" });
         }
 
-        // Check if it's a past date
+        // Check if any dates are in the past
         const today = formatDate(new Date());
-        if (leave.date < today) {
-            return res.status(400).json({ message: "Cannot approve leave for past date" });
+        const pastDates = leave.dates.filter(d => d < today);
+        if (pastDates.length > 0) {
+            return res.status(400).json({
+                message: "Cannot approve leave for past dates",
+                pastDates: pastDates
+            });
         }
 
-        // Update leave
         leave.status = "approved";
         leave.reviewedBy = reviewerId;
         leave.reviewedAt = new Date();
@@ -659,30 +837,43 @@ const approveLeave = async (req, res) => {
 
         await leave.save();
 
-        // Update attendance if exists for that date/class/section
-        const attendance = await Attendance.findOne({
-            school: schoolId,
-            classId: leave.classId,
-            sectionId: leave.sectionId,
-            date: leave.date,
+        // Update attendance for all approved dates if exists
+        const updatePromises = leave.dates.map(async (date) => {
+            const attendance = await Attendance.findOne({
+                school: schoolId,
+                classId: leave.classId,
+                sectionId: leave.sectionId,
+                date: date,
+            });
+
+            if (attendance) {
+                const student = attendance.students.find(
+                    (s) => String(s.studentId) === String(leave.studentId)
+                );
+
+                if (student) {
+                    student.status = "leave";
+                    student.hasApprovedLeave = true;
+                    await attendance.save();
+                }
+            }
         });
 
-        if (attendance) {
-            const student = attendance.students.find(
-                (s) => String(s.studentId) === String(leave.studentId)
-            );
+        await Promise.all(updatePromises);
 
-            if (student) {
-                student.status = "leave";
-                await attendance.save();
-            }
-        }
+        await sendStudentLeaveNotification({
+            leave: leave,
+            actor: req.user,
+            action: 'approve'
+        });
 
         return res.status(200).json({
             message: "Leave approved successfully",
             leave: {
                 _id: leave._id,
-                date: leave.date,
+                dates: leave.dates,
+                subject: leave.subject,
+                reason: leave.reason,
                 status: leave.status,
                 reviewedAt: leave.reviewedAt,
                 remark: leave.remark
@@ -696,7 +887,6 @@ const approveLeave = async (req, res) => {
         });
     }
 };
-
 
 // Reject leave (teacher).
 const rejectLeave = async (req, res) => {
@@ -717,7 +907,6 @@ const rejectLeave = async (req, res) => {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        // Check if user has permission to reject this leave
         if (reviewerRole === 'teacher') {
             const teacherCheck = await validateTeacherClassSection(reviewerId, school);
             if (!teacherCheck.valid) {
@@ -726,7 +915,6 @@ const rejectLeave = async (req, res) => {
                 });
             }
 
-            // Teacher can only reject leaves from their assigned class/section
             if (String(leave.classId) !== String(teacherCheck.classId) ||
                 String(leave.sectionId) !== String(teacherCheck.sectionId)) {
                 return res.status(403).json({
@@ -743,7 +931,6 @@ const rejectLeave = async (req, res) => {
             return res.status(400).json({ message: "Cannot reject a cancelled leave" });
         }
 
-        // Check if it's a past date
         const today = formatDate(new Date());
         if (leave.date < today) {
             return res.status(400).json({ message: "Cannot reject leave for past date" });
@@ -759,7 +946,12 @@ const rejectLeave = async (req, res) => {
 
         await leave.save();
 
-        // Do not change attendance (teacher may update attendance separately)
+        await sendStudentLeaveNotification({
+            leave: leave,
+            actor: req.user,
+            action: 'reject'
+        });
+
         return res.status(200).json({
             message: "Leave rejected successfully",
             leave: {
@@ -789,20 +981,15 @@ const getLeavesByStudent = async (req, res) => {
         const { page = 1, limit = 20, status, startDate, endDate } = req.query;
 
 
-        // If user is a student, they can only view their own leaves
         if (userRole === 'student' && String(studentId) !== String(userId)) {
             return res.status(403).json({
                 message: "You can only view your own leaves"
             });
         }
 
-        // If user is a teacher, check if the student belongs to their class/section
         if (userRole === 'teacher') {
-            console.log("DEBUG - User is a teacher, validating...");
 
-            // Get teacher's assigned class/section
             const teacherCheck = await validateTeacherClassSection(userId, school);
-            console.log("DEBUG - Teacher check result:", teacherCheck);
 
             if (!teacherCheck.valid) {
                 return res.status(403).json({
@@ -810,7 +997,6 @@ const getLeavesByStudent = async (req, res) => {
                 });
             }
 
-            // Check if student belongs to teacher's class/section
             const student = await User.findOne({
                 _id: studentId,
                 school,
@@ -825,14 +1011,12 @@ const getLeavesByStudent = async (req, res) => {
                 });
             }
 
-            // Check if student is verified
             if (!student.verified) {
                 return res.status(403).json({
                     message: "Student account is not verified"
                 });
             }
 
-            // Check if student belongs to teacher's class/section
             const studentClassId = student.classInfo?.id ? String(student.classInfo.id) : null;
             const studentSectionId = student.sectionInfo?.id ? String(student.sectionInfo.id) : null;
             const teacherClassId = teacherCheck.classId ? String(teacherCheck.classId) : null;
@@ -860,7 +1044,6 @@ const getLeavesByStudent = async (req, res) => {
 
         const skip = (page - 1) * limit;
 
-        // Build filter
         const filter = { school, studentId };
 
         if (status) {
@@ -869,9 +1052,14 @@ const getLeavesByStudent = async (req, res) => {
 
         if (startDate && endDate) {
             try {
-                filter.date = {
-                    $gte: formatDate(startDate),
-                    $lte: formatDate(endDate)
+                const formattedStartDate = formatDate(startDate);
+                const formattedEndDate = formatDate(endDate);
+
+                filter.dates = {
+                    $elemMatch: {
+                        $gte: formattedStartDate,
+                        $lte: formattedEndDate
+                    }
                 };
             } catch (error) {
                 return res.status(400).json({
@@ -881,10 +1069,8 @@ const getLeavesByStudent = async (req, res) => {
             }
         }
 
-        // Count total leaves
         const total = await Leave.countDocuments(filter);
 
-        // First, get student information
         const studentInfo = await User.findOne({
             _id: studentId,
             school,
@@ -902,7 +1088,7 @@ const getLeavesByStudent = async (req, res) => {
             .populate("classId", "class")
             .populate("sectionId", "name")
             .populate("reviewedBy", "name email")
-            .sort({ date: -1 })
+            .sort({ appliedAt: -1 })
             .skip(skip)
             .limit(limit)
             .lean();
@@ -920,7 +1106,7 @@ const getLeavesByStudent = async (req, res) => {
         // Format leaves response
         const formattedLeaves = leaves.map(leave => ({
             _id: leave._id,
-            date: leave.date,
+            dates: leave.dates || [],
             subject: leave.subject,
             reason: leave.reason,
             status: leave.status,
@@ -960,96 +1146,140 @@ const getLeavesByStudent = async (req, res) => {
     }
 };
 
-// TEACHER APPLY LEAVE
+
+// TEACHER APPLY LEAVE 
 const applyTeacherLeave = async (req, res) => {
-    console.log("called")
     try {
         const school = req.user.school;
         const teacherId = req.user._id;
         const teacherName = req.user.name;
         const { dates, subject, reason } = req.body;
-        console.log(req.body)
 
-        // Validate teacher assignment
-        // const teacherCheck = await validateTeacherClassSection(teacherId, school);
-        // if (!teacherCheck.valid) {
-        //     return res.status(403).json({
-        //         message: teacherCheck.message
-        //     });
-        // }
+        console.log("DEBUG - Teacher leave application:", {
+            teacherId,
+            teacherName,
+            dates,
+            subject,
+            reason
+        });
 
-        // Validate dates and format them
+        // Format and validate all dates
         const formattedDates = [];
+        const validationErrors = [];
+
         for (const date of dates) {
             try {
-                formattedDates.push(formatDate(date));
+                const formattedDate = formatDate(date);
+
+                // Check for past dates
+                const today = formatDate(new Date());
+                if (formattedDate < today) {
+                    validationErrors.push({
+                        date: date,
+                        error: `Cannot apply leave for past date: ${formattedDate}`
+                    });
+                    continue;
+                }
+
+                formattedDates.push(formattedDate);
             } catch (error) {
-                return res.status(400).json({
-                    message: "Invalid date format",
-                    error: error.message
+                validationErrors.push({
+                    date: date,
+                    error: `Invalid date format: ${error.message}`
                 });
             }
         }
 
-        // Check for past dates
-        const today = formatDate(new Date());
-        const pastDates = formattedDates.filter(d => d < today);
-
-        if (pastDates.length > 0) {
+        // Return validation errors if any
+        if (validationErrors.length > 0) {
             return res.status(400).json({
-                message: "Cannot apply leave for past dates",
-                pastDates
+                message: "Some dates have validation errors",
+                errors: validationErrors,
+                validDatesCount: formattedDates.length
             });
         }
 
-        // Check for existing leaves
-        const existing = await Leave.find({
+        if (formattedDates.length === 0) {
+            return res.status(400).json({
+                message: "No valid dates provided for leave application"
+            });
+        }
+
+        // Check for duplicate dates in the request
+        const uniqueDates = [...new Set(formattedDates)];
+        if (uniqueDates.length !== formattedDates.length) {
+            return res.status(400).json({
+                message: "Duplicate dates found in request",
+                duplicates: formattedDates.filter((date, index) => formattedDates.indexOf(date) !== index)
+            });
+        }
+
+        // Check for existing leaves that overlap with any of the requested dates
+        const existingLeaves = await Leave.find({
             school,
             teacherId,
-            date: { $in: formattedDates },
-            status: { $in: ["pending", "approved"] },
-        });
+            userType: "teacher",
+            dates: { $in: formattedDates },
+            status: { $in: ["pending", "approved"] }
+        }).select('dates status').lean();
 
-        if (existing.length > 0) {
-            return res.status(409).json({
-                message: "Leave already applied for some dates",
-                conflictDates: existing.map(e => e.date),
-            });
+        if (existingLeaves.length > 0) {
+            // Find overlapping dates
+            const allExistingDates = existingLeaves.flatMap(leave => leave.dates);
+            const overlappingDates = formattedDates.filter(date => allExistingDates.includes(date));
+
+            if (overlappingDates.length > 0) {
+                return res.status(409).json({
+                    message: "Leave already applied for some dates",
+                    overlappingDates: overlappingDates.map(date => ({
+                        date,
+                        existingStatus: existingLeaves.find(l => l.dates.includes(date))?.status
+                    })),
+                    availableDates: formattedDates.filter(date => !overlappingDates.includes(date))
+                });
+            }
         }
 
-        // Create leave documents
-        const newLeaves = formattedDates.map(date => ({
+        // Create single leave object with all dates
+        const leaveData = {
             school,
             userType: "teacher",
             teacherId,
             teacherName,
-            // classId: teacherCheck.classId,
-            // sectionId: teacherCheck.sectionId,
-            date,
+            dates: formattedDates,
             subject,
             reason,
             status: "pending",
             appliedAt: new Date()
-        }));
+        };
 
-        const created = await Leave.insertMany(newLeaves);
+        const createdLeave = await Leave.create(leaveData);
+
+        // Send notification
+        await sendTeacherLeaveNotification({
+            leave: createdLeave,
+            actor: req.user,
+            action: 'create'
+        });
 
         res.status(201).json({
-            message: "Teacher leave applied successfully",
-            leaves: created.map(leave => ({
-                _id: leave._id,
-                date: leave.date,
-                subject: leave.subject,
-                reason: leave.reason,
-                status: leave.status,
-                appliedAt: leave.appliedAt
-            }))
+            success: true,
+            message: `Teacher leave applied successfully for ${createdLeave.dates.length} date(s)`,
+            leave: {
+                _id: createdLeave._id,
+                dates: createdLeave.dates,
+                subject: createdLeave.subject,
+                reason: createdLeave.reason,
+                status: createdLeave.status,
+                appliedAt: createdLeave.appliedAt
+            }
         });
     } catch (err) {
         console.error("applyTeacherLeave error:", err);
         res.status(500).json({
+            success: false,
             message: "Server error",
-            error: err.message
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
     }
 };
@@ -1074,9 +1304,14 @@ const getTeacherLeaves = async (req, res) => {
         if (status) filter.status = status;
 
         if (startDate && endDate) {
-            filter.date = {
-                $gte: formatDate(startDate),
-                $lte: formatDate(endDate)
+            const formattedStartDate = formatDate(startDate);
+            const formattedEndDate = formatDate(endDate);
+
+            filter.dates = {
+                $elemMatch: {
+                    $gte: formattedStartDate,
+                    $lte: formattedEndDate
+                }
             };
         }
 
@@ -1120,7 +1355,7 @@ const getTeacherLeaves = async (req, res) => {
 
             return {
                 _id: leave._id,
-                date: leave.date,
+                date: leave.dates || [],
                 subject: leave.subject,
                 reason: leave.reason,
                 status: leave.status,
@@ -1164,7 +1399,6 @@ const updateTeacherLeave = async (req, res) => {
         const { id } = req.params;
         const { subject, reason } = req.body;
 
-        // Validate that at least one field is provided
         if (!subject && !reason) {
             return res.status(400).json({
                 message: "At least one field (subject or reason) is required to update"
@@ -1177,7 +1411,6 @@ const updateTeacherLeave = async (req, res) => {
             return res.status(404).json({ message: "Leave not found" });
         }
 
-        // Validate leave ownership
         if (leave.userType !== "teacher") {
             return res.status(400).json({ message: "Not a teacher leave record" });
         }
@@ -1186,27 +1419,29 @@ const updateTeacherLeave = async (req, res) => {
             return res.status(403).json({ message: "You can only update your own leave" });
         }
 
-        // Check school access
         if (String(leave.school) !== String(school)) {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        // Check leave status
         if (leave.status !== "pending") {
             return res.status(400).json({ message: "Only pending leaves can be updated" });
         }
 
-        // Check if it's a future date
         const today = formatDate(new Date());
         if (leave.date < today) {
             return res.status(400).json({ message: "Cannot update past leave" });
         }
 
-        // Update fields
         if (subject !== undefined) leave.subject = subject;
         if (reason !== undefined) leave.reason = reason;
 
         await leave.save();
+
+        await sendTeacherLeaveNotification({
+            leave: leave,
+            actor: req.user,
+            action: 'update'
+        });
 
         res.status(200).json({
             message: "Leave updated successfully",
@@ -1240,7 +1475,6 @@ const cancelTeacherLeave = async (req, res) => {
             return res.status(404).json({ message: "Leave not found" });
         }
 
-        // Validate leave ownership
         if (leave.userType !== "teacher") {
             return res.status(400).json({ message: "Not a teacher leave record" });
         }
@@ -1249,12 +1483,10 @@ const cancelTeacherLeave = async (req, res) => {
             return res.status(403).json({ message: "You can only cancel your own leave" });
         }
 
-        // Check school access
         if (String(leave.school) !== String(school)) {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        // Check leave status
         if (leave.status === "cancelled") {
             return res.status(400).json({ message: "Leave already cancelled" });
         }
@@ -1267,7 +1499,6 @@ const cancelTeacherLeave = async (req, res) => {
             return res.status(400).json({ message: "Cannot cancel a rejected leave" });
         }
 
-        // Check if it's a past date
         const today = formatDate(new Date());
         if (leave.date < today) {
             return res.status(400).json({ message: "Cannot cancel leave for past date" });
@@ -1277,6 +1508,12 @@ const cancelTeacherLeave = async (req, res) => {
         leave.reviewedAt = new Date();
 
         await leave.save();
+
+        await sendTeacherLeaveNotification({
+            leave: leave,
+            actor: req.user,
+            action: 'update'
+        });
 
         res.status(200).json({
             message: "Leave cancelled successfully",
@@ -1307,7 +1544,6 @@ const approveTeacherLeave = async (req, res) => {
         const isAdminOffice = role === 'admin_office';
         const isSchool = role === 'school';
 
-        // Teachers are NOT allowed
         if (isTeacher) {
             return res.status(403).json({
                 message: "Teachers are not allowed to approve teacher leaves"
@@ -1317,15 +1553,11 @@ const approveTeacherLeave = async (req, res) => {
         const schoolId = isSchool ? user._id : user.school;
         const { id } = req.params;
 
-        /* ---------------- FIND LEAVE ---------------- */
-
         const leave = await Leave.findById(id);
 
         if (!leave) {
             return res.status(404).json({ message: "Leave not found" });
         }
-
-        /* ---------------- VALIDATE TYPE ---------------- */
 
         if (leave.userType !== "teacher") {
             return res.status(400).json({
@@ -1333,13 +1565,9 @@ const approveTeacherLeave = async (req, res) => {
             });
         }
 
-        /* ---------------- SCHOOL ACCESS ---------------- */
-
         if (String(leave.school) !== String(schoolId)) {
             return res.status(403).json({ message: "Access denied" });
         }
-
-        /* ---------------- STATUS CHECK ---------------- */
 
         if (leave.status === "approved") {
             return res.status(400).json({ message: "Leave already approved" });
@@ -1353,8 +1581,6 @@ const approveTeacherLeave = async (req, res) => {
             return res.status(400).json({ message: "Cannot approve rejected leave" });
         }
 
-        /* ---------------- DATE CHECK ---------------- */
-
         const today = formatDate(new Date());
         if (leave.date < today) {
             return res.status(400).json({
@@ -1362,15 +1588,17 @@ const approveTeacherLeave = async (req, res) => {
             });
         }
 
-        /* ---------------- UPDATE ---------------- */
-
         leave.status = "approved";
         leave.reviewedAt = new Date();
         leave.reviewedBy = reviewerId;
 
         await leave.save();
 
-        /* ---------------- RESPONSE ---------------- */
+        await sendTeacherLeaveNotification({
+            leave: leave,
+            actor: req.user,
+            action: 'approve'
+        });
 
         return res.status(200).json({
             message: "Teacher leave approved successfully",
@@ -1405,17 +1633,14 @@ const rejectTeacherLeave = async (req, res) => {
             return res.status(404).json({ message: "Leave not found" });
         }
 
-        // Validate leave type
         if (leave.userType !== "teacher") {
             return res.status(400).json({ message: "Not a teacher leave record" });
         }
 
-        // Check school access
         if (String(leave.school) !== String(school)) {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        // Check leave status
         if (leave.status === "rejected") {
             return res.status(400).json({ message: "Leave already rejected" });
         }
@@ -1428,7 +1653,6 @@ const rejectTeacherLeave = async (req, res) => {
             return res.status(400).json({ message: "Cannot reject approved leave" });
         }
 
-        // Check if it's a past date
         const today = formatDate(new Date());
         if (leave.date < today) {
             return res.status(400).json({ message: "Cannot reject leave for past date" });
@@ -1443,6 +1667,12 @@ const rejectTeacherLeave = async (req, res) => {
         }
 
         await leave.save();
+
+        await sendTeacherLeaveNotification({
+            leave: leave,
+            actor: req.user,
+            action: 'reject'
+        });
 
         res.status(200).json({
             message: "Teacher leave rejected successfully",

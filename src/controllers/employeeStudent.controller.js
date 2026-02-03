@@ -626,13 +626,13 @@ const editEmployeeBySchool = async (req, res) => {
             changes.push(`Joining date updated`);
         }
 
-        const isInchargeValue = req.body.isIncharge !== undefined
-            ? req.body.isIncharge === "true"
-            : existing.isIncharge;
+        // const isInchargeValue = req.body.isIncharge !== undefined
+        //     ? req.body.isIncharge === "true"
+        //     : existing.isIncharge;
 
-        if (isInchargeValue !== existing.isIncharge) {
-            changes.push(`In-charge status: ${existing.isIncharge ? 'Removed' : 'Assigned'}`);
-        }
+        // if (isInchargeValue !== existing.isIncharge) {
+        //     changes.push(`In-charge status: ${existing.isIncharge ? 'Removed' : 'Assigned'}`);
+        // }
 
         let otpData = existing.otp;
         let verified = existing.verified;
@@ -688,7 +688,7 @@ const editEmployeeBySchool = async (req, res) => {
             cnic: req.body.cnic ?? existing.cnic,
             salary: req.body.salary ?? existing.salary,
             joiningDate: req.body.joiningDate ?? existing.joiningDate,
-            isIncharge: isInchargeValue,
+            // isIncharge: isInchargeValue,
             classInfo,
             sectionInfo,
             images,
@@ -1221,7 +1221,6 @@ const editStudentBySchool = async (req, res) => {
         });
     }
 };
-
 
 // GET STUDENT SIBLINGS - NEW FUNCTION
 const getStudentSiblingsByEmail = async (req, res) => {

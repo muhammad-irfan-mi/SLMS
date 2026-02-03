@@ -6,7 +6,8 @@ const {
     updateNotice,
     deleteNotice,
     getNotices,
-    markAsRead
+    markAsRead,
+    getAdminNotices
 } = require("../controllers/noticeController");
 
 const { createNoticeSchema, getNoticesQuerySchema, validateQuery, getNoticesForStudentQuerySchema, updateNoticeSchema } = require("../validators/notice.validator");
@@ -14,7 +15,8 @@ const { createNoticeSchema, getNoticesQuerySchema, validateQuery, getNoticesForS
 const {
     isTeacherOrAdminOfficeOrSchool,
     protect,
-    isStudent
+    isStudent,
+    isAdminOffice
 } = require("../middlewares/auth");
 const validate = require("../middlewares/validate");
 
@@ -32,6 +34,13 @@ router.get(
     isTeacherOrAdminOfficeOrSchool,
     validateQuery(getNoticesQuerySchema),
     getNotices
+);
+
+router.get(
+    "/admin",
+    protect,
+    isAdminOffice,
+    getAdminNotices
 );
 
 router.get(
