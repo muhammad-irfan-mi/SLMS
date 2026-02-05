@@ -1,243 +1,3 @@
-// const Notice = require("../models/Notice");
-// const User = require("../models/User");
-
-// const formatDate = (date) => {
-//     if (!date) return null;
-//     return typeof date === 'string' ? date : date.toISOString().split('T')[0];
-// };
-
-// const sendProfileUpdateNotification = async ({ user, updatedBy, changes = [], updateType = 'employee' }) => {
-//     try {
-//         if (!user || !user._id || !user.school) {
-//             console.error('User data missing for notification');
-//             return null;
-//         }
-
-//         const getProfileUpdateTitle = (role) => {
-//             const titles = {
-//                 teacher: 'Teacher Profile Updated',
-//                 admin_office: 'Staff Profile Updated',
-//                 employee: 'Employee Profile Updated',
-//                 default: 'Profile Information Updated'
-//             };
-//             return titles[role] || titles.default;
-//         };
-
-//         // Build notification message
-//         const buildProfileUpdateMessage = (userName, changesList, role) => {
-//             let message = `Dear ${userName},\n\n`;
-//             message += `Your ${role} profile has been updated by the administration.\n\n`;
-
-//             if (changesList && changesList.length > 0) {
-//                 message += "Changes made:\n";
-//                 changesList.forEach((change, index) => {
-//                     message += `${index + 1}. ${change}\n`;
-//                 });
-//                 message += "\n";
-//             } else {
-//                 message += "Your profile details have been modified.\n\n";
-//             }
-//             return message;
-//         };
-
-//         const title = getProfileUpdateTitle(user.role || updateType);
-//         const message = buildProfileUpdateMessage(user.name, changes, user.role || updateType);
-
-//         // Determine target based on user role
-//         let target;
-//         let targetIds = [];
-
-//         if (user.role === 'teacher') {
-//             target = 'selected_teachers';
-//             targetIds = [user._id];
-//         } else if (user.role === 'student') {
-//             target = 'selected_students';
-//             targetIds = [user._id];
-//         } else {
-//             // For admin_office or other roles, use custom target
-//             target = 'custom';
-//         }
-
-//         // Create notification
-//         const notification = await Notice.create({
-//             school: user.school,
-//             title,
-//             message,
-//             createdBy: updatedBy,
-//             target: target,
-//             ...(target === 'selected_teachers' && { targetTeacherIds: targetIds }),
-//             ...(target === 'selected_students' && { targetStudentIds: targetIds }),
-//             category: 'general', // Using 'general' as it's in the enum
-//             startDate: formatDate(new Date()),
-//             pinned: false,
-//             readBy: []
-//         });
-
-//         console.log(`Profile update notification sent to ${user.role || updateType}: ${user.name}`);
-//         return notification;
-
-//     } catch (error) {
-//         console.error('Error sending profile update notification:', error);
-//         return null;
-//     }
-// };
-
-// const sendEmailChangeNotification = async ({ user, oldEmail, newEmail, updatedBy }) => {
-//     try {
-//         if (!user || !user._id || !user.school) {
-//             console.error('User data missing for notification');
-//             return null;
-//         }
-
-//         const buildEmailChangeMessage = (userName, oldEmail, newEmail) => {
-//             let message = `Dear ${userName},\n\n`;
-//             message += `Your account email has been updated by the school administration:\n\n`;
-//             message += `Old Email: ${oldEmail}\n`;
-//             message += `New Email: ${newEmail}\n\n`;
-//             message += "An OTP has been sent to your new email address for verification.\n";
-//             message += "Please verify your email to continue using your account.\n\n";
-
-//             return message;
-//         };
-
-//         const title = 'Email Address Updated';
-//         const message = buildEmailChangeMessage(user.name, oldEmail, newEmail);
-
-//         let target;
-//         let targetIds = [];
-
-//         if (user.role === 'teacher') {
-//             target = 'selected_teachers';
-//             targetIds = [user._id];
-//         } else if (user.role === 'student') {
-//             target = 'selected_students';
-//             targetIds = [user._id];
-//         } else {
-//             target = 'custom';
-//         }
-
-//         const notification = await Notice.create({
-//             school: user.school,
-//             title,
-//             message,
-//             createdBy: updatedBy,
-//             target: target,
-//             ...(target === 'selected_teachers' && { targetTeacherIds: targetIds }),
-//             ...(target === 'selected_students' && { targetStudentIds: targetIds }),
-//             category: 'general', 
-//             startDate: formatDate(new Date()),
-//             pinned: true,
-//             readBy: []
-//         });
-
-//         console.log(`Email change notification sent to ${user.role}: ${user.name}`);
-//         return notification;
-
-//     } catch (error) {
-//         console.error('Error sending email change notification:', error);
-//         return null;
-//     }
-// };
-
-// const sendBulkEmployeeNotifications = async ({ users, updatedBy, changes = [], notificationType = 'profile_update', emailData = null }) => {
-//     try {
-//         if (!users || !Array.isArray(users) || users.length === 0) {
-//             console.error('No users specified for bulk notification');
-//             return [];
-//         }
-
-//         const notifications = [];
-
-//         const teachers = users.filter(user => user.role === 'teacher');
-//         const adminStaff = users.filter(user => user.role === 'admin_office');
-
-//         if (teachers.length > 0) {
-//             for (const teacher of teachers) {
-//                 let notification;
-
-//                 if (notificationType === 'profile_update') {
-//                     notification = await sendProfileUpdateNotification({
-//                         user: teacher,
-//                         updatedBy,
-//                         changes,
-//                         updateType: 'teacher'
-//                     });
-//                 } else if (notificationType === 'email_change' && emailData) {
-//                     notification = await sendEmailChangeNotification({
-//                         user: teacher,
-//                         oldEmail: emailData.oldEmail,
-//                         newEmail: emailData.newEmail,
-//                         updatedBy
-//                     });
-//                 }
-
-//                 if (notification) notifications.push(notification);
-//             }
-//         }
-
-//         if (adminStaff.length > 0) {
-//             for (const staff of adminStaff) {
-//                 let notification;
-
-//                 if (notificationType === 'profile_update') {
-//                     notification = await sendProfileUpdateNotification({
-//                         user: staff,
-//                         updatedBy,
-//                         changes,
-//                         updateType: 'employee'
-//                     });
-//                 } else if (notificationType === 'email_change' && emailData) {
-//                     notification = await sendEmailChangeNotification({
-//                         user: staff,
-//                         oldEmail: emailData.oldEmail,
-//                         newEmail: emailData.newEmail,
-//                         updatedBy
-//                     });
-//                 }
-
-//                 if (notification) notifications.push(notification);
-//             }
-//         }
-
-//         console.log(`Bulk notifications sent: ${notifications.length} total`);
-//         return notifications;
-
-//     } catch (error) {
-//         console.error('Error sending bulk employee notifications:', error);
-//         return [];
-//     }
-// };
-
-
-// module.exports = {
-//     sendProfileUpdateNotification,
-//     sendEmailChangeNotification,
-//     sendBulkEmployeeNotifications
-// };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 const Notice = require("../models/Notice");
 const User = require("../models/User");
 const ClassSection = require("../models/ClassSection");
@@ -284,26 +44,6 @@ const NOTIFICATION_TARGETS = {
     ADMIN: 'admin'
 };
 
-/**
- * Unified notification creation function for all services
- * @param {Object} params - Notification parameters
- * @param {String} params.type - Type of notification (from NOTIFICATION_TYPES)
- * @param {Object} params.actor - User who triggered the action (required)
- * @param {Array} [params.targetUsers] - Array of target user IDs who should receive the notification
- * @param {Array} [params.targetTeachers] - Array of target teacher IDs
- * @param {Array} [params.targetStudents] - Array of target student IDs
- * @param {String|Object} params.school - School ID or school object (required)
- * @param {String} [params.classId] - Class ID (optional)
- * @param {String} [params.sectionId] - Section ID (optional)
- * @param {String} [params.title] - Custom title (optional, will be auto-generated if not provided)
- * @param {String} [params.message] - Custom message (optional, will be auto-generated if not provided)
- * @param {Array} [params.changes] - Array of change descriptions (for profile updates)
- * @param {Object} [params.data] - Additional data for notification (oldEmail, newEmail, resultType, diaryTitle, documentType, etc.)
- * @param {String} [params.category] - Notification category (from NOTIFICATION_CATEGORIES)
- * @param {Boolean} [params.pinned] - Whether notification should be pinned
- * @param {String} [params.target] - Direct target override (from NOTIFICATION_TARGETS)
- * @returns {Promise<Object|null>} Created notification or null on error
- */
 const createNotification = async (params) => {
     try {
         console.log('========== CREATE NOTIFICATION START ==========');
@@ -1240,6 +980,119 @@ const getTeacherLeaveMessage = (leave, actor, action) => {
     return message;
 };
 
+
+const sendFeeNotificationToStudent = async (fee, actor, action = 'created') => {
+    try {
+        const student = await User.findById(fee.studentId).select('name email school');
+        if (!student) return null;
+
+        let title, message;
+        if (action === 'created') {
+            title = 'New Fee Generated';
+            message = `A new fee of ₹${fee.amount} for ${fee.month} has been generated by ${actor.name}. Title: ${fee.title}`;
+        } else if (action === 'updated') {
+            title = 'Fee Updated';
+            message = `Your fee for ${fee.month} has been updated by ${actor.name}. New amount: ₹${fee.amount}`;
+        } else if (action === 'submitted') {
+            title = 'Payment Proof Submitted';
+            message = `Payment proof for fee of ₹${fee.amount} (${fee.month}) has been submitted. Awaiting admin approval.`;
+        }
+
+        return createNotification({
+            type: NOTIFICATION_TYPES.FEE,
+            actor,
+            targetStudents: [fee.studentId],
+            school: fee.school,
+            title,
+            message,
+            data: {
+                feeId: fee._id,
+                amount: fee.amount,
+                month: fee.month,
+                title: fee.title,
+                status: fee.status,
+                action
+            },
+            category: 'general',
+            pinned: false
+        });
+    } catch (error) {
+        console.error('Error sending fee notification to student:', error);
+        return null;
+    }
+};
+
+// Send notification to admins when student submits proof
+const sendFeeNotificationToAdmins = async (fee, actor) => {
+    try {
+        const adminUsers = await User.find({
+            school: fee.school,
+            role: { $in: ['admin_office', 'superadmin', 'school'] }
+        }).select('_id');
+
+        const student = await User.findById(fee.studentId).select('name');
+
+        const title = 'Payment Proof Submitted';
+        const message = `Student ${student?.name || 'Unknown'} has submitted payment proof for fee of ₹${fee.amount} (${fee.month}). Please review.`;
+
+        return createNotification({
+            type: NOTIFICATION_TYPES.FEE,
+            actor,
+            targetAdmins: adminUsers.map(u => u._id),
+            target: NOTIFICATION_TARGETS.ADMIN,
+            school: fee.school,
+            title,
+            message,
+            data: {
+                feeId: fee._id,
+                studentId: fee.studentId,
+                studentName: student?.name,
+                amount: fee.amount,
+                month: fee.month,
+                title: fee.title,
+                status: fee.status
+            },
+            category: 'general',
+            pinned: false
+        });
+    } catch (error) {
+        console.error('Error sending fee notification to admins:', error);
+        return null;
+    }
+};
+
+// Send notification when payment is approved/rejected
+const sendPaymentStatusNotification = async (fee, actor, status) => {
+    try {
+        const student = await User.findById(fee.studentId).select('name email school');
+        if (!student) return null;
+
+        const title = `Payment ${status === 'approved' ? 'Approved' : 'Rejected'}`;
+        const message = `Your payment of ₹${fee.amount} for ${fee.month} has been ${status} by ${actor.name}.`;
+
+        return createNotification({
+            type: NOTIFICATION_TYPES.FEE,
+            actor,
+            targetStudents: [fee.studentId],
+            school: fee.school,
+            title,
+            message,
+            data: {
+                feeId: fee._id,
+                amount: fee.amount,
+                month: fee.month,
+                title: fee.title,
+                status: status
+            },
+            category: 'general',
+            pinned: false
+        });
+    } catch (error) {
+        console.error('Error sending payment status notification:', error);
+        return null;
+    }
+};
+
 module.exports = {
     // Constants
     NOTIFICATION_TYPES,
@@ -1263,5 +1116,10 @@ module.exports = {
     sendDocumentRequestNotification,
     sendDocumentUploadNotification,
     sendStudentLeaveNotification,
-    sendTeacherLeaveNotification
+    sendTeacherLeaveNotification,
+
+    // Fee notifications
+    sendFeeNotificationToStudent,
+    sendFeeNotificationToAdmins,
+    sendPaymentStatusNotification
 };

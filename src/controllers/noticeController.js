@@ -359,19 +359,19 @@ const getNotices = async (req, res) => {
   }
 };
 
+// Get notices for admins
 const getAdminNotices = async (req, res) => {
   try {
     const user = req.user;
     const schoolId = user.school || user.schoolId || (user.schoolInfo && user.schoolInfo.id);
-    const userId = user._id || user.id;
-    const userRole = user.role;
 
-    if (!["admin_office", "school", "superadmin"].includes(userRole)) {
-      return res.status(403).json({
+    if (!schoolId) {
+      return res.status(400).json({
         success: false,
-        message: "Access denied. Admin privileges required."
+        message: "School ID not found"
       });
     }
+
 
     const {
       category,
@@ -387,11 +387,21 @@ const getAdminNotices = async (req, res) => {
 
     const now = new Date();
     const filter = {
-      school: schoolId,
-      target: "admin"
+      school: new mongoose.Types.ObjectId(schoolId),
+      target: "admin"  
     };
 
-    if (category) filter.category = category;
+
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: 'i' } },
+        { message: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    if (category) {
+      filter.category = category;
+    }
 
     if (startDate || endDate) {
       filter.createdAt = {};
@@ -405,30 +415,56 @@ const getAdminNotices = async (req, res) => {
       }
     }
 
+    if (user.role === 'admin_office' || user.role === 'superadmin' || user.role === 'school') {
+      filter.$or = [
+        { target: "admin" },
+      ];
+    }
 
     const skip = (Number(page) - 1) * Number(limit);
     const sortDirection = sortOrder === "asc" ? 1 : -1;
 
-    const query = Notice.find(filter)
-      .populate("createdBy", "name email role")
-      .populate("classId", "class")
-      .populate("targetTeacherIds", "name email role")
-      .populate("targetStudentIds", "name email rollNo")
-      .populate({
-        path: 'readBy.user',
-        select: 'name email role',
-      })
-      .sort({
-        pinned: -1,
-        createdAt: sortDirection
-      })
-      .skip(skip)
-      .limit(Number(limit));
 
     const [total, notices] = await Promise.all([
       Notice.countDocuments(filter),
-      query.lean()
+      Notice.find(filter)
+        .populate("createdBy", "name email role")
+        .populate("classId", "class")
+        .populate("targetTeacherIds", "name email role")
+        .populate("targetStudentIds", "name email rollNo")
+        .populate("targetAdminIds", "name email role") 
+        .populate({
+          path: 'readBy.user',
+          select: 'name email role',
+        })
+        .sort({
+          pinned: -1,
+          createdAt: sortDirection
+        })
+        .skip(skip)
+        .limit(Number(limit))
+        .lean()
     ]);
+
+    const formattedNotices = notices.map(notice => {
+      const hasRead = notice.readBy?.some(read =>
+        String(read.user?._id) === String(user._id)
+      );
+
+      return {
+        _id: notice._id,
+        school: notice.school,
+        title: notice.title,
+        message: notice.message,
+        createdBy: notice.createdBy,
+        target: notice.target,
+        attachments: notice.attachments || [],
+        hasRead: hasRead || false,
+        readCount: notice.readBy?.length || 0,
+        createdAt: notice.createdAt,
+        updatedAt: notice.updatedAt
+      };
+    });
 
     const totalPages = Math.ceil(total / Number(limit));
 
@@ -438,9 +474,11 @@ const getAdminNotices = async (req, res) => {
       page: Number(page),
       limit: Number(limit),
       totalPages,
+      notices: formattedNotices 
     });
 
   } catch (err) {
+    console.error("Error in getAdminNotices:", err);
     return res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -449,7 +487,6 @@ const getAdminNotices = async (req, res) => {
   }
 };
 
-// Get notices for student
 const getNoticesForStudent = async (req, res) => {
   try {
     const user = req.user;

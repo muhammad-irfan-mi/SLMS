@@ -1,3 +1,703 @@
+// const BankAccount = require("../models/BankAccount");
+// const ClassSection = require("../models/ClassSection");
+// const FeeDetail = require("../models/FeeDetail");
+// const User = require("../models/User");
+// const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
+// const { sendFeeNotificationToAdmins, sendPaymentStatusNotification } = require("../utils/notificationService");
+// const {
+//   createFeeDetailSchema,
+//   updateFeeDetailSchema,
+//   approvePaymentSchema,
+//   getAllFeeDetailsSchema,
+//   getMyFeeDetailsSchema,
+//   bulkCreateFeeDetailsSchema,
+//   bulkUpdateFeeDetailsSchema
+// } = require("../validators/feeDetail.validation");
+
+// async function uploadImage(files, fieldName, existingImage = null) {
+//   let image = existingImage;
+
+//   if (files?.[fieldName]?.[0]) {
+//     if (image) await deleteFileFromS3(image);
+//     image = await uploadFileToS3({
+//       fileBuffer: files[fieldName][0].buffer,
+//       fileName: files[fieldName][0].originalname,
+//       mimeType: files[fieldName][0].mimetype,
+//     });
+//   }
+
+//   return image;
+// }
+
+// const getClassSectionInfo = async (classId, sectionId, schoolId) => {
+//   const classSection = await ClassSection.findOne({
+//     _id: classId,
+//     school: schoolId
+//   }).lean();
+
+//   if (!classSection) {
+//     return { class: null, section: null };
+//   }
+
+//   const classInfo = {
+//     _id: classSection._id,
+//     name: classSection.class
+//   };
+
+//   let sectionInfo = null;
+//   if (sectionId && classSection.sections) {
+//     const section = classSection.sections.find(
+//       sec => sec._id.toString() === sectionId.toString()
+//     );
+//     if (section) {
+//       sectionInfo = {
+//         _id: section._id,
+//         name: section.name
+//       };
+//     }
+//   }
+
+//   return { class: classInfo, section: sectionInfo };
+// };
+
+// const bulkCreateFeeDetails = async (req, res) => {
+//   try {
+//     const { error } = bulkCreateFeeDetailsSchema.validate(req.body);
+//     if (error) return res.status(400).json({ message: error.details[0].message });
+
+//     const { feeDetails } = req.body;
+//     const schoolId = req.user.school;
+//     const actor = req.user;
+
+//     // Get all student IDs from the request
+//     const studentIds = feeDetails.map(fd => fd.studentId);
+
+//     // Verify all students exist in the school
+//     const students = await User.find({
+//       _id: { $in: studentIds },
+//       role: "student",
+//       school: schoolId,
+//     }).select('_id name email rollNo classInfo sectionInfo');
+
+//     const studentMap = new Map();
+//     students.forEach(student => {
+//       studentMap.set(student._id.toString(), student);
+//     });
+
+//     // Check for invalid students
+//     const invalidStudents = studentIds.filter(id => !studentMap.has(id));
+//     if (invalidStudents.length > 0) {
+//       return res.status(400).json({
+//         message: `Some students not found in your school`,
+//         invalidStudentIds: invalidStudents
+//       });
+//     }
+
+//     // Process images if provided (optional for bulk)
+//     const images = req.files?.voucherImages || [];
+//     const imageMap = new Map();
+
+//     if (images.length > 0) {
+//       const uploadPromises = images.map(async (file) => {
+//         return await uploadFileToS3({
+//           fileBuffer: file.buffer,
+//           fileName: file.originalname,
+//           mimeType: file.mimetype,
+//         });
+//       });
+
+//       const uploadedImageUrls = await Promise.all(uploadPromises);
+
+//       // Map images by index
+//       images.forEach((image, index) => {
+//         if (index < feeDetails.length) {
+//           imageMap.set(index, uploadedImageUrls[index]);
+//         }
+//       });
+//     }
+
+//     // Prepare fee documents for bulk insert
+//     const feeDocuments = feeDetails.map((feeData, index) => {
+//       const feeDoc = {
+//         studentId: feeData.studentId,
+//         school: schoolId,
+//         month: feeData.month,
+//         amount: feeData.amount,
+//         title: feeData.title,
+//         description: feeData.description || '',
+//         status: "pending",
+//         createdAt: new Date(),
+//         updatedAt: new Date()
+//       };
+
+//       // Add image if available for this index (optional)
+//       if (imageMap.has(index)) {
+//         feeDoc.voucherImage = imageMap.get(index);
+//       }
+
+//       return feeDoc;
+//     });
+
+//     // Bulk insert
+//     const createdFees = await FeeDetail.insertMany(feeDocuments);
+
+//     // Send notifications to students
+//     const notificationPromises = createdFees.map(async (fee) => {
+//       try {
+//         await sendFeeNotificationToStudent(fee, actor, 'created');
+//       } catch (error) {
+//         console.error('Error sending notification for fee:', fee._id, error);
+//       }
+//     });
+
+//     await Promise.allSettled(notificationPromises);
+
+//     // Populate student info in response
+//     const populatedFees = await FeeDetail.find({
+//       _id: { $in: createdFees.map(f => f._id) }
+//     })
+//       .populate("studentId", "name email rollNo classInfo sectionInfo")
+//       .lean();
+
+//     // Format response with class/section info
+//     const formattedFees = await Promise.all(populatedFees.map(async (fee) => {
+//       const feeObj = { ...fee };
+
+//       let studentSchoolId = null;
+//       if (feeObj.studentId && feeObj.studentId.school) {
+//         studentSchoolId = feeObj.studentId.school;
+//       }
+
+//       if (feeObj.studentId && feeObj.studentId.classInfo && feeObj.studentId.classInfo.id) {
+//         const classSectionInfo = await getClassSectionInfo(
+//           feeObj.studentId.classInfo.id,
+//           feeObj.studentId.sectionInfo ? feeObj.studentId.sectionInfo.id : null,
+//           studentSchoolId
+//         );
+
+//         if (classSectionInfo.class) {
+//           feeObj.classInfo = {
+//             id: classSectionInfo.class._id,
+//             name: classSectionInfo.class.name
+//           };
+//         }
+
+//         if (classSectionInfo.section) {
+//           feeObj.sectionInfo = {
+//             id: classSectionInfo.section._id,
+//             name: classSectionInfo.section.name
+//           };
+//         }
+//       }
+
+//       if (feeObj.studentId) {
+//         feeObj.studentInfo = {
+//           _id: feeObj.studentId._id,
+//           name: feeObj.studentId.name,
+//           email: feeObj.studentId.email,
+//           rollNo: feeObj.studentId.rollNo,
+//           school: feeObj.studentId.school
+//         };
+//         delete feeObj.studentId;
+//       }
+
+//       return feeObj;
+//     }));
+
+//     res.status(201).json({
+//       message: `Successfully created ${createdFees.length} fee details`,
+//       total: createdFees.length,
+//       fees: formattedFees,
+//     });
+//   } catch (err) {
+//     console.error("Error bulk creating fee details:", err);
+//     res.status(500).json({ message: err.message });
+//   }
+// };
+
+// // Bulk Update Fee Details - Accepts JSON data without images
+// const bulkUpdateFeeDetails = async (req, res) => {
+//   try {
+//     const { error } = bulkUpdateFeeDetailsSchema.validate(req.body);
+//     if (error) return res.status(400).json({ message: error.details[0].message });
+
+//     const { feeUpdates } = req.body;
+//     const schoolId = req.user.school;
+//     const actor = req.user;
+
+//     // Extract fee IDs to update
+//     const feeIds = feeUpdates.map(fu => fu.feeId);
+
+//     // Find all existing fees
+//     const existingFees = await FeeDetail.find({
+//       _id: { $in: feeIds },
+//       school: schoolId
+//     }).select('_id voucherImage studentId');
+
+//     const existingFeeMap = new Map();
+//     existingFees.forEach(fee => {
+//       existingFeeMap.set(fee._id.toString(), fee);
+//     });
+
+//     // Check for invalid fee IDs
+//     const invalidFeeIds = feeIds.filter(id => !existingFeeMap.has(id));
+//     if (invalidFeeIds.length > 0) {
+//       return res.status(400).json({
+//         message: `Some fee records not found`,
+//         invalidFeeIds: invalidFeeIds
+//       });
+//     }
+
+//     // Process new images if provided (optional)
+//     const images = req.files?.voucherImages || [];
+//     const imageMap = new Map();
+
+//     if (images.length > 0) {
+//       const uploadPromises = images.map(async (file) => {
+//         return await uploadFileToS3({
+//           fileBuffer: file.buffer,
+//           fileName: file.originalname,
+//           mimeType: file.mimetype,
+//         });
+//       });
+
+//       const uploadedImageUrls = await Promise.all(uploadPromises);
+
+//       images.forEach((image, index) => {
+//         if (index < feeUpdates.length) {
+//           imageMap.set(index, uploadedImageUrls[index]);
+//         }
+//       });
+//     }
+
+//     // Prepare bulk update operations
+//     const bulkOps = feeUpdates.map((updateData, index) => {
+//       const updateObj = {
+//         updateOne: {
+//           filter: { _id: updateData.feeId, school: schoolId },
+//           update: {
+//             $set: {
+//               month: updateData.month,
+//               amount: updateData.amount,
+//               title: updateData.title,
+//               description: updateData.description || '',
+//               updatedAt: new Date()
+//             }
+//           }
+//         }
+//       };
+
+//       // Handle image update if provided for this index
+//       if (imageMap.has(index)) {
+//         const existingFee = existingFeeMap.get(updateData.feeId);
+//         if (existingFee && existingFee.voucherImage) {
+//           deleteFileFromS3(existingFee.voucherImage).catch(console.error);
+//         }
+//         updateObj.updateOne.update.$set.voucherImage = imageMap.get(index);
+//       }
+
+//       return updateObj;
+//     });
+
+//     // Execute bulk update
+//     const bulkResult = await FeeDetail.bulkWrite(bulkOps);
+
+//     // Send notifications to students for updated fees
+//     const updatedFees = await FeeDetail.find({
+//       _id: { $in: feeIds }
+//     }).lean();
+
+//     const notificationPromises = updatedFees.map(async (fee) => {
+//       try {
+//         await sendFeeNotificationToStudent(fee, actor, 'updated');
+//       } catch (error) {
+//         console.error('Error sending notification for updated fee:', fee._id, error);
+//       }
+//     });
+
+//     await Promise.allSettled(notificationPromises);
+
+//     // Fetch updated fees for response
+//     const feesWithStudentInfo = await FeeDetail.find({
+//       _id: { $in: feeIds }
+//     })
+//       .populate("studentId", "name email rollNo classInfo sectionInfo")
+//       .lean();
+
+//     // Format response
+//     const formattedFees = await Promise.all(feesWithStudentInfo.map(async (fee) => {
+//       const feeObj = { ...fee };
+
+//       let studentSchoolId = null;
+//       if (feeObj.studentId && feeObj.studentId.school) {
+//         studentSchoolId = feeObj.studentId.school;
+//       }
+
+//       if (feeObj.studentId && feeObj.studentId.classInfo && feeObj.studentId.classInfo.id) {
+//         const classSectionInfo = await getClassSectionInfo(
+//           feeObj.studentId.classInfo.id,
+//           feeObj.studentId.sectionInfo ? feeObj.studentId.sectionInfo.id : null,
+//           studentSchoolId
+//         );
+
+//         if (classSectionInfo.class) {
+//           feeObj.classInfo = {
+//             id: classSectionInfo.class._id,
+//             name: classSectionInfo.class.name
+//           };
+//         }
+
+//         if (classSectionInfo.section) {
+//           feeObj.sectionInfo = {
+//             id: classSectionInfo.section._id,
+//             name: classSectionInfo.section.name
+//           };
+//         }
+//       }
+
+//       if (feeObj.studentId) {
+//         feeObj.studentInfo = {
+//           _id: feeObj.studentId._id,
+//           name: feeObj.studentId.name,
+//           email: feeObj.studentId.email,
+//           rollNo: feeObj.studentId.rollNo,
+//           school: feeObj.studentId.school
+//         };
+//         delete feeObj.studentId;
+//       }
+
+//       return feeObj;
+//     }));
+
+//     res.status(200).json({
+//       message: `Successfully updated ${bulkResult.modifiedCount} fee details`,
+//       matchedCount: bulkResult.matchedCount,
+//       modifiedCount: bulkResult.modifiedCount,
+//       fees: formattedFees,
+//     });
+//   } catch (err) {
+//     console.error("Error bulk updating fee details:", err);
+//     res.status(500).json({ message: err.message });
+//   }
+// };
+
+// const createFeeDetail = async (req, res) => {
+//   try {
+//     const { error } = createFeeDetailSchema.validate(req.body);
+//     if (error) return res.status(400).json({ message: error.details[0].message });
+
+//     const { studentId, month, amount, title, description } = req.body;
+//     const schoolId = req.user.school;
+
+//     const student = await User.findOne({
+//       _id: studentId,
+//       role: "student",
+//       school: schoolId,
+//     });
+
+//     if (!student) return res.status(404).json({ message: "Student not found in your school" });
+
+//     const voucherImage = await uploadImage(req.files, "voucherImage");
+
+//     const fee = new FeeDetail({
+//       studentId,
+//       school: schoolId,
+//       month,
+//       amount,
+//       title,
+//       description,
+//       voucherImage,
+//       status: "pending",
+//     });
+
+//     await fee.save();
+
+//     await sendFeeNotificationToStudent(fee, actor, 'created');
+
+//     res.status(201).json({
+//       message: "Fee detail created successfully",
+//       fee,
+//     });
+//   } catch (err) {
+//     console.error("Error creating fee detail:", err);
+//     res.status(500).json({ message: err.message });
+//   }
+// };
+
+// const uploadStudentProof = async (req, res) => {
+//   try {
+//     const feeId = req.params.id;
+//     const studentId = req.user._id;
+
+//     const fee = await FeeDetail.findOne({ _id: feeId, studentId });
+//     if (!fee) return res.status(404).json({ message: "Fee record not found" });
+
+//     fee.studentProofImage = await uploadImage(
+//       req.files,
+//       "studentProofImage",
+//       fee.studentProofImage
+//     );
+
+//     fee.status = "submitted";
+//     await fee.save();
+
+//     await sendFeeNotificationToAdmins(fee, actor);
+
+//     res.status(200).json({
+//       message: "Payment proof submitted successfully",
+//       fee,
+//     });
+//   } catch (err) {
+//     console.error("Error uploading student proof:", err);
+//     res.status(500).json({ message: err.message });
+//   }
+// };
+
+// const approvePayment = async (req, res) => {
+//   try {
+//     const { error } = approvePaymentSchema.validate(req.body);
+//     if (error) return res.status(400).json({ message: error.details[0].message });
+
+//     const feeId = req.params.id;
+//     const schoolId = req.user.school;
+//     const { status } = req.body;
+
+//     const fee = await FeeDetail.findOne({ _id: feeId, school: schoolId });
+//     if (!fee) return res.status(404).json({ message: "Fee detail not found" });
+//     if (fee.status === "pending") return res.status(400).json({ message: "Only submitted proof can be approved or rejected" });
+
+//     fee.status = status;
+//     await fee.save();
+
+//     await sendPaymentStatusNotification(fee, actor, status);
+
+//     res.status(200).json({
+//       message: `Payment ${status}`,
+//       fee,
+//     });
+//   } catch (err) {
+//     console.error("Error approving payment:", err);
+//     res.status(500).json({ message: err.message });
+//   }
+// };
+
+// const updateFeeDetail = async (req, res) => {
+//   try {
+//     const { error } = updateFeeDetailSchema.validate(req.body);
+//     if (error) return res.status(400).json({ message: error.details[0].message });
+
+//     const feeId = req.params.id;
+//     const schoolId = req.user.school;
+
+//     const fee = await FeeDetail.findOne({ _id: feeId, school: schoolId });
+//     if (!fee) return res.status(404).json({ message: "Fee record not found" });
+
+//     const { month, amount, title, description } = req.body;
+
+//     if (month) fee.month = month;
+//     if (amount) fee.amount = amount;
+//     if (title) fee.title = title;
+//     if (description) fee.description = description;
+
+//     fee.voucherImage = await uploadImage(req.files, "voucherImage", fee.voucherImage);
+//     await fee.save();
+
+//     await sendFeeNotificationToStudent(fee, actor, 'updated');
+
+//     res.status(200).json({ message: "Fee detail updated", fee });
+//   } catch (err) {
+//     console.error("Error updating fee:", err);
+//     res.status(500).json({ message: err.message });
+//   }
+// };
+
+// const deleteFeeDetail = async (req, res) => {
+//   try {
+//     const feeId = req.params.id;
+//     const schoolId = req.user.school;
+
+//     const fee = await FeeDetail.findOne({ _id: feeId, school: schoolId });
+//     if (!fee) return res.status(404).json({ message: "Fee record not found" });
+
+//     if (fee.voucherImage) await deleteFileFromS3(fee.voucherImage);
+//     if (fee.studentProofImage) await deleteFileFromS3(fee.studentProofImage);
+
+//     await fee.deleteOne();
+
+//     res.status(200).json({ message: "Fee detail deleted successfully" });
+//   } catch (err) {
+//     console.error("Error deleting fee detail:", err);
+//     res.status(500).json({ message: err.message });
+//   }
+// };
+
+// const getAllFeeDetails = async (req, res) => {
+//   try {
+//     const { error, value } = getAllFeeDetailsSchema.validate(req.query);
+//     if (error) {
+//       return res.status(400).json({ message: error.details[0].message });
+//     }
+
+//     const schoolId = req.user.school;
+//     const { page, limit, studentId, month, status } = value;
+
+//     const filter = { school: schoolId };
+
+//     if (studentId) filter.studentId = studentId;
+//     if (month) filter.month = month;
+//     if (status) filter.status = status;
+
+//     const skip = (page - 1) * limit;
+
+//     const [fees, total] = await Promise.all([
+//       FeeDetail.find(filter)
+//         .populate("studentId", "name email rollNo school classInfo sectionInfo")
+//         .sort({ createdAt: -1 })
+//         .skip(skip)
+//         .limit(limit)
+//         .lean(),
+
+//       FeeDetail.countDocuments(filter),
+//     ]);
+
+//     const formattedFees = await Promise.all(fees.map(async (fee) => {
+//       const feeObj = { ...fee };
+
+//       let schoolId = null;
+//       if (feeObj.studentId && feeObj.studentId.school) {
+//         schoolId = feeObj.studentId.school;
+//       }
+
+//       if (feeObj.studentId && feeObj.studentId.classInfo && feeObj.studentId.classInfo.id) {
+//         const classSectionInfo = await getClassSectionInfo(
+//           feeObj.studentId.classInfo.id,
+//           feeObj.studentId.sectionInfo ? feeObj.studentId.sectionInfo.id : null,
+//           schoolId
+//         );
+
+//         if (classSectionInfo.class) {
+//           feeObj.classInfo = {
+//             id: classSectionInfo.class._id,
+//             name: classSectionInfo.class.name
+//           };
+//         }
+
+//         if (classSectionInfo.section) {
+//           feeObj.sectionInfo = {
+//             id: classSectionInfo.section._id,
+//             name: classSectionInfo.section.name
+//           };
+//         }
+//       }
+
+//       if (feeObj.studentId) {
+//         feeObj.studentInfo = {
+//           _id: feeObj.studentId._id,
+//           name: feeObj.studentId.name,
+//           email: feeObj.studentId.email,
+//           rollNo: feeObj.studentId.rollNo,
+//           school: feeObj.studentId.school
+//         };
+//         delete feeObj.studentId;
+//       }
+
+//       return feeObj;
+//     }));
+
+//     return res.status(200).json({
+//       total,
+//       page,
+//       limit,
+//       totalPages: Math.ceil(total / limit),
+//       fees: formattedFees,
+//     });
+//   } catch (err) {
+//     console.error("Error fetching all fee records:", err);
+//     return res.status(500).json({ message: "Server error" });
+//   }
+// };
+
+// const getMyFeeDetails = async (req, res) => {
+//   try {
+//     const { error, value } = getMyFeeDetailsSchema.validate(req.query);
+//     if (error) {
+//       return res.status(400).json({ message: error.details[0].message });
+//     }
+
+//     const studentId = req.user._id;
+//     const { page, limit } = value;
+
+//     const skip = (page - 1) * limit;
+
+//     const student = await User.findById(studentId)
+//       .select("name email school classInfo sectionInfo")
+//       .lean();
+
+//     if (!student) {
+//       return res.status(404).json({ message: "Student not found" });
+//     }
+
+//     const [fees, total, bankAccounts] = await Promise.all([
+//       FeeDetail.find({ studentId })
+//         .sort({ createdAt: -1 })
+//         .skip(skip)
+//         .limit(limit)
+//         .lean(),
+
+//       FeeDetail.countDocuments({ studentId }),
+
+//       BankAccount.find({
+//         school: student.school,
+//         isActive: true
+//       })
+//         .select('accountHolderName accountNumber bankName branchName accountType ifscCode')
+//         .sort({ createdAt: -1 })
+//         .lean()
+//     ]);
+
+//     return res.status(200).json({
+//       total,
+//       page,
+//       limit,
+//       totalPages: Math.ceil(total / limit),
+//       student: {
+//         _id: student._id,
+//         name: student.name,
+//         email: student.email,
+//         classInfo: student.classInfo,
+//         sectionInfo: student.sectionInfo,
+//         fees,
+//         bankAccounts
+//       },
+//     });
+//   } catch (err) {
+//     return res.status(500).json({ message: "Server error" });
+//   }
+// };
+
+// module.exports = {
+//   createFeeDetail,
+//   uploadStudentProof,
+//   approvePayment,
+//   updateFeeDetail,
+//   deleteFeeDetail,
+//   getAllFeeDetails,
+//   getMyFeeDetails,
+//   bulkCreateFeeDetails,
+//   bulkUpdateFeeDetails
+// };
+
+
+
+
+
+
+
+
+
+
+
+
 const BankAccount = require("../models/BankAccount");
 const ClassSection = require("../models/ClassSection");
 const FeeDetail = require("../models/FeeDetail");
@@ -9,7 +709,10 @@ const {
   approvePaymentSchema,
   getAllFeeDetailsSchema,
   getMyFeeDetailsSchema,
+  bulkCreateFeeDetailsSchema,
+  bulkUpdateFeeDetailsSchema
 } = require("../validators/feeDetail.validation");
+const { createNotification, NOTIFICATION_TYPES, NOTIFICATION_TARGETS } = require("../utils/notificationService");
 
 async function uploadImage(files, fieldName, existingImage = null) {
   let image = existingImage;
@@ -57,6 +760,442 @@ const getClassSectionInfo = async (classId, sectionId, schoolId) => {
   return { class: classInfo, section: sectionInfo };
 };
 
+// Send notification to student when fee is created/updated
+const sendFeeNotificationToStudent = async (fee, actor, action = 'created') => {
+  try {
+    const student = await User.findById(fee.studentId).select('name email school');
+    if (!student) return null;
+
+    let title, message;
+    if (action === 'created') {
+      title = 'New Fee Generated';
+      message = `A new fee of ₹${fee.amount} for ${fee.month} has been generated by ${actor.name}.`;
+    } else if (action === 'updated') {
+      title = 'Fee Updated';
+      message = `Your fee for ${fee.month} has been updated by ${actor.name}. New amount: ₹${fee.amount}`;
+    } else if (action === 'submitted') {
+      title = 'Payment Proof Submitted';
+      message = `Payment proof for fee of ₹${fee.amount} (${fee.month}) has been submitted. Awaiting admin approval.`;
+    }
+
+    return createNotification({
+      type: NOTIFICATION_TYPES.FEE,
+      actor,
+      targetStudents: [fee.studentId],
+      school: fee.school,
+      title,
+      message,
+      data: {
+        feeId: fee._id,
+        amount: fee.amount,
+        month: fee.month,
+        title: fee.title,
+        status: fee.status,
+        action
+      },
+      category: 'general',
+      pinned: false
+    });
+  } catch (error) {
+    console.error('Error sending fee notification to student:', error);
+    return null;
+  }
+};
+
+// Send notification to admins when student submits proof
+const sendFeeNotificationToAdmins = async (fee, actor) => {
+  try {
+    const adminUsers = await User.find({
+      school: fee.school,
+      role: { $in: ['admin_office', 'superadmin', 'school'] }
+    }).select('_id');
+
+    const student = await User.findById(fee.studentId).select('name');
+
+    const title = 'Payment Proof Submitted';
+    const message = `Student ${student?.name || 'Unknown'} has submitted payment proof for fee of ₹${fee.amount} (${fee.month}).`;
+
+    return createNotification({
+      type: NOTIFICATION_TYPES.FEE,
+      actor,
+      targetAdmins: adminUsers.map(u => u._id),
+      target: NOTIFICATION_TARGETS.ADMIN,
+      school: fee.school,
+      title,
+      message,
+      data: {
+        feeId: fee._id,
+        studentId: fee.studentId,
+        studentName: student?.name,
+        amount: fee.amount,
+        month: fee.month,
+        title: fee.title,
+        status: fee.status
+      },
+      category: 'general',
+      pinned: false
+    });
+  } catch (error) {
+    console.error('Error sending fee notification to admins:', error);
+    return null;
+  }
+};
+
+// Send notification when payment is approved/rejected
+const sendPaymentStatusNotification = async (fee, actor, status) => {
+  try {
+    const student = await User.findById(fee.studentId).select('name email school');
+    if (!student) return null;
+
+    const title = `Payment ${status === 'approved' ? 'Approved' : 'Rejected'}`;
+    const message = `Your payment of ₹${fee.amount} for ${fee.month} has been ${status} by ${actor.name}.`;
+
+    return createNotification({
+      type: NOTIFICATION_TYPES.FEE,
+      actor,
+      targetStudents: [fee.studentId],
+      school: fee.school,
+      title,
+      message,
+      data: {
+        feeId: fee._id,
+        amount: fee.amount,
+        month: fee.month,
+        title: fee.title,
+        status: status
+      },
+      category: 'general',
+      pinned: false
+    });
+  } catch (error) {
+    console.error('Error sending payment status notification:', error);
+    return null;
+  }
+};
+
+// Bulk Create Fee Details - Accepts JSON data without images
+const bulkCreateFeeDetails = async (req, res) => {
+  try {
+    const { error } = bulkCreateFeeDetailsSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
+
+    const { feeDetails } = req.body;
+    const schoolId = req.user.school;
+    const actor = req.user;
+
+    // Get all student IDs from the request
+    const studentIds = feeDetails.map(fd => fd.studentId);
+    
+    // Verify all students exist in the school
+    const students = await User.find({
+      _id: { $in: studentIds },
+      role: "student",
+      school: schoolId,
+    }).select('_id name email rollNo classInfo sectionInfo');
+
+    const studentMap = new Map();
+    students.forEach(student => {
+      studentMap.set(student._id.toString(), student);
+    });
+
+    // Check for invalid students
+    const invalidStudents = studentIds.filter(id => !studentMap.has(id));
+    if (invalidStudents.length > 0) {
+      return res.status(400).json({
+        message: `Some students not found in your school`,
+        invalidStudentIds: invalidStudents
+      });
+    }
+
+    // Process images if provided (optional for bulk)
+    const images = req.files?.voucherImages || [];
+    const imageMap = new Map();
+    
+    if (images.length > 0) {
+      const uploadPromises = images.map(async (file) => {
+        return await uploadFileToS3({
+          fileBuffer: file.buffer,
+          fileName: file.originalname,
+          mimeType: file.mimetype,
+        });
+      });
+
+      const uploadedImageUrls = await Promise.all(uploadPromises);
+      
+      // Map images by index
+      images.forEach((image, index) => {
+        if (index < feeDetails.length) {
+          imageMap.set(index, uploadedImageUrls[index]);
+        }
+      });
+    }
+
+    // Prepare fee documents for bulk insert
+    const feeDocuments = feeDetails.map((feeData, index) => {
+      const feeDoc = {
+        studentId: feeData.studentId,
+        school: schoolId,
+        month: feeData.month,
+        amount: feeData.amount,
+        title: feeData.title,
+        description: feeData.description || '',
+        status: "pending",
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      // Add image if available for this index (optional)
+      if (imageMap.has(index)) {
+        feeDoc.voucherImage = imageMap.get(index);
+      }
+
+      return feeDoc;
+    });
+
+    // Bulk insert
+    const createdFees = await FeeDetail.insertMany(feeDocuments);
+
+    // Send notifications to students
+    const notificationPromises = createdFees.map(async (fee) => {
+      try {
+        await sendFeeNotificationToStudent(fee, actor, 'created');
+      } catch (error) {
+        console.error('Error sending notification for fee:', fee._id, error);
+      }
+    });
+
+    await Promise.allSettled(notificationPromises);
+
+    // Populate student info in response
+    const populatedFees = await FeeDetail.find({
+      _id: { $in: createdFees.map(f => f._id) }
+    })
+    .populate("studentId", "name email rollNo classInfo sectionInfo")
+    .lean();
+
+    // Format response with class/section info
+    const formattedFees = await Promise.all(populatedFees.map(async (fee) => {
+      const feeObj = { ...fee };
+      
+      let studentSchoolId = null;
+      if (feeObj.studentId && feeObj.studentId.school) {
+        studentSchoolId = feeObj.studentId.school;
+      }
+
+      if (feeObj.studentId && feeObj.studentId.classInfo && feeObj.studentId.classInfo.id) {
+        const classSectionInfo = await getClassSectionInfo(
+          feeObj.studentId.classInfo.id,
+          feeObj.studentId.sectionInfo ? feeObj.studentId.sectionInfo.id : null,
+          studentSchoolId
+        );
+
+        if (classSectionInfo.class) {
+          feeObj.classInfo = {
+            id: classSectionInfo.class._id,
+            name: classSectionInfo.class.name
+          };
+        }
+
+        if (classSectionInfo.section) {
+          feeObj.sectionInfo = {
+            id: classSectionInfo.section._id,
+            name: classSectionInfo.section.name
+          };
+        }
+      }
+
+      if (feeObj.studentId) {
+        feeObj.studentInfo = {
+          _id: feeObj.studentId._id,
+          name: feeObj.studentId.name,
+          email: feeObj.studentId.email,
+          rollNo: feeObj.studentId.rollNo,
+          school: feeObj.studentId.school
+        };
+        delete feeObj.studentId;
+      }
+
+      return feeObj;
+    }));
+
+    res.status(201).json({
+      message: `Successfully created ${createdFees.length} fee details`,
+      total: createdFees.length,
+      fees: formattedFees,
+    });
+  } catch (err) {
+    console.error("Error bulk creating fee details:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Bulk Update Fee Details - Accepts JSON data without images
+const bulkUpdateFeeDetails = async (req, res) => {
+  try {
+    const { error } = bulkUpdateFeeDetailsSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
+
+    const { feeUpdates } = req.body;
+    const schoolId = req.user.school;
+    const actor = req.user;
+
+    // Extract fee IDs to update
+    const feeIds = feeUpdates.map(fu => fu.feeId);
+    
+    // Find all existing fees
+    const existingFees = await FeeDetail.find({
+      _id: { $in: feeIds },
+      school: schoolId
+    }).select('_id voucherImage studentId');
+
+    const existingFeeMap = new Map();
+    existingFees.forEach(fee => {
+      existingFeeMap.set(fee._id.toString(), fee);
+    });
+
+    // Check for invalid fee IDs
+    const invalidFeeIds = feeIds.filter(id => !existingFeeMap.has(id));
+    if (invalidFeeIds.length > 0) {
+      return res.status(400).json({
+        message: `Some fee records not found`,
+        invalidFeeIds: invalidFeeIds
+      });
+    }
+
+    // Process new images if provided (optional)
+    const images = req.files?.voucherImages || [];
+    const imageMap = new Map();
+    
+    if (images.length > 0) {
+      const uploadPromises = images.map(async (file) => {
+        return await uploadFileToS3({
+          fileBuffer: file.buffer,
+          fileName: file.originalname,
+          mimeType: file.mimetype,
+        });
+      });
+
+      const uploadedImageUrls = await Promise.all(uploadPromises);
+      
+      images.forEach((image, index) => {
+        if (index < feeUpdates.length) {
+          imageMap.set(index, uploadedImageUrls[index]);
+        }
+      });
+    }
+
+    // Prepare bulk update operations
+    const bulkOps = feeUpdates.map((updateData, index) => {
+      const updateObj = {
+        updateOne: {
+          filter: { _id: updateData.feeId, school: schoolId },
+          update: {
+            $set: {
+              month: updateData.month,
+              amount: updateData.amount,
+              title: updateData.title,
+              description: updateData.description || '',
+              updatedAt: new Date()
+            }
+          }
+        }
+      };
+
+      // Handle image update if provided for this index
+      if (imageMap.has(index)) {
+        const existingFee = existingFeeMap.get(updateData.feeId);
+        if (existingFee && existingFee.voucherImage) {
+          deleteFileFromS3(existingFee.voucherImage).catch(console.error);
+        }
+        updateObj.updateOne.update.$set.voucherImage = imageMap.get(index);
+      }
+
+      return updateObj;
+    });
+
+    // Execute bulk update
+    const bulkResult = await FeeDetail.bulkWrite(bulkOps);
+
+    // Send notifications to students for updated fees
+    const updatedFees = await FeeDetail.find({
+      _id: { $in: feeIds }
+    }).lean();
+
+    const notificationPromises = updatedFees.map(async (fee) => {
+      try {
+        await sendFeeNotificationToStudent(fee, actor, 'updated');
+      } catch (error) {
+        console.error('Error sending notification for updated fee:', fee._id, error);
+      }
+    });
+
+    await Promise.allSettled(notificationPromises);
+
+    // Fetch updated fees for response
+    const feesWithStudentInfo = await FeeDetail.find({
+      _id: { $in: feeIds }
+    })
+    .populate("studentId", "name email rollNo classInfo sectionInfo")
+    .lean();
+
+    // Format response
+    const formattedFees = await Promise.all(feesWithStudentInfo.map(async (fee) => {
+      const feeObj = { ...fee };
+      
+      let studentSchoolId = null;
+      if (feeObj.studentId && feeObj.studentId.school) {
+        studentSchoolId = feeObj.studentId.school;
+      }
+
+      if (feeObj.studentId && feeObj.studentId.classInfo && feeObj.studentId.classInfo.id) {
+        const classSectionInfo = await getClassSectionInfo(
+          feeObj.studentId.classInfo.id,
+          feeObj.studentId.sectionInfo ? feeObj.studentId.sectionInfo.id : null,
+          studentSchoolId
+        );
+
+        if (classSectionInfo.class) {
+          feeObj.classInfo = {
+            id: classSectionInfo.class._id,
+            name: classSectionInfo.class.name
+          };
+        }
+
+        if (classSectionInfo.section) {
+          feeObj.sectionInfo = {
+            id: classSectionInfo.section._id,
+            name: classSectionInfo.section.name
+          };
+        }
+      }
+
+      if (feeObj.studentId) {
+        feeObj.studentInfo = {
+          _id: feeObj.studentId._id,
+          name: feeObj.studentId.name,
+          email: feeObj.studentId.email,
+          rollNo: feeObj.studentId.rollNo,
+          school: feeObj.studentId.school
+        };
+        delete feeObj.studentId;
+      }
+
+      return feeObj;
+    }));
+
+    res.status(200).json({
+      message: `Successfully updated ${bulkResult.modifiedCount} fee details`,
+      matchedCount: bulkResult.matchedCount,
+      modifiedCount: bulkResult.modifiedCount,
+      fees: formattedFees,
+    });
+  } catch (err) {
+    console.error("Error bulk updating fee details:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Single fee creation (existing, works with form-data)
 const createFeeDetail = async (req, res) => {
   try {
     const { error } = createFeeDetailSchema.validate(req.body);
@@ -64,6 +1203,7 @@ const createFeeDetail = async (req, res) => {
 
     const { studentId, month, amount, title, description } = req.body;
     const schoolId = req.user.school;
+    const actor = req.user;
 
     const student = await User.findOne({
       _id: studentId,
@@ -88,6 +1228,9 @@ const createFeeDetail = async (req, res) => {
 
     await fee.save();
 
+    // Send notification to student
+    await sendFeeNotificationToStudent(fee, actor, 'created');
+
     res.status(201).json({
       message: "Fee detail created successfully",
       fee,
@@ -102,6 +1245,7 @@ const uploadStudentProof = async (req, res) => {
   try {
     const feeId = req.params.id;
     const studentId = req.user._id;
+    const actor = req.user;
 
     const fee = await FeeDetail.findOne({ _id: feeId, studentId });
     if (!fee) return res.status(404).json({ message: "Fee record not found" });
@@ -114,6 +1258,12 @@ const uploadStudentProof = async (req, res) => {
 
     fee.status = "submitted";
     await fee.save();
+
+    // Send notification to student
+    // await sendFeeNotificationToStudent(fee, actor, 'submitted');
+    
+    // Send notification to admins
+    await sendFeeNotificationToAdmins(fee, actor);
 
     res.status(200).json({
       message: "Payment proof submitted successfully",
@@ -133,6 +1283,7 @@ const approvePayment = async (req, res) => {
     const feeId = req.params.id;
     const schoolId = req.user.school;
     const { status } = req.body;
+    const actor = req.user;
 
     const fee = await FeeDetail.findOne({ _id: feeId, school: schoolId });
     if (!fee) return res.status(404).json({ message: "Fee detail not found" });
@@ -140,6 +1291,9 @@ const approvePayment = async (req, res) => {
 
     fee.status = status;
     await fee.save();
+
+    // Send notification to student about approval/rejection
+    await sendPaymentStatusNotification(fee, actor, status);
 
     res.status(200).json({
       message: `Payment ${status}`,
@@ -158,6 +1312,7 @@ const updateFeeDetail = async (req, res) => {
 
     const feeId = req.params.id;
     const schoolId = req.user.school;
+    const actor = req.user;
 
     const fee = await FeeDetail.findOne({ _id: feeId, school: schoolId });
     if (!fee) return res.status(404).json({ message: "Fee record not found" });
@@ -171,6 +1326,9 @@ const updateFeeDetail = async (req, res) => {
 
     fee.voucherImage = await uploadImage(req.files, "voucherImage", fee.voucherImage);
     await fee.save();
+
+    // Send notification to student
+    await sendFeeNotificationToStudent(fee, actor, 'updated');
 
     res.status(200).json({ message: "Fee detail updated", fee });
   } catch (err) {
@@ -231,16 +1389,16 @@ const getAllFeeDetails = async (req, res) => {
     const formattedFees = await Promise.all(fees.map(async (fee) => {
       const feeObj = { ...fee };
 
-      let schoolId = null;
+      let studentSchoolId = null;
       if (feeObj.studentId && feeObj.studentId.school) {
-        schoolId = feeObj.studentId.school;
+        studentSchoolId = feeObj.studentId.school;
       }
 
       if (feeObj.studentId && feeObj.studentId.classInfo && feeObj.studentId.classInfo.id) {
         const classSectionInfo = await getClassSectionInfo(
           feeObj.studentId.classInfo.id,
           feeObj.studentId.sectionInfo ? feeObj.studentId.sectionInfo.id : null,
-          schoolId
+          studentSchoolId
         );
 
         if (classSectionInfo.class) {
@@ -351,4 +1509,6 @@ module.exports = {
   deleteFeeDetail,
   getAllFeeDetails,
   getMyFeeDetails,
+  bulkCreateFeeDetails,
+  bulkUpdateFeeDetails
 };

@@ -9,6 +9,8 @@ const {
   deleteFeeDetail,
   getMyFeeDetails,
   getAllFeeDetails,
+  bulkCreateFeeDetails,
+  bulkUpdateFeeDetails,
 } = require('../controllers/feeDetail.controller');
 
 const router = express.Router();
@@ -18,6 +20,8 @@ router.put("/:id/student-proof", protect, isStudent, upload.fields([{ name: "stu
 router.patch("/:id/approve", protect, isAdminOffice, approvePayment);
 router.patch("/:id", protect, isAdminOffice, upload.fields([{ name: "voucherImage" }]), updateFeeDetail);
 router.delete("/:id", protect, isAdminOffice, deleteFeeDetail);
+router.post("/bulk", protect, isAdminOffice, bulkCreateFeeDetails);
+router.put("/bulk", protect, isAdminOffice, bulkUpdateFeeDetails);
 router.get("/", protect, isAdminOffice, getAllFeeDetails);
 router.get("/student", protect, isStudent, getMyFeeDetails);
 
