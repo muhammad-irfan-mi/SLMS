@@ -724,15 +724,14 @@ const getLeaves = async (req, res) => {
             return {
                 _id: leave._id,
                 school: leave.school,
-                studentId: leave.studentId,
-                studentName: leave.studentName || null,
-                teacherId: leave.teacherId,
+                studentName: leave.studentName || (leave.studentId?.name) || null,
+                teacherName: leave.teacherName || (leave.teacherId?.name) || null,
                 classId: leave.classId
                     ? { _id: leave.classId._id, class: leave.classId.class }
                     : null,
                 sectionId: sectionInfo,
                 userType: leave.userType,
-                date: leave.date,
+                date: leave.dates,
                 subject: leave.subject,
                 reason: leave.reason,
                 appliedAt: leave.appliedAt,
@@ -753,7 +752,6 @@ const getLeaves = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("getLeaves error:", err);
         return res.status(500).json({
             message: "Server error",
             error: err.message
