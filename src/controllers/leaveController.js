@@ -1691,6 +1691,98 @@ const rejectTeacherLeave = async (req, res) => {
     }
 };
 
+// Delete leave
+const deleteLeave = async (req, res) => {
+    try {
+        const user = req.user;
+        const { id } = req.params;
+
+        const leave = await Leave.findById(id);
+        if (!leave) {
+            return res.status(404).json({
+                success: false,
+                message: "Leave not found"
+            });
+        }
+
+        if (String(leave.school) !== String(user.school)) {
+            return res.status(403).json({
+                success: false,
+                message: "Access denied - This leave does not belong to your school"
+            });
+        }
+
+        const userRole = user.role || "school";
+        const isSchool = userRole === "school";
+        const isAdminOffice = userRole === "admin_office";
+        const isTeacher = userRole === "teacher";
+        const isStudent = userRole === "student";
+
+        if (isStudent) {
+
+            if (String(leave.studentId) !== String(user._id)) {
+                return res.status(403).json({
+                    success: false,
+                    message: "You can only delete your own leaves"
+                });
+            }
+
+        } else if (isTeacher) {
+
+            if (String(leave.teacherId) !== String(user._id)) {
+                return res.status(403).json({
+                    success: false,
+                    message: "You can only delete your own leaves"
+                });
+            }
+
+        } else if (isSchool || isAdminOffice) {
+            if (leave.status === "pending") {
+                return res.status(400).json({
+                    success: false,
+                    message: "You cannot delete pending leaves. Please approve or reject them first."
+                });
+            }
+
+            if (!leave.reviewedAt) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Cannot delete unreviewed leave. Please process the leave first."
+                });
+            }
+        } else {
+            return res.status(403).json({
+                success: false,
+                message: "Unauthorized access"
+            });
+        }
+
+        const today = formatDate(new Date());
+        const allDatesArePast = leave.dates.every(d => d < today);
+
+        if (!allDatesArePast) {
+            return res.status(400).json({
+                success: false,
+                message: "Cannot delete leave with future dates. Wait until all leave dates have passed.",
+            });
+        }
+
+        await Leave.deleteOne({ _id: leave._id });
+
+        return res.status(200).json({
+            success: true,
+            message: `Leave deleted successfully`,
+        });
+
+    } catch (err) {
+        return res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    }
+};
+
 module.exports = {
     applyLeave,
     updateLeave,
@@ -1705,4 +1797,5 @@ module.exports = {
     cancelTeacherLeave,
     approveTeacherLeave,
     rejectTeacherLeave,
+    deleteLeave
 };

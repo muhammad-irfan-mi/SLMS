@@ -12,7 +12,8 @@ const {
     cancelTeacherLeave,
     approveTeacherLeave,
     rejectTeacherLeave,
-    updateLeave
+    updateLeave,
+    deleteLeave
 } = require("../controllers/leaveController");
 
 const {
@@ -137,6 +138,12 @@ router.post("/admin/reject/:id",
     validate(reviewLeaveSchema),
     validate(cancelLeaveSchema, "params"),
     rejectTeacherLeave
+);
+
+router.delete("/:id",
+    protect,
+    allowedRoles,
+    deleteLeave
 );
 
 module.exports = router;
