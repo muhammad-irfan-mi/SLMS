@@ -6,7 +6,7 @@ const {
   getDocumentRequests,
   getStudentDocumentRequests,
   updateDocumentRequest,
-  deleteDocumentRequest,
+  // deleteDocumentRequest,
 
   // Student Document functions
   uploadDocumentForRequest,
@@ -48,7 +48,7 @@ router.get("/request/student", protect, isStudent, validateQuery(getDocumentRequ
 
 router.put("/request/:id", protect, isTeacherOrAdminOfficeOrSchool, validateBody(updateDocumentRequestSchema), updateDocumentRequest);
 
-router.delete("/request/:id", protect, isTeacherOrAdminOfficeOrSchool, deleteDocumentRequest);
+// router.delete("/request/:id", protect, isTeacherOrAdminOfficeOrSchool, deleteDocumentRequest);
 
 router.post(
   "/upload/request/:requestId",
@@ -80,7 +80,7 @@ router.put(
 router.delete(
   "/:id",
   protect,
-  isStudent,
+  isTeacherOrAdminOfficeOrSchool,
   deleteDocument
 );
 

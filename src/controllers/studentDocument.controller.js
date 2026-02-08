@@ -680,7 +680,6 @@ const deleteDocumentRequest = async (req, res) => {
             });
         }
 
-        // Check permissions - only requester can delete
         if (documentRequest.requestedBy.toString() !== user._id.toString()) {
             return res.status(403).json({
                 success: false,
@@ -688,7 +687,6 @@ const deleteDocumentRequest = async (req, res) => {
             });
         }
 
-        // Check if document has been uploaded
         if (documentRequest.uploadedDocument) {
             return res.status(400).json({
                 success: false,
@@ -703,7 +701,6 @@ const deleteDocumentRequest = async (req, res) => {
             message: "Document request deleted successfully"
         });
     } catch (err) {
-        console.error("Delete Document Request Error:", err);
         res.status(500).json({
             success: false,
             message: "Server error",
@@ -993,50 +990,70 @@ const updateDocument = async (req, res) => {
     }
 };
 
-// Student delete document
 const deleteDocument = async (req, res) => {
     try {
         const { id } = req.params;
+        const { _id: userId, school: userSchool } = req.user;
+        const role = req.user.role || 'school';
 
-        const document = await StudentDocument.findById(id);
-        if (!document) {
+        const documentRequest = await DocumentRequest.findById(id);
+        if (!documentRequest) {
             return res.status(404).json({
                 success: false,
-                message: "Document not found"
+                message: "Document request not found"
             });
         }
 
-        if (document.studentId.toString() !== req.user._id.toString()) {
+        const schoolId = role === "school" ? userId : userSchool;
+        const { requestedByModel, requestedBy } = documentRequest;
+
+        const isSchoolRequest = requestedByModel === "School";
+        const isTeacherRequest = requestedByModel === "User";
+
+        let hasPermission = false;
+
+        if (isSchoolRequest) {
+            const requestedById = requestedBy.toString();
+            hasPermission = (role === "school" && userId.toString() === requestedById) ||
+                (role === "admin_office" && schoolId.toString() === requestedById);
+        }
+        else if (isTeacherRequest) {
+            hasPermission = role === "teacher" && userId.toString() === requestedBy.toString();
+        }
+
+        if (!hasPermission) {
             return res.status(403).json({
                 success: false,
-                message: "You can only delete your own documents"
+                message: `who created this request can delete it`
             });
         }
 
-        if (document.files && document.files.length > 0) {
-            for (const file of document.files) {
-                await deleteFileFromS3(file).catch(console.error);
+        if (documentRequest.uploadedDocument) {
+            const studentDocument = await StudentDocument.findById(documentRequest.uploadedDocument);
+            if (studentDocument) {
+                if (studentDocument.files?.length > 0) {
+                    await Promise.all(
+                        studentDocument.files.map(file =>
+                            deleteFileFromS3(file).catch(console.error)
+                        )
+                    );
+                }
+                await StudentDocument.findByIdAndDelete(documentRequest.uploadedDocument);
             }
         }
 
-        const documentRequest = await DocumentRequest.findOne({ uploadedDocument: id });
-        if (documentRequest) {
-            documentRequest.uploadedDocument = null;
-            documentRequest.uploadedAt = null;
-            documentRequest.status = 'pending';
-            await documentRequest.save();
-        }
-
-        await document.deleteOne();
+        await DocumentRequest.findByIdAndDelete(id);
 
         res.status(200).json({
             success: true,
-            message: "Document deleted successfully"
+            message: "Document request deleted successfully"
         });
+
     } catch (err) {
+        console.error("deleteDocumentRequest error:", err);
         res.status(500).json({
             success: false,
-            message: err.message || "Server error",
+            message: "Server error",
             error: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
     }
