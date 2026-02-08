@@ -6,7 +6,7 @@ const {
     updateDiary,
     deleteDiary,
 } = require("../controllers/diary.controller");
-const { protect, isTeacherOrAdminOfficeOrSchool, isTeacherOrStudent } = require("../middlewares/auth");
+const { protect, isTeacherOrAdminOfficeOrSchool, isTeacherOrStudent, allowedRoles } = require("../middlewares/auth");
 const { upload } = require("../utils/multer");
 
 const router = express.Router();
@@ -43,7 +43,7 @@ router.delete(
 router.get(
     "/section/:sectionId",
     protect,
-    isTeacherOrStudent,
+    allowedRoles,
     getDiaryBySection
 );
 

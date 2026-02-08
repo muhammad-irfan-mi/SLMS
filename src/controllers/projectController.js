@@ -480,13 +480,6 @@ const deleteProject = async (req, res) => {
     const isAdminOrSchool = ['admin_office', 'school'].includes(role);
     if (!isCreator && !isAdminOrSchool) return res.status(403).json({ message: "Not authorized to delete this project" });
 
-    if (project.submissions && project.submissions.length > 0) {
-      return res.status(400).json({
-        message: "Cannot delete project that has submissions",
-        submissionCount: project.submissions.length
-      });
-    }
-
     await project.deleteOne();
     return res.status(200).json({ message: "Project deleted successfully" });
 
@@ -785,10 +778,10 @@ module.exports = {
   createProject,
   getProjects,
   updateProject,
-  deleteProject,
   getProjectsForStudent,
   submitProject,
   gradeSubmission,
   getProjectSubmissions,
-  getSubmission
+  getSubmission,
+  deleteProject,
 };

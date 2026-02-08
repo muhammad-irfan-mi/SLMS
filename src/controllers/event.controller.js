@@ -144,16 +144,42 @@ const getEventById = async (req, res) => {
 };
 
 // DELETE EVENT
+// const deleteEvent = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+
+//         const event = await Event.findById(id);
+//         if (!event) return res.status(404).json({ message: "Event not found" });
+
+//         // Delete all images from S3
+//         await deleteMultipleImages(event.images);
+
+//         await event.deleteOne();
+
+//         res.status(200).json({ message: "Event deleted successfully" });
+
+//     } catch (err) {
+//         console.error("Delete Event Error:", err);
+//         res.status(500).json({ message: "Server error", error: err.message });
+//     }
+// };
+
+// DELETE EVENT
 const deleteEvent = async (req, res) => {
     try {
         const { id } = req.params;
-        
+        const userSchool = req.user.school;
+
         const event = await Event.findById(id);
         if (!event) return res.status(404).json({ message: "Event not found" });
 
-        // Delete all images from S3
-        await deleteMultipleImages(event.images);
+        if (String(event.school) !== String(userSchool)) {
+            return res.status(403).json({
+                message: "You can only delete events from your school"
+            });
+        }
 
+        await deleteMultipleImages(event.images);
         await event.deleteOne();
 
         res.status(200).json({ message: "Event deleted successfully" });

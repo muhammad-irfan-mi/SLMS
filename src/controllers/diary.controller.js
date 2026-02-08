@@ -505,29 +505,48 @@ const getStudentDiary = async (req, res) => {
 const deleteDiary = async (req, res) => {
     try {
         const { diaryId } = req.params;
-        const teacherId = req.user._id;
-        const teacherRole = req.user.role;
+        const userId = req.user._id;
+        const userRole = req.user.role || 'school';
+        const userSchool = req.user.school;
 
         const existingDiary = await Diary.findById(diaryId);
         if (!existingDiary) {
             return res.status(404).json({ message: "Diary not found" });
         }
 
-        const isCreator = String(existingDiary.createdBy) === String(teacherId);
-
-        if (!isCreator && teacherRole !== "superadmin" && teacherRole !== "admin_office") {
+        if (String(existingDiary.school) !== String(userSchool)) {
             return res.status(403).json({
-                message: "Access denied: Only creator or admin can delete this diary"
+                message: "Access denied: You can only delete diaries from your school"
             });
         }
 
-        if (existingDiary.images && existingDiary.images.length > 0) {
-            for (const img of existingDiary.images) {
-                await deleteFileFromS3(img);
-            }
+        const isCreator = String(existingDiary.createdBy) === String(userId);
+        const isAdmin = ["superadmin", "admin_office", "school"].includes(userRole);
+
+        let hasScheduleAccess = false;
+
+        if (userRole === "teacher" && !isCreator) {
+            const scheduleExists = await Schedule.findOne({
+                school: userSchool,
+                teacherId: userId,
+                classId: existingDiary.classId,
+                sectionId: existingDiary.sectionId,
+                subjectId: existingDiary.subjectId
+            });
+
+            hasScheduleAccess = !!scheduleExists;
         }
-        if (existingDiary.pdf) {
-            await deleteFileFromS3(existingDiary.pdf);
+
+        if (!isCreator && !isAdmin && !hasScheduleAccess) {
+            return res.status(403).json({
+                message: "You can delete this diary"
+            });
+        }
+
+        if (userRole === "school" && String(existingDiary.school) !== String(userSchool)) {
+            return res.status(403).json({
+                message: "Access denied: School admin can only delete diaries from their school"
+            });
         }
 
         await existingDiary.deleteOne();
@@ -535,7 +554,6 @@ const deleteDiary = async (req, res) => {
         res.status(200).json({ message: "Diary deleted successfully" });
 
     } catch (err) {
-        console.error("deleteDiary error:", err);
         res.status(500).json({
             message: err.message || "Server error",
             error: process.env.NODE_ENV === 'development' ? err.stack : undefined

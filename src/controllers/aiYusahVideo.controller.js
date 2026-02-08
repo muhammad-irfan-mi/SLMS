@@ -328,7 +328,6 @@ const deleteAiVideo = async (req, res) => {
     const { id } = req.params;
     const userRole = detectUserRole(req.user);
 
-    // Only superadmin can delete videos
     if (userRole !== 'superadmin') {
       return res.status(403).json({ 
         message: "Only superadmin can delete videos" 
