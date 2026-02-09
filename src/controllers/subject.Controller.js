@@ -121,7 +121,7 @@ const addSubject = async (req, res) => {
     const existing = await Subject.findOne({
       school: schoolId,
       name: { $regex: new RegExp(`^${name}$`, "i") },
-      class: classId,
+      classId: classId,
       sectionId: sectionId || null,
       isActive: true
     });
@@ -137,7 +137,7 @@ const addSubject = async (req, res) => {
       code,
       description,
       school: schoolId,
-      class: classId,
+      classId: classId,
       sectionId: sectionId || null,
       isActive: true
     });
@@ -166,7 +166,7 @@ const getSubjects = async (req, res) => {
     };
 
     if (classId) {
-      filter.class = classId;
+      filter.classId = classId;
 
       if (sectionId) {
         filter.sectionId = sectionId;
@@ -178,18 +178,19 @@ const getSubjects = async (req, res) => {
 
     const subjects = await Subject.find(filter)
       .populate({
-        path: "class",
-        select: "class",
+        path: "classId",
+        select: "classId",
       })
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
+      console.log("subject", subjects)
 
     const formattedSubjects = await Promise.all(
       subjects.map(async (subject) => {
         const classSectionResult = await getClassSectionData(
-          subject.class._id || subject.class,
+          subject.classId,
           schoolId,
           subject.sectionId
         );
@@ -206,8 +207,8 @@ const getSubjects = async (req, res) => {
         };
 
         if (!classSectionResult.error) {
-          response.class = classSectionResult.data.class;
-          response.section = classSectionResult.data.section;
+          response.classInfo = classSectionResult.data.class;
+          response.sectionInfo = classSectionResult.data.section;
         }
 
         return response;
@@ -240,8 +241,8 @@ const getSubjectById = async (req, res) => {
       isActive: true
     })
       .populate({
-        path: "class",
-        select: "class",
+        path: "classId",
+        select: "classId",
       })
       .lean();
 
@@ -252,7 +253,7 @@ const getSubjectById = async (req, res) => {
     }
 
     const classSectionResult = await getClassSectionData(
-      subject.class._id || subject.class,
+      subject.classId,
       schoolId,
       subject.sectionId
     );
@@ -263,7 +264,6 @@ const getSubjectById = async (req, res) => {
       });
     }
 
-    // Format response
     const response = {
       _id: subject._id,
       name: subject.name,
@@ -273,8 +273,8 @@ const getSubjectById = async (req, res) => {
       createdAt: subject.createdAt,
       updatedAt: subject.updatedAt,
       __v: subject.__v || 0,
-      class: classSectionResult.data.class,
-      section: classSectionResult.data.section
+      classInfo: classSectionResult.data.class,
+      sectionInfo: classSectionResult.data.section
     };
 
     res.status(200).json({
@@ -307,11 +307,11 @@ const getSubjectsByTeacher = async (req, res) => {
         select: "name code description class sectionId isActive",
         match: { isActive: true },
         populate: {
-          path: "class",
-          select: "class",
+          path: "classId",
+          select: "classId",
         },
       })
-      .populate("classId", "class")
+      .populate("classId", "classId")
       .lean();
 
     if (!schedules.length) {
@@ -392,7 +392,7 @@ const updateSubject = async (req, res) => {
       });
     }
 
-    if (updateData.classId && updateData.classId !== subject.class.toString()) {
+    if (updateData.classId && updateData.classId !== subject.classId.toString()) {
       const classDoc = await ClassSection.findOne({
         _id: updateData.classId,
         school: schoolId
@@ -417,9 +417,9 @@ const updateSubject = async (req, res) => {
       }
     }
 
-    if (updateData.sectionId && (!updateData.classId || updateData.classId === subject.class.toString())) {
+    if (updateData.sectionId && (!updateData.classId || updateData.classId === subject.classId.toString())) {
       const currentClass = await ClassSection.findOne({
-        _id: subject.class,
+        _id: subject.classId,
         school: schoolId
       });
 
@@ -440,7 +440,7 @@ const updateSubject = async (req, res) => {
       const duplicate = await Subject.findOne({
         school: schoolId,
         name: { $regex: new RegExp(`^${updateData.name}$`, "i") },
-        class: updateData.classId || subject.class,
+        classId: updateData.classId || subject.classId,
         sectionId: updateData.sectionId || subject.sectionId,
         _id: { $ne: id }
       });
@@ -456,7 +456,7 @@ const updateSubject = async (req, res) => {
       id,
       updateData,
       { new: true, runValidators: true }
-    ).populate("class", "class");
+    ).populate("classId", "classId");
 
     res.status(200).json({
       message: "Subject updated successfully",

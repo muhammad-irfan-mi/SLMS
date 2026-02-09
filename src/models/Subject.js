@@ -8,7 +8,7 @@ const SubjectSchema = new Schema(
     description: String,
 
     school: { type: Schema.Types.ObjectId, ref: "School", required: true },
-    class: { type: Schema.Types.ObjectId, ref: "ClassSection", required: true },
+    classId: { type: Schema.Types.ObjectId, ref: "ClassSection", required: true },
     sectionId: { type: Schema.Types.ObjectId },
     isActive: { type: Boolean, default: true },
   },

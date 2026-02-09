@@ -4,24 +4,33 @@ const ClassSection = require("../models/ClassSection");
 const User = require("../models/User");
 const { getClassSectionData } = require("../utils/classHelper");
 
-// Helper function to check time overlap
-const isTimeOverlap = (start1, end1, start2, end2) => {
-  const toMinutes = (t) => {
-    const [h, m] = t.split(":").map(Number);
-    return h * 60 + m;
-  };
-  const s1 = toMinutes(start1), e1 = toMinutes(end1);
-  const s2 = toMinutes(start2), e2 = toMinutes(end2);
+const timeToMinutes = (time) => {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+};
+
+const normalizeRange = (start, end) => {
+  let s = timeToMinutes(start);
+  let e = timeToMinutes(end);
+
+  if (e <= s) {
+    e += 24 * 60;
+  }
+
+  return { start: s, end: e };
+};
+
+const isOverlap = (s1, e1, s2, e2) => {
   return s1 < e2 && s2 < e1;
 };
 
-// Helper function to format schedule response
+
 const formatScheduleResponse = (schedule) => {
   const response = schedule.toObject ? schedule.toObject() : { ...schedule };
 
   if (response.classId) {
     if (typeof response.classId === 'object') {
-      response.class = {
+      response.classInfo = {
         _id: response.classId._id,
         name: response.classId.class || response.classId.name
       };
@@ -34,7 +43,7 @@ const formatScheduleResponse = (schedule) => {
       section => section._id.toString() === response.sectionId.toString()
     );
     if (foundSection) {
-      response.section = {
+      response.sectionInfo = {
         _id: foundSection._id,
         name: foundSection.name
       };
@@ -72,111 +81,154 @@ const addSchedule = async (req, res) => {
     const schoolId = req.user.school || req.user._id;
     const { schedules } = req.body;
 
-    const createdSchedules = [];
+    const schedulesInRequest = [];
 
+    // =========================
+    // STEP 1: BASIC VALIDATION
+    // =========================
     for (let i = 0; i < schedules.length; i++) {
-      const {
-        classId,
-        sectionIds,
-        day,
-        type,
-        subjectId,
-        startTime,
-        endTime,
-        teacherId,
-      } = schedules[i];
+      const s = schedules[i];
 
-      const classResult = await getClassSectionData(classId, schoolId);
+      const classResult = await getClassSectionData(s.classId, schoolId);
       if (classResult.error) {
-        return res.status(classResult.error.status).json({
-          message: classResult.error.message
-        });
+        return res.status(400).json({ message: classResult.error.message });
       }
 
-      const classSectionIds = classResult.classDoc.sections.map(s => s._id.toString());
-      for (const secId of sectionIds) {
-        if (!classSectionIds.includes(secId.toString())) {
+      const classSections = classResult.classDoc.sections.map(sec =>
+        sec._id.toString()
+      );
+
+      for (const secId of s.sectionIds) {
+        if (!classSections.includes(secId.toString())) {
           return res.status(400).json({
-            message: `Section ${secId} does not belong to class ${classResult.data.class.name}`,
+            message: `Section ${secId} not found in class`
           });
         }
       }
 
-      if (subjectId && type === 'subject') {
-        const subject = await Subject.findOne({
-          _id: subjectId,
-          school: schoolId,
-          isActive: true
-        });
+      if (s.type === 'subject') {
+        const subject = await Subject.findOne({ _id: s.subjectId, school: schoolId });
+        if (!subject) return res.status(400).json({ message: "Subject not found" });
 
-        if (!subject) {
-          return res.status(400).json({
-            message: `Subject not found in your school`,
-          });
-        }
-      }
-
-      if (teacherId && type === 'subject') {
         const teacher = await User.findOne({
-          _id: teacherId,
+          _id: s.teacherId,
           school: schoolId,
           role: 'teacher'
         });
-
-        if (!teacher) {
-          return res.status(400).json({
-            message: `Teacher not found in your school`,
-          });
-        }
+        if (!teacher) return res.status(400).json({ message: "Teacher not found" });
       }
 
-      // Create schedule for each section
-      for (const sectionId of sectionIds) {
-        const existingSchedules = await Schedule.find({
-          school: schoolId,
-          classId,
-          sectionId,
-          day,
-        });
+      schedulesInRequest.push({ ...s, index: i });
+    }
 
-        for (const existing of existingSchedules) {
-          if (isTimeOverlap(startTime, endTime, existing.startTime, existing.endTime)) {
-            await Schedule.findByIdAndDelete(existing._id);
+    // =====================================
+    // STEP 2: CONFLICT CHECK
+    // =====================================
+    for (const current of schedulesInRequest) {
+      const incoming = normalizeRange(current.startTime, current.endTime);
+
+      for (const sectionId of current.sectionIds) {
+
+        // -------- TEACHER CONFLICT (DB) --------
+        if (current.teacherId) {
+          const teacherSchedules = await Schedule.find({
+            school: schoolId,
+            teacherId: current.teacherId,
+            day: current.day,
+            isActive: true
+          });
+
+          for (const sch of teacherSchedules) {
+            const existing = normalizeRange(sch.startTime, sch.endTime);
+
+            if (isOverlap(incoming.start, incoming.end, existing.start, existing.end)) {
+              return res.status(400).json({
+                message: `Teacher already busy from ${sch.startTime} to ${sch.endTime}`
+              });
+            }
           }
         }
 
-        const newSchedule = await Schedule.create({
+        // -------- CLASS / SECTION CONFLICT (DB) --------
+        const classSchedules = await Schedule.find({
           school: schoolId,
-          classId,
+          classId: current.classId,
           sectionId,
-          subjectId: type === 'subject' ? subjectId : null,
-          teacherId: type === 'subject' ? teacherId : null,
-          day,
-          type,
-          startTime,
-          endTime,
+          day: current.day,
+          isActive: true
         });
 
-        const populatedSchedule = await Schedule.findById(newSchedule._id)
-          .populate("subjectId", "name code")
-          .populate("teacherId", "name email")
-          .populate("classId", "class sections");
+        for (const sch of classSchedules) {
+          const existing = normalizeRange(sch.startTime, sch.endTime);
 
-        createdSchedules.push(formatScheduleResponse(populatedSchedule));
+          if (isOverlap(incoming.start, incoming.end, existing.start, existing.end)) {
+            return res.status(400).json({
+              message: `Class already has schedule ${sch.startTime} to ${sch.endTime}`
+            });
+          }
+        }
+
+        // -------- SAME REQUEST CONFLICT --------
+        for (const other of schedulesInRequest) {
+          if (other.index === current.index) continue;
+          if (other.day !== current.day) continue;
+
+          const otherRange = normalizeRange(other.startTime, other.endTime);
+
+          if (
+            current.teacherId &&
+            other.teacherId &&
+            current.teacherId === other.teacherId &&
+            isOverlap(incoming.start, incoming.end, otherRange.start, otherRange.end)
+          ) {
+            return res.status(400).json({
+              message: `Teacher conflict with ${other.startTime} - ${other.endTime}`
+            });
+          }
+
+          if (
+            current.classId === other.classId &&
+            other.sectionIds.includes(sectionId) &&
+            isOverlap(incoming.start, incoming.end, otherRange.start, otherRange.end)
+          ) {
+            return res.status(400).json({
+              message: `Class conflict with ${other.startTime} - ${other.endTime}`
+            });
+          }
+        }
       }
     }
 
-    return res.status(201).json({
-      message: "Schedules created successfully",
-      total: createdSchedules.length,
-      schedules: createdSchedules,
+    // =========================
+    // STEP 3: CREATE
+    // =========================
+    const created = [];
+
+    for (const s of schedules) {
+      for (const sectionId of s.sectionIds) {
+        created.push(await Schedule.create({
+          school: schoolId,
+          classId: s.classId,
+          sectionId,
+          subjectId: s.type === 'subject' ? s.subjectId : null,
+          teacherId: s.type === 'subject' ? s.teacherId : null,
+          day: s.day,
+          type: s.type,
+          startTime: s.startTime,
+          endTime: s.endTime
+        }));
+      }
+    }
+
+    res.status(201).json({
+      message: "All schedules created successfully",
+      total: created.length,
+      schedules: created
     });
-  } catch (error) {
-    console.error("Add schedule error:", error);
-    return res.status(500).json({
-      message: "Server error",
-      error: error.message,
-    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
@@ -189,7 +241,7 @@ const getSchedule = async (req, res) => {
     page = Number(page);
     limit = Number(limit);
 
-    const filter = { school: schoolId };
+    const filter = { school: schoolId, isActive: true };
     if (classId) filter.classId = classId;
     if (sectionId) filter.sectionId = sectionId;
     if (teacherId) filter.teacherId = teacherId;
@@ -251,7 +303,8 @@ const getScheduleBySection = async (req, res) => {
     const filter = {
       school: schoolId,
       classId,
-      sectionId
+      sectionId,
+      isActive: true
     };
     if (day) filter.day = day;
 
@@ -308,7 +361,8 @@ const getScheduleByTeacher = async (req, res) => {
 
     const filter = {
       school: schoolId,
-      teacherId
+      teacherId,
+      isActive: true
     };
     if (day) filter.day = day;
 
@@ -329,16 +383,13 @@ const getScheduleByTeacher = async (req, res) => {
       schedule.type !== 'subject' || schedule.subjectId !== null
     );
 
-    // const formattedSchedules = validSchedules.map(schedule =>
-    //   formatScheduleResponse(schedule)
-    // );
-
     const formattedSchedules = validSchedules.map(schedule => {
       const formatted = formatScheduleResponse(schedule);
+      console.log(formatted)
       return {
         _id: formatted._id,
-        class: formatted.class,
-        section: formatted.section,
+        classInfo: formatted.classInfo,
+        sectionInfo: formatted.sectionInfo,
         subject: formatted.subject,
         day: formatted.day,
         type: formatted.type,
@@ -358,7 +409,6 @@ const getScheduleByTeacher = async (req, res) => {
       schedules: formattedSchedules,
     });
   } catch (error) {
-    console.error("Teacher schedule error:", error);
     res.status(500).json({
       message: "Server error",
       error: error.message
@@ -386,6 +436,7 @@ const getScheduleByStudent = async (req, res) => {
       school: schoolId,
       classId: student.classInfo.id,
       sectionId: student.sectionInfo.id,
+      isActive: true
     };
     if (day) filter.day = day;
 
@@ -411,8 +462,8 @@ const getScheduleByStudent = async (req, res) => {
       const formatted = formatScheduleResponse(schedule);
       return {
         _id: formatted._id,
-        class: formatted.class,
-        section: formatted.section,
+        classInfo: formatted.classInfo,
+        sectionInfo: formatted.sectionInfo,
         subject: formatted.subject,
         teacher: formatted.teacher,
         day: formatted.day,
@@ -509,22 +560,25 @@ const deleteSchedule = async (req, res) => {
     const { id } = req.params;
     const schoolId = req.user.school;
 
-    const deleted = await Schedule.findOneAndDelete({
+    const schedule = await Schedule.findOne({
       _id: id,
-      school: schoolId
+      school: schoolId,
+      isActive: true
     });
 
-    if (!deleted) {
+    if (!schedule) {
       return res.status(404).json({
-        message: "Schedule not found in your school"
+        message: "Schedule already deleted"
       });
     }
+
+    schedule.isActive = false;
+    await schedule.save();
 
     res.status(200).json({
       message: "Schedule deleted successfully"
     });
   } catch (error) {
-    console.error("Delete schedule error:", error);
     res.status(500).json({
       message: "Server error",
       error: error.message
