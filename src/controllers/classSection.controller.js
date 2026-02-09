@@ -337,7 +337,7 @@ const updateAllClassesAndSections = async (req, res) => {
                     });
                 }
             } else {
-               
+
                 if (c.order !== existingClass.order) {
                     const orderConflict = await ClassSection.findOne({
                         school: schoolId,
@@ -448,18 +448,15 @@ const getClassesBySchool = async (req, res) => {
         const { schoolId } = req.params;
         let { page = 1, limit = 20 } = req.query;
 
-        // Convert to numbers
         page = parseInt(page);
         limit = parseInt(limit);
 
-        // Check if user is authorized for this school
         if (req.user.school.toString() !== schoolId) {
             return res.status(403).json({
                 message: "Unauthorized access to this school"
             });
         }
 
-        // Validate school exists
         const schoolExists = await School.findById(schoolId);
         if (!schoolExists) {
             return res.status(404).json({ message: "School not found" });
@@ -474,13 +471,61 @@ const getClassesBySchool = async (req, res) => {
             .limit(limit)
             .sort({ class: 1 });
 
+        const inchargeTeachers = await User.find({
+            school: schoolId,
+            role: 'teacher',
+            isIncharge: true,
+            isActive: true
+        }).select('_id name email phone classInfo sectionInfo images')
+            .lean();
+
+        const inchargeMap = {};
+        inchargeTeachers.forEach(teacher => {
+            if (teacher.classInfo?.id && teacher.sectionInfo?.id) {
+                const key = `${teacher.classInfo.id}_${teacher.sectionInfo.id}`;
+                inchargeMap[key] = {
+                    _id: teacher._id,
+                    name: teacher.name,
+                    email: teacher.email,
+                    phone: teacher.phone,
+                    // profileImage: teacher.images?.recentPic || null,
+                    // classInfo: teacher.classInfo,
+                    // sectionInfo: teacher.sectionInfo
+                };
+            }
+        });
+
+        const enhancedClasses = classes.map(classObj => {
+            const enhancedSections = classObj.sections.map(section => {
+                const key = `${classObj._id}_${section._id}`;
+                const incharge = inchargeMap[key] || null;
+
+                return {
+                    _id: section._id,
+                    name: section.name,
+                    incharge: incharge
+                };
+            });
+
+            return {
+                _id: classObj._id,
+                class: classObj.class,
+                school: classObj.school,
+                sections: enhancedSections,
+                createdAt: classObj.createdAt,
+                updatedAt: classObj.updatedAt
+            };
+        });
+
         res.status(200).json({
             total,
             page,
             limit,
             totalPages: Math.ceil(total / limit),
-            count: classes.length,
-            classes,
+            // count: classes.length,
+            // classes,
+            count: enhancedClasses.length,
+            classes: enhancedClasses,
         });
 
     } catch (err) {
