@@ -175,68 +175,14 @@ const updateAllClassesAndSections = async (req, res) => {
 
         for (const oldClass of existingClasses) {
             if (!incomingClassNames.includes(oldClass.class.toLowerCase())) {
-                const hasStudents = await User.exists({
-                    school: schoolId,
-                    "classInfo.id": oldClass._id,
-                    role: "student"
+                results.push({
+                    className: oldClass.class,
+                    order: oldClass.order,
+                    status: "Not Modified",
+                    reason: "Class not in update request",
+                    action: "Kept in system"
                 });
-
-                if (hasStudents) {
-                    results.push({
-                        className: oldClass.class,
-                        order: oldClass.order,
-                        status: "Cannot Delete",
-                        reason: "Class has assigned students",
-                        action: "Kept in system"
-                    });
-                    classes.push({
-                        className: oldClass.class,
-                        order: oldClass.order,
-                        sections: oldClass.sections.map(s => s.name)
-                    });
-                } else {
-                    const hasTeachers = await User.exists({
-                        school: schoolId,
-                        "classInfo.id": oldClass._id,
-                        role: "teacher"
-                    });
-
-                    if (hasTeachers) {
-                        results.push({
-                            className: oldClass.class,
-                            order: oldClass.order,
-                            status: "Cannot Delete",
-                            reason: "Class has assigned teachers",
-                            action: "Kept in system"
-                        });
-                        classes.push({
-                            className: oldClass.class,
-                            order: oldClass.order,
-                            sections: oldClass.sections.map(s => s.name)
-                        });
-                    } else {
-                        await oldClass.deleteOne();
-                        results.push({
-                            className: oldClass.class,
-                            order: oldClass.order,
-                            status: "Deleted",
-                            reason: "No students/teachers assigned"
-                        });
-                    }
-                }
             }
-        }
-
-        const finalOrderNumbers = classes.map(c => c.order);
-        const finalDuplicateOrders = finalOrderNumbers.filter((order, index) =>
-            finalOrderNumbers.indexOf(order) !== index
-        );
-
-        if (finalDuplicateOrders.length > 0) {
-            return res.status(400).json({
-                message: "Duplicate order numbers after adding back kept classes",
-                duplicateOrders: [...new Set(finalDuplicateOrders)]
-            });
         }
 
         for (const c of classes) {
@@ -246,98 +192,36 @@ const updateAllClassesAndSections = async (req, res) => {
             });
 
             if (!existingClass) {
-                const oldClass = await ClassSection.findOne({
+                const orderConflict = await ClassSection.findOne({
                     school: schoolId,
-                    _id: c.oldClassId
+                    order: c.order
                 });
 
-                if (oldClass && c.oldClassId) {
-                    const hasStudents = await User.exists({
-                        school: schoolId,
-                        "classInfo.id": oldClass._id,
-                        role: "student"
-                    });
-
-                    if (hasStudents) {
-                        results.push({
-                            className: c.className,
-                            oldClassName: oldClass.class,
-                            order: c.order,
-                            oldOrder: oldClass.order,
-                            status: "Cannot Rename",
-                            reason: "Class has assigned students"
-                        });
-                        continue;
-                    }
-
-                    const orderConflict = await ClassSection.findOne({
-                        school: schoolId,
-                        order: c.order,
-                        _id: { $ne: oldClass._id }
-                    });
-
-                    if (orderConflict) {
-                        results.push({
-                            className: c.className,
-                            order: c.order,
-                            status: "Cannot Update Order",
-                            reason: `Order ${c.order} is already used by class: ${orderConflict.class}`
-                        });
-                        continue;
-                    }
-
-                    oldClass.class = c.className;
-                    oldClass.order = c.order;
-
-                    const existingSectionNames = oldClass.sections.map(s => s.name);
-                    const newSectionsFromPayload = [...new Set(c.sections.map(s => s.trim()))];
-                    const allSections = [...new Set([...existingSectionNames, ...newSectionsFromPayload])];
-
-                    oldClass.sections = allSections.map(name => ({ name }));
-                    await oldClass.save();
-
+                if (orderConflict) {
                     results.push({
                         className: c.className,
-                        oldClassName: oldClass.class,
-                        status: "Renamed",
-                        id: oldClass._id,
-                        oldOrder: oldClass.order,
-                        newOrder: c.order,
-                        sectionsAdded: newSectionsFromPayload.filter(s => !existingSectionNames.includes(s))
-                    });
-                } else {
-                    const orderConflict = await ClassSection.findOne({
-                        school: schoolId,
-                        order: c.order
-                    });
-
-                    if (orderConflict) {
-                        results.push({
-                            className: c.className,
-                            order: c.order,
-                            status: "Cannot Create",
-                            reason: `Order ${c.order} is already used by class: ${orderConflict.class}`
-                        });
-                        continue;
-                    }
-
-                    const newClass = await ClassSection.create({
-                        school: schoolId,
-                        class: c.className,
                         order: c.order,
-                        sections: [...new Set(c.sections.map(s => s.trim()))].map(name => ({ name })),
+                        status: "Cannot Create",
+                        reason: `Order ${c.order} is already used by class: ${orderConflict.class}`
                     });
-
-                    results.push({
-                        className: c.className,
-                        status: "Created",
-                        id: newClass._id,
-                        order: newClass.order,
-                        sections: newClass.sections.map(s => s.name)
-                    });
+                    continue;
                 }
-            } else {
 
+                const newClass = await ClassSection.create({
+                    school: schoolId,
+                    class: c.className,
+                    order: c.order,
+                    sections: [...new Set(c.sections.map(s => s.trim()))].map(name => ({ name })),
+                });
+
+                results.push({
+                    className: c.className,
+                    status: "Created",
+                    id: newClass._id,
+                    order: newClass.order,
+                    sections: newClass.sections.map(s => s.name)
+                });
+            } else {
                 if (c.order !== existingClass.order) {
                     const orderConflict = await ClassSection.findOne({
                         school: schoolId,
@@ -358,9 +242,8 @@ const updateAllClassesAndSections = async (req, res) => {
 
                 const existingSectionNames = existingClass.sections.map(s => s.name);
                 const newSectionsFromPayload = [...new Set(c.sections.map(s => s.trim()))];
-
+                
                 const allSections = [...new Set([...existingSectionNames, ...newSectionsFromPayload])];
-
                 const sectionsAdded = newSectionsFromPayload.filter(s => !existingSectionNames.includes(s));
 
                 existingClass.order = c.order;
@@ -370,7 +253,8 @@ const updateAllClassesAndSections = async (req, res) => {
                 results.push({
                     className: c.className,
                     status: "Updated",
-                    order: existingClass.order,
+                    oldOrder: existingClass._doc.order, 
+                    newOrder: c.order,
                     existingSectionCount: existingSectionNames.length,
                     newSectionsAdded: sectionsAdded,
                     allSections: existingClass.sections.map(s => s.name)

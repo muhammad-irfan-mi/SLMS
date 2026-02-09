@@ -72,7 +72,6 @@ const addSchoolBySuperAdmin = async (req, res) => {
     const pendingSchool = await School.findOne({ email, verified: false });
 
     if (pendingSchool) {
-      // Update existing pending registration
       pendingSchool.tempData = {
         name,
         email,
@@ -91,7 +90,6 @@ const addSchoolBySuperAdmin = async (req, res) => {
       };
       await pendingSchool.save();
     } else {
-      // Create new pending registration
       const newSchool = new School({
         name,
         email,
@@ -123,7 +121,6 @@ const addSchoolBySuperAdmin = async (req, res) => {
       await newSchool.save();
     }
 
-    // Send OTP email
     await emailService.sendOTPEmail(email, otpCode, name);
 
     return res.status(201).json({
@@ -151,7 +148,6 @@ const verifySchoolOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
 
-    // Find pending school registration
     const school = await School.findOne({ email, verified: false });
 
     if (!school) {
@@ -160,14 +156,12 @@ const verifySchoolOTP = async (req, res) => {
       });
     }
 
-    // Check OTP attempts
     if (school.otp.attempts >= 5) {
       return res.status(429).json({
         message: "Too many OTP attempts. Please request a new OTP."
       });
     }
 
-    // Validate OTP
     const validation = otpService.validateOTP(
       otp,
       school.otp.code,
@@ -175,7 +169,6 @@ const verifySchoolOTP = async (req, res) => {
     );
 
     if (!validation.valid) {
-      // Increment attempt counter
       school.otp.attempts += 1;
       school.otp.lastAttempt = new Date();
       await school.save();
@@ -186,10 +179,8 @@ const verifySchoolOTP = async (req, res) => {
       });
     }
 
-    // OTP verified successfully - complete registration
     const finalSchoolId = "SCH-" + crypto.randomBytes(3).toString('hex').toUpperCase();
 
-    // Apply temp data to actual fields
     school.name = school.tempData.name;
     school.email = school.tempData.email;
     school.phone = school.tempData.phone;
@@ -200,8 +191,8 @@ const verifySchoolOTP = async (req, res) => {
     school.noOfStudents = school.tempData.noOfStudents;
     school.schoolId = finalSchoolId;
     school.verified = true;
-    school.otp = undefined; // Remove OTP data
-    school.tempData = undefined; // Clear temp data
+    school.otp = undefined; 
+    school.tempData = undefined;
 
     await school.save();
 
@@ -238,7 +229,6 @@ const resendSchoolOTP = async (req, res) => {
       });
     }
 
-    // Check if resend is allowed (cool down period)
     if (!otpService.canResendOTP(school.otp.lastAttempt)) {
       const waitTime = Math.ceil((new Date(school.otp.lastAttempt.getTime() + 60000) - new Date()) / 1000);
       return res.status(429).json({
@@ -246,18 +236,15 @@ const resendSchoolOTP = async (req, res) => {
       });
     }
 
-    // Generate new OTP
     const newOTP = otpService.generateOTP();
     const newExpiry = otpService.calculateExpiry(10);
 
-    // Update OTP
     school.otp.code = newOTP;
     school.otp.expiresAt = newExpiry;
     school.otp.attempts = 0;
     school.otp.lastAttempt = new Date();
     await school.save();
 
-    // Send new OTP email
     await emailService.sendOTPEmail(email, newOTP, school.tempData.name);
 
     return res.status(200).json({
@@ -295,7 +282,6 @@ const setSchoolPassword = async (req, res) => {
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Set password
     school.password = hashedPassword;
     await school.save();
 
