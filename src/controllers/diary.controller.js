@@ -19,12 +19,31 @@ const formatDate = (date) => {
     return `${y}-${m}-${day}`;
 };
 
+
 const extractSection = (classObj, sectionId) => {
     if (!classObj?.sections) return null;
     const section = classObj.sections.find(
         (s) => s._id.toString() === sectionId.toString()
     );
     return section ? { _id: section._id, name: section.name } : null;
+};
+
+const formatClassSection = (classDoc, sectionId) => {
+    if (!classDoc) return { classInfo: null, sectionInfo: null };
+
+    const section = classDoc.sections?.find(
+        sec => sec._id.toString() === sectionId.toString()
+    );
+
+    return {
+        classInfo: {
+            _id: classDoc._id,
+            name: classDoc.class || classDoc.name
+        },
+        sectionInfo: section
+            ? { _id: section._id, name: section.name }
+            : null
+    };
 };
 
 // Handle file uploads
@@ -345,25 +364,29 @@ const getDiaryBySection = async (req, res) => {
             .limit(limit)
             .lean();
 
-        diaries = diaries.map((d) => ({
-            _id: d._id,
-            school: d.school,
-            class: d.classId?.class || null,
-            section: extractSection(d.classId, sectionId),
-            subject: d.subjectId || null,
-            teacher: d.createdBy || null,
-            date: d.date,
-            dueDate: d.dueDate,
-            title: d.title,
-            description: d.description,
-            forAll: d.forAll,
-            studentIds: d.studentIds,
-            images: d.images || [],
-            pdf: d.pdf,
-            createdByName: d.createdByName,
-            createdAt: d.createdAt,
-            updatedAt: d.updatedAt
-        }));
+        diaries = diaries.map(d => {
+            const { classInfo, sectionInfo } = formatClassSection(d.classId, sectionId);
+
+            return {
+                _id: d._id,
+                school: d.school,
+                classInfo,
+                sectionInfo,
+                subject: d.subjectId || null,
+                teacher: d.createdBy || null,
+                date: d.date,
+                dueDate: d.dueDate,
+                title: d.title,
+                description: d.description,
+                forAll: d.forAll,
+                studentIds: d.studentIds,
+                images: d.images || [],
+                pdf: d.pdf,
+                createdByName: d.createdByName,
+                createdAt: d.createdAt,
+                updatedAt: d.updatedAt
+            };
+        });
 
         if (active === "true") {
             const today = new Date();
@@ -456,26 +479,28 @@ const getStudentDiary = async (req, res) => {
             .limit(limit)
             .lean();
 
-        diaries = diaries.map((d) => ({
-            _id: d._id,
-            school: d.school,
-            class: d.classId?.class || null,
-            section: extractSection(d.classId, sectionId),
-            subject: d.subjectId || null,
-            teacher: d.createdBy || null,
-            date: d.date,
-            dueDate: d.dueDate,
-            title: d.title,
-            description: d.description,
-            forAll: d.forAll,
-            images: d.images || [],
-            pdf: d.pdf,
-            createdByName: d.createdByName,
-            createdAt: d.createdAt,
-            updatedAt: d.updatedAt
-        }));
+        diaries = diaries.map(d => {
+            const { classInfo, sectionInfo } = formatClassSection(d.classId, sectionId);
 
-        // Filter active diaries if requested
+            return {
+                _id: d._id,
+                school: d.school,
+                classInfo,
+                sectionInfo,
+                subject: d.subjectId || null,
+                teacher: d.createdBy || null,
+                date: d.date,
+                dueDate: d.dueDate,
+                title: d.title,
+                description: d.description,
+                images: d.images || [],
+                pdf: d.pdf,
+                createdByName: d.createdByName,
+                createdAt: d.createdAt,
+                updatedAt: d.updatedAt
+            };
+        });
+
         if (active === "true") {
             const today = new Date();
             diaries = diaries.filter(d => {
