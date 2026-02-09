@@ -185,7 +185,7 @@ const getSubjects = async (req, res) => {
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
-      console.log("subject", subjects)
+    console.log("subject", subjects)
 
     const formattedSubjects = await Promise.all(
       subjects.map(async (subject) => {
@@ -348,9 +348,8 @@ const getSubjectsByTeacher = async (req, res) => {
           school: subject.school,
           createdAt: subject.createdAt,
           updatedAt: subject.updatedAt,
-          __v: subject.__v || 0,
-          class: classSectionResult.data.class,
-          section: classSectionResult.data.section
+          classInfo: classSectionResult.data.class,
+          sectionInfo: classSectionResult.data.section
         };
 
         uniqueSubjects.push(formattedSubject);
@@ -369,7 +368,6 @@ const getSubjectsByTeacher = async (req, res) => {
       subjects: paginated,
     });
   } catch (error) {
-    console.error("Error fetching subjects by teacher:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };

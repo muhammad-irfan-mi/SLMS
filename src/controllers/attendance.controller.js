@@ -497,20 +497,20 @@ const getAttendanceBySection = async (req, res) => {
             return {
                 _id: att._id,
                 date: att.date,
-                class: att.classId ? {
+                classInfo: att.classId ? {
                     _id: att.classId._id,
                     name: att.classId.class
                 } : null,
-                section: section ? {
+                sectionInfo: section ? {
                     _id: section._id,
                     name: section.name
                 } : null,
-                teacher: att.teacherId ? {
+                teacherInfo: att.teacherId ? {
                     _id: att.teacherId._id,
                     name: att.teacherId.name,
                     email: att.teacherId.email
                 } : null,
-                students: students.map(s => ({
+                studentInfo: students.map(s => ({
                     studentId: s.studentId,
                     name: s.name,
                     email: s.email,
@@ -645,17 +645,17 @@ const getAttendanceByStudent = async (req, res) => {
                     _id: r._id,
                     date: r.date,
 
-                    student: {
+                    studentInfo: {
                         studentId: student.studentId,
                         name: student.name,
                         email: student.email,
-                        status: student.status
+                        // status: student.status
                     },
-                    class: r.classId ? {
+                    classInfo: r.classId ? {
                         _id: r.classId._id,
                         name: r.classId.class
                     } : null,
-                    section: section ? {
+                    sectionInfo: section ? {
                         _id: section._id,
                         name: section.name
                     } : null,

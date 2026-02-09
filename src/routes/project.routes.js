@@ -72,12 +72,14 @@ router.get("/:projectId/submissions",
 
 router.get("/:projectId/submissions/:submissionId",
   protect,
-  getSubmission);
+  getSubmission
+);
 
 router.post("/:projectId/submissions/:submissionId/grade",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   validateGrading,
-  gradeSubmission);
+  gradeSubmission
+);
 
 module.exports = router;

@@ -25,23 +25,81 @@ const isOverlap = (s1, e1, s2, e2) => {
 };
 
 
-const formatScheduleResponse = (schedule) => {
-  const response = schedule.toObject ? schedule.toObject() : { ...schedule };
+// const formatScheduleResponse = (schedule) => {
+//   const response = schedule.toObject ? schedule.toObject() : { ...schedule };
 
-  if (response.classId) {
-    if (typeof response.classId === 'object') {
-      response.classInfo = {
-        _id: response.classId._id,
-        name: response.classId.class || response.classId.name
-      };
-      delete response.classId;
-    }
+//   if (response.classId) {
+//     if (typeof response.classId === 'object') {
+//       response.classInfo = {
+//         _id: response.classId._id,
+//         name: response.classId.class || response.classId.name
+//       };
+//       delete response.classId;
+//     }
+//   }
+
+//   if (response.sectionId && schedule.classId && schedule.classId.sections) {
+//     const foundSection = schedule.classId.sections.find(
+//       section => section._id.toString() === response.sectionId.toString()
+//     );
+//     if (foundSection) {
+//       response.sectionInfo = {
+//         _id: foundSection._id,
+//         name: foundSection.name
+//       };
+//     }
+//   }
+
+//   if (response.subjectId) {
+//     if (typeof response.subjectId === 'object') {
+//       response.subjectInfo = {
+//         _id: response.subjectId._id,
+//         name: response.subjectId.name,
+//         code: response.subjectId.code
+//       };
+//     }
+//     delete response.subjectId;
+//   }
+
+//   if (response.teacherId) {
+//     if (typeof response.teacherId === 'object') {
+//       response.teacherInfo = {
+//         _id: response.teacherId._id,
+//         name: response.teacherId.name,
+//         email: response.teacherId.email
+//       };
+//     }
+//     delete response.teacherId;
+//   }
+
+//   return response;
+// };
+
+// Add new schedule
+
+const formatScheduleResponse = (schedule) => {
+  const response = schedule?.toObject
+    ? schedule.toObject()
+    : { ...schedule };
+
+  /* ---------- CLASS ---------- */
+  if (response.classId && typeof response.classId === "object") {
+    response.classInfo = {
+      _id: response.classId._id,
+      name: response.classId.class || response.classId.name
+    };
   }
 
-  if (response.sectionId && schedule.classId && schedule.classId.sections) {
-    const foundSection = schedule.classId.sections.find(
-      section => section._id.toString() === response.sectionId.toString()
+  /* ---------- SECTION ---------- */
+  if (
+    response.sectionId &&
+    response.classId &&
+    Array.isArray(response.classId.sections)
+  ) {
+    const foundSection = response.classId.sections.find(
+      sec => sec._id.toString() === response.sectionId.toString()
     );
+
     if (foundSection) {
       response.sectionInfo = {
         _id: foundSection._id,
@@ -50,32 +108,33 @@ const formatScheduleResponse = (schedule) => {
     }
   }
 
-  if (response.subjectId) {
-    if (typeof response.subjectId === 'object') {
-      response.subject = {
-        _id: response.subjectId._id,
-        name: response.subjectId.name,
-        code: response.subjectId.code
-      };
-    }
-    delete response.subjectId;
+  /* ---------- SUBJECT ---------- */
+  if (response.subjectId && typeof response.subjectId === "object") {
+    response.subjectInfo = {
+      _id: response.subjectId._id,
+      name: response.subjectId.name,
+      code: response.subjectId.code
+    };
   }
 
-  if (response.teacherId) {
-    if (typeof response.teacherId === 'object') {
-      response.teacher = {
-        _id: response.teacherId._id,
-        name: response.teacherId.name,
-        email: response.teacherId.email
-      };
-    }
-    delete response.teacherId;
+  /* ---------- TEACHER ---------- */
+  if (response.teacherId && typeof response.teacherId === "object") {
+    response.teacherInfo = {
+      _id: response.teacherId._id,
+      name: response.teacherId.name,
+      email: response.teacherId.email
+    };
   }
+
+  /* ---------- CLEANUP ---------- */
+  delete response.classId;
+  delete response.sectionId;
+  delete response.subjectId;
+  delete response.teacherId;
 
   return response;
 };
 
-// Add new schedule
 const addSchedule = async (req, res) => {
   try {
     const schoolId = req.user.school || req.user._id;
@@ -83,9 +142,6 @@ const addSchedule = async (req, res) => {
 
     const schedulesInRequest = [];
 
-    // =========================
-    // STEP 1: BASIC VALIDATION
-    // =========================
     for (let i = 0; i < schedules.length; i++) {
       const s = schedules[i];
 
@@ -121,15 +177,11 @@ const addSchedule = async (req, res) => {
       schedulesInRequest.push({ ...s, index: i });
     }
 
-    // =====================================
-    // STEP 2: CONFLICT CHECK
-    // =====================================
     for (const current of schedulesInRequest) {
       const incoming = normalizeRange(current.startTime, current.endTime);
 
       for (const sectionId of current.sectionIds) {
 
-        // -------- TEACHER CONFLICT (DB) --------
         if (current.teacherId) {
           const teacherSchedules = await Schedule.find({
             school: schoolId,
@@ -149,7 +201,6 @@ const addSchedule = async (req, res) => {
           }
         }
 
-        // -------- CLASS / SECTION CONFLICT (DB) --------
         const classSchedules = await Schedule.find({
           school: schoolId,
           classId: current.classId,
@@ -168,7 +219,6 @@ const addSchedule = async (req, res) => {
           }
         }
 
-        // -------- SAME REQUEST CONFLICT --------
         for (const other of schedulesInRequest) {
           if (other.index === current.index) continue;
           if (other.day !== current.day) continue;
@@ -199,9 +249,6 @@ const addSchedule = async (req, res) => {
       }
     }
 
-    // =========================
-    // STEP 3: CREATE
-    // =========================
     const created = [];
 
     for (const s of schedules) {
@@ -227,7 +274,6 @@ const addSchedule = async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
@@ -374,6 +420,7 @@ const getScheduleByTeacher = async (req, res) => {
         select: "name code",
         match: { isActive: true }
       })
+      .populate("teacherId", "name email")
       .populate("classId", "class sections")
       .skip((page - 1) * limit)
       .limit(limit)
@@ -390,7 +437,8 @@ const getScheduleByTeacher = async (req, res) => {
         _id: formatted._id,
         classInfo: formatted.classInfo,
         sectionInfo: formatted.sectionInfo,
-        subject: formatted.subject,
+        subjectInfo: formatted.subjectInfo,
+        teacherInfo: formatted.teacherInfo,
         day: formatted.day,
         type: formatted.type,
         startTime: formatted.startTime,
@@ -464,8 +512,8 @@ const getScheduleByStudent = async (req, res) => {
         _id: formatted._id,
         classInfo: formatted.classInfo,
         sectionInfo: formatted.sectionInfo,
-        subject: formatted.subject,
-        teacher: formatted.teacher,
+        subjectInfo: formatted.subjectInfo,
+        teacherInfo: formatted.teacherInfo,
         day: formatted.day,
         type: formatted.type,
         startTime: formatted.startTime,

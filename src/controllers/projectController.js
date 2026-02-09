@@ -406,13 +406,11 @@ const getProjects = async (req, res) => {
           title: project.title,
           description: project.description,
           detail: project.detail,
-
           classInfo,
           sectionInfo,
-
           creator,
           targetType: project.targetType,
-          subject: project.subjectId,
+          subjectInfo: project.subjectId,
           studentIds: project.studentIds,
           deadline: project.deadline,
           maxMarks: project.maxMarks,
@@ -588,7 +586,7 @@ const getProjectsForStudent = async (req, res) => {
           sectionInfo: classSection.sectionInfo,
           creator,
           targetType: project.targetType,
-          subject: project.subjectId,
+          subjectInfo: project.subjectId,
           deadline: project.deadline,
           maxMarks: project.maxMarks,
           status: project.status,
@@ -723,6 +721,7 @@ const gradeSubmission = async (req, res) => {
 
 const getProjectSubmissions = async (req, res) => {
   try {
+    console.log(req.user)
     const { projectId } = req.params;
     const { _id: userId, role } = req.user;
     const { status, graded, studentId } = req.query;
@@ -766,8 +765,8 @@ const getProjectSubmissions = async (req, res) => {
       totalSubmissions: project.submissions.length,
       filteredSubmissions: filteredSubmissions.length,
       submissions: filteredSubmissions,
-      pendingStudents,
-      submissionStats: project.submissionStats
+      // pendingStudents,
+      // submissionStats: project.submissionStats
     });
 
   } catch (err) {

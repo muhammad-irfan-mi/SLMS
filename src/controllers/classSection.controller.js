@@ -242,7 +242,7 @@ const updateAllClassesAndSections = async (req, res) => {
 
                 const existingSectionNames = existingClass.sections.map(s => s.name);
                 const newSectionsFromPayload = [...new Set(c.sections.map(s => s.trim()))];
-                
+
                 const allSections = [...new Set([...existingSectionNames, ...newSectionsFromPayload])];
                 const sectionsAdded = newSectionsFromPayload.filter(s => !existingSectionNames.includes(s));
 
@@ -253,7 +253,7 @@ const updateAllClassesAndSections = async (req, res) => {
                 results.push({
                     className: c.className,
                     status: "Updated",
-                    oldOrder: existingClass._doc.order, 
+                    oldOrder: existingClass._doc.order,
                     newOrder: c.order,
                     existingSectionCount: existingSectionNames.length,
                     newSectionsAdded: sectionsAdded,
@@ -353,7 +353,7 @@ const getClassesBySchool = async (req, res) => {
         const classes = await ClassSection.find({ school: schoolId })
             .skip(skip)
             .limit(limit)
-            .sort({ class: 1 });
+            .sort({ order: 1 });
 
         const inchargeTeachers = await User.find({
             school: schoolId,
@@ -380,6 +380,7 @@ const getClassesBySchool = async (req, res) => {
         });
 
         const enhancedClasses = classes.map(classObj => {
+            console.log(classObj, "classObj")
             const enhancedSections = classObj.sections.map(section => {
                 const key = `${classObj._id}_${section._id}`;
                 const incharge = inchargeMap[key] || null;
@@ -394,6 +395,7 @@ const getClassesBySchool = async (req, res) => {
             return {
                 _id: classObj._id,
                 class: classObj.class,
+                order: classObj.order,
                 school: classObj.school,
                 sections: enhancedSections,
                 createdAt: classObj.createdAt,
