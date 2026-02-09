@@ -7,32 +7,66 @@ const Project = require("../models/Project");
 const Subject = require("../models/Subject");
 const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
 
+// const getClassAndSection = async (classId, sectionId, schoolId) => {
+//   if (!classId) return { classInfo: null, sectionInfo: null };
+
+//   const classDoc = await ClassSection.findOne({
+//     _id: classId,
+//     school: schoolId
+//   });
+
+//   if (!classDoc) return { error: "Class not found or does not belong to your school" };
+
+//   const classInfo = {
+//     id: classDoc._id,
+//     name: classDoc.class
+//   };
+
+//   let sectionInfo = null;
+//   if (sectionId) {
+//     const sectionObj = classDoc.sections.find(
+//       (sec) => sec._id.toString() === sectionId
+//     );
+//     if (!sectionObj) return { error: "Invalid section ID for this class" };
+
+//     sectionInfo = {
+//       id: sectionObj._id,
+//       name: sectionObj.name
+//     };
+//   }
+
+//   return { classInfo, sectionInfo };
+// };
+
 const getClassAndSection = async (classId, sectionId, schoolId) => {
   if (!classId) return { classInfo: null, sectionInfo: null };
 
   const classDoc = await ClassSection.findOne({
     _id: classId,
     school: schoolId
-  });
+  }).lean();
 
-  if (!classDoc) return { error: "Class not found or does not belong to your school" };
+  if (!classDoc) {
+    return { classInfo: null, sectionInfo: null };
+  }
 
   const classInfo = {
-    id: classDoc._id,
-    name: classDoc.class
+    _id: classDoc._id,
+    name: classDoc.class || classDoc.name
   };
 
   let sectionInfo = null;
-  if (sectionId) {
+  if (sectionId && classDoc.sections?.length) {
     const sectionObj = classDoc.sections.find(
-      (sec) => sec._id.toString() === sectionId
+      sec => sec._id.toString() === sectionId.toString()
     );
-    if (!sectionObj) return { error: "Invalid section ID for this class" };
 
-    sectionInfo = {
-      id: sectionObj._id,
-      name: sectionObj.name
-    };
+    if (sectionObj) {
+      sectionInfo = {
+        _id: sectionObj._id,
+        name: sectionObj.name
+      };
+    }
   }
 
   return { classInfo, sectionInfo };
@@ -46,7 +80,8 @@ const checkTeacherAuthorization = async (school, teacherId, classId, sectionId, 
     classId: new mongoose.Types.ObjectId(classId),
     sectionId: new mongoose.Types.ObjectId(sectionId),
     subjectId: new mongoose.Types.ObjectId(subjectId),
-    teacherId: new mongoose.Types.ObjectId(teacherId)
+    teacherId: new mongoose.Types.ObjectId(teacherId),
+    isActive: true
   });
 
   return !!schedule;
@@ -159,7 +194,6 @@ const getCreatorInfo = async (assignedBy, schoolId) => {
 
 const createProject = async (req, res) => {
   try {
-    // const { school, _id: userId, role } = req.user;
 
     const { _id: userId, school } = req.user;
 
@@ -359,9 +393,12 @@ const getProjects = async (req, res) => {
 
     const formattedProjects = await Promise.all(
       projects.map(async (project) => {
-        console.log(project)
         const creator = await getCreatorInfo(project.assignedBy, school);
-        const classSection = await getClassAndSection(project.classId, project.sectionId, school);
+        const { classInfo, sectionInfo } = await getClassAndSection(
+          project.classId,
+          project.sectionId,
+          school
+        );
 
         return {
           _id: project._id,
@@ -369,8 +406,10 @@ const getProjects = async (req, res) => {
           title: project.title,
           description: project.description,
           detail: project.detail,
-          class: classSection.classInfo,
-          section: classSection.sectionInfo,
+
+          classInfo,
+          sectionInfo,
+
           creator,
           targetType: project.targetType,
           subject: project.subjectId,
@@ -389,6 +428,7 @@ const getProjects = async (req, res) => {
         };
       })
     );
+
 
     const total = await Project.countDocuments(filter);
 
@@ -463,7 +503,6 @@ const updateProject = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("updateProject error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
@@ -545,8 +584,8 @@ const getProjectsForStudent = async (req, res) => {
           title: project.title,
           description: project.description,
           detail: project.detail,
-          class: classSection.classInfo,
-          section: classSection.sectionInfo,
+          classInfo: classSection.classInfo,
+          sectionInfo: classSection.sectionInfo,
           creator,
           targetType: project.targetType,
           subject: project.subjectId,

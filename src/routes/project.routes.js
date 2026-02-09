@@ -40,8 +40,6 @@ router.put("/:id",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]),
-  validateFiles,
-  validateProject,
   updateProject
 );
 

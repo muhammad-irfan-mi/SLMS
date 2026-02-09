@@ -11,22 +11,6 @@ const {
 } = require("../validators/diary.validation");
 const { sendDiaryNotification } = require("../utils/notificationService");
 
-const formatDate = (date) => {
-    const d = date ? new Date(date) : new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-};
-
-
-const extractSection = (classObj, sectionId) => {
-    if (!classObj?.sections) return null;
-    const section = classObj.sections.find(
-        (s) => s._id.toString() === sectionId.toString()
-    );
-    return section ? { _id: section._id, name: section.name } : null;
-};
 
 const formatClassSection = (classDoc, sectionId) => {
     if (!classDoc) return { classInfo: null, sectionInfo: null };

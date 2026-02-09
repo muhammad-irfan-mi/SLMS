@@ -1062,6 +1062,16 @@ const deleteDocument = async (req, res) => {
 const getStudentDocuments = async (req, res) => {
     try {
         const studentId = req.user._id;
+        const student = await User.findById(req.user._id)
+            .select('name email rollNo classInfo sectionInfo school')
+            .lean();
+
+        if (!student) {
+            return res.status(404).json({
+                success: false,
+                message: "Student not found"
+            });
+        }
         const {
             uploadedFor,
             requestedBy,
@@ -1099,16 +1109,56 @@ const getStudentDocuments = async (req, res) => {
             query.lean()
         ]);
 
-        const formattedDocuments = await populateClassSectionInfo(documents.map(doc => {
+        let classInfo = null;
+        let sectionInfo = null;
+
+        if (student.classInfo?.id) {
+            const classSectionInfo = await getClassSectionInfo(
+                student.classInfo.id,
+                student.sectionInfo?.id || null,
+                student.school
+            );
+
+            if (classSectionInfo.class) {
+                classInfo = {
+                    id: classSectionInfo.class._id,
+                    name: classSectionInfo.class.name
+                };
+            }
+
+            if (classSectionInfo.section) {
+                sectionInfo = {
+                    id: classSectionInfo.section._id,
+                    name: classSectionInfo.section.name
+                };
+            }
+        }
+
+        const formattedDocuments = documents.map(doc => {
             const docObj = { ...doc };
 
-            if (doc.requestedByInfo) {
-                docObj.requestedBy = doc.requestedByInfo;
+            if (docObj.requestedByInfo) {
+                docObj.requestedBy = docObj.requestedByInfo;
                 delete docObj.requestedByInfo;
             }
 
+            docObj.studentInfo = {
+                _id: student._id,
+                name: student.name,
+                email: student.email,
+                rollNo: student.rollNo,
+                school: student.school
+            };
+
+            if (classInfo) docObj.classInfo = classInfo;
+            if (sectionInfo) docObj.sectionInfo = sectionInfo;
+
+            delete docObj.studentId;
+            delete docObj.classId;
+            delete docObj.sectionId;
+
             return docObj;
-        }));
+        });
 
         res.status(200).json({
             success: true,
@@ -1118,8 +1168,6 @@ const getStudentDocuments = async (req, res) => {
                 page: Number(page),
                 limit: Number(limit),
                 totalPages: Math.ceil(total / limit),
-                hasNextPage: Number(page) < Math.ceil(total / limit),
-                hasPrevPage: Number(page) > 1
             }
         });
     } catch (err) {
