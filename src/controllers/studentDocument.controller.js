@@ -1180,7 +1180,7 @@ const getStudentDocuments = async (req, res) => {
     }
 };
 
-// Get documents (Teacher/Admin/School) with proper filtering
+// Get documents (Teacher/Admin/School) 
 const getDocuments = async (req, res) => {
     try {
         const user = req.user;
@@ -1202,60 +1202,44 @@ const getDocuments = async (req, res) => {
 
         const filter = {};
 
-        // Get requester's school ID
         const requesterSchoolId = getSchoolId(user);
-
-        // **IMPORTANT: Role-based filtering rules:**
+        console.log("object", req.user);
 
         if (user.role === "teacher") {
-            // Teachers can only see documents:
-            // 1. Uploaded for 'teacher' (uploadedFor = 'teacher')
-            // 2. Requested by them specifically (requestedBy = user._id)
-            // 3. From their own class/section only
-            if (!user.classId || !user.sectionId) {
+            if (!user.classInfo || !user.sectionInfo) {
                 return res.status(400).json({
                     success: false,
                     message: "Teacher must be assigned to a class and section"
                 });
             }
 
-            filter.classId = user.classId;
-            filter.sectionId = user.sectionId;
+            filter.classId = user.classInfo?.id;
+            filter.sectionId = user.sectionInfo?.id;
             filter.$or = [
                 { uploadedFor: 'teacher' },
                 { requestedBy: user._id }
             ];
         }
         else if (user.role === "admin_office" || user.role === "superadmin") {
-            // Admins can see:
-            // 1. All documents uploaded for 'admin_office' in their school
-            // 2. Documents they personally requested
-            // 3. Documents requested by any admin in their school
             filter.$or = [
                 { uploadedFor: 'admin_office' },
                 { requestedBy: user._id },
                 { requestedByModel: 'User', uploadedFor: 'admin_office' }
             ];
 
-            // Filter by teacher if specified
             if (teacher === "true") {
                 filter.uploadedFor = "teacher";
             } else if (admin === "true") {
                 filter.uploadedFor = "admin_office";
             }
         }
-        else if (!user.role) { // School user
-            // Schools can see:
-            // 1. All documents uploaded for 'school' in their school
-            // 2. Documents they personally requested
-            // 3. Documents requested by any admin in their school (since school owns everything)
+        else if (!user.role) {
             filter.$or = [
                 { uploadedFor: 'school' },
                 { requestedBy: user._id },
                 { requestedByModel: 'School', requestedBy: user._id }
             ];
 
-            // Filter by school if specified
             if (school === "true") {
                 filter.uploadedFor = "school";
             }
@@ -1267,9 +1251,7 @@ const getDocuments = async (req, res) => {
             });
         }
 
-        // Additional filters with school check
         if (studentId) {
-            // Verify student belongs to same school
             const student = await User.findById(studentId);
             if (student && requesterSchoolId) {
                 const studentSchoolId = getSchoolId(student);
@@ -1288,7 +1270,6 @@ const getDocuments = async (req, res) => {
         const skip = (Number(page) - 1) * Number(limit);
         const sortDirection = sortOrder === "asc" ? 1 : -1;
 
-        // Build query with proper population
         const query = StudentDocument.find(filter)
             .populate({
                 path: 'studentId',
@@ -1311,10 +1292,8 @@ const getDocuments = async (req, res) => {
 
         let documents = await query.lean();
 
-        // Filter by school after population
         if (requesterSchoolId) {
             documents = documents.filter(doc => {
-                // Check if student belongs to same school
                 if (doc.studentId && doc.studentId.school) {
                     return doc.studentId.school.toString() === requesterSchoolId.toString();
                 }
@@ -1322,11 +1301,9 @@ const getDocuments = async (req, res) => {
             });
         }
 
-        // Format the response and populate class/section info
         const formattedDocuments = await populateClassSectionInfo(documents.map(doc => {
             const docObj = { ...doc };
 
-            // Format requestedBy info
             if (doc.requestedByInfo) {
                 docObj.requestedBy = doc.requestedByInfo;
                 delete docObj.requestedByInfo;
@@ -1335,7 +1312,6 @@ const getDocuments = async (req, res) => {
             return docObj;
         }));
 
-        // Get total count with school filter
         const total = formattedDocuments.length;
 
         res.status(200).json({
@@ -1346,8 +1322,6 @@ const getDocuments = async (req, res) => {
                 page: Number(page),
                 limit: Number(limit),
                 totalPages: Math.ceil(total / limit),
-                hasNextPage: Number(page) < Math.ceil(total / limit),
-                hasPrevPage: Number(page) > 1
             }
         });
 
