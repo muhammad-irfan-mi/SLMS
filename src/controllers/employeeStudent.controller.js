@@ -448,7 +448,6 @@ const addEmployeeBySchool = async (req, res) => {
             role,
             salary,
             joiningDate,
-            isIncharge,
             classId,
             sectionId,
         } = req.body;
@@ -463,16 +462,6 @@ const addEmployeeBySchool = async (req, res) => {
         let classInfo = null;
         let sectionInfo = null;
 
-        if (role === "teacher" && isIncharge === "true" && classId) {
-            const result = await getClassAndSection(classId, sectionId);
-            if (result.error) {
-                return res.status(400).json({ message: result.error });
-            }
-            classInfo = result.classInfo;
-            sectionInfo = result.sectionInfo;
-        }
-
-        const inchargeFlag = role === "teacher" ? isIncharge === "true" : undefined;
         const otpCode = generateOTP();
         const otpExpiry = calculateOTPExpiry(10);
 
@@ -532,7 +521,6 @@ const addEmployeeBySchool = async (req, res) => {
             role,
             salary: role === "teacher" ? salary : salary || null,
             joiningDate,
-            isIncharge: inchargeFlag ?? false,
             classInfo,
             sectionInfo,
             school: schoolId,
@@ -584,28 +572,7 @@ const editEmployeeBySchool = async (req, res) => {
         }
 
         const images = await uploadFiles(req.files, existing.images);
-
-        let classInfo = existing.classInfo;
-        let sectionInfo = existing.sectionInfo;
-
         const changes = [];
-
-        if (existing.role === "teacher" && req.body.classId) {
-            const result = await getClassAndSection(req.body.classId, req.body.sectionId);
-            if (result.error) {
-                return res.status(400).json({ message: result.error });
-            }
-
-            if (classInfo && classInfo.id && classInfo.id.toString() !== req.body.classId) {
-                changes.push(`Class assignment changed to ${result.classInfo.name}`);
-            }
-            if (sectionInfo && sectionInfo.id && sectionInfo.id.toString() !== req.body.sectionId) {
-                changes.push(`Section assignment changed to ${result.sectionInfo.name}`);
-            }
-
-            classInfo = result.classInfo;
-            sectionInfo = result.sectionInfo;
-        }
 
         if (req.body.name && req.body.name !== existing.name) {
             changes.push(`Name changed from "${existing.name}" to "${req.body.name}"`);
@@ -625,14 +592,6 @@ const editEmployeeBySchool = async (req, res) => {
         if (req.body.joiningDate && req.body.joiningDate !== existing.joiningDate) {
             changes.push(`Joining date updated`);
         }
-
-        // const isInchargeValue = req.body.isIncharge !== undefined
-        //     ? req.body.isIncharge === "true"
-        //     : existing.isIncharge;
-
-        // if (isInchargeValue !== existing.isIncharge) {
-        //     changes.push(`In-charge status: ${existing.isIncharge ? 'Removed' : 'Assigned'}`);
-        // }
 
         let otpData = existing.otp;
         let verified = existing.verified;
@@ -688,9 +647,6 @@ const editEmployeeBySchool = async (req, res) => {
             cnic: req.body.cnic ?? existing.cnic,
             salary: req.body.salary ?? existing.salary,
             joiningDate: req.body.joiningDate ?? existing.joiningDate,
-            // isIncharge: isInchargeValue,
-            classInfo,
-            sectionInfo,
             images,
             otp: otpData,
             verified,
@@ -1503,24 +1459,85 @@ const getStudentsBySection = async (req, res) => {
         const schoolId = req.user.school;
         const { sectionId } = req.params;
 
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
         if (!sectionId) {
             return res.status(400).json({ message: "sectionId is required" });
         }
 
-        const students = await User.find({
-            school: schoolId,
-            role: "student",
-            isActive: true,
-            "sectionInfo.id": sectionId,
-        }).select("-password -forgotPasswordOTP -otp -tokenVersion -isActive -isIncharge");
+        const [students, total] = await Promise.all([
+            User.find({
+                school: schoolId,
+                role: "student",
+                isActive: true,
+                "sectionInfo.id": sectionId,
+            })
+                .select("-password -forgotPasswordOTP -otp -tokenVersion -isActive -isIncharge")
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+
+            User.countDocuments({
+                school: schoolId,
+                role: "student",
+                isActive: true,
+                "sectionInfo.id": sectionId,
+            })
+        ]);
 
         if (!students.length) {
-            return res.status(404).json({ message: "No students found in this section" });
+            return res.status(404).json({
+                message: "No students found in this section",
+                total: 0,
+                page,
+                limit,
+                totalPages: 0,
+                students: []
+            });
+        }
+
+        const formattedStudents = [];
+        for (const student of students) {
+            const classId = student.classInfo?.id || null;
+
+            const { className, sectionName } =
+                await getClassSectionInfo(classId, sectionId, schoolId);
+
+            formattedStudents.push({
+                _id: student._id,
+                username: student.username,
+                email: student.email,
+                cnic: student.cnic,
+                name: student.name,
+                fatherName: student.fatherName,
+                phone: student.phone,
+                address: student.address,
+                role: student.role,
+                school: student.school,
+                rollNo: student.rollNo,
+                verified: student.verified,
+                siblingGroupId: student.siblingGroupId,
+                createdAt: student.createdAt,
+                images: student.images,
+                classInfo: {
+                    id: classId,
+                    className
+                },
+                sectionInfo: {
+                    id: sectionId,
+                    sectionName
+                }
+            });
         }
 
         return res.status(200).json({
-            total: students.length,
-            students,
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            students: formattedStudents,
         });
     } catch (err) {
         console.error("Error fetching students by section:", err);
@@ -1605,7 +1622,6 @@ const forgotPassword = async (req, res) => {
                 return res.status(404).json({ message: "User not found" });
             }
 
-            // If email provided, ensure it matches
             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
                 return res.status(400).json({ message: "Email does not match username" });
             }
@@ -1777,7 +1793,6 @@ const resetPasswordWithOTP = async (req, res) => {
     try {
         const { email, otp, newPassword, username } = req.body;
 
-        // Validate input
         if (!email && !username) {
             return res.status(400).json({
                 message: "Please provide either email or username"
@@ -1990,7 +2005,6 @@ const resendForgotPasswordOTP = async (req, res) => {
     try {
         const { email, username } = req.body;
 
-        // Validate input
         if (!email && !username) {
             return res.status(400).json({
                 message: "Please provide either email or username"
@@ -2010,17 +2024,14 @@ const resendForgotPasswordOTP = async (req, res) => {
                 });
             }
 
-            // If email was also provided, verify it matches
             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
                 return res.status(400).json({
                     message: "Email does not match the provided username"
                 });
             }
         } else if (email) {
-            // If only email is provided
             query.email = email.toLowerCase();
 
-            // Find user by email
             user = await User.findOne(query);
 
             if (!user) {
@@ -2029,7 +2040,6 @@ const resendForgotPasswordOTP = async (req, res) => {
                 });
             }
 
-            // For students, require username when using email
             if (user.role === 'student') {
                 return res.status(400).json({
                     message: "For students, please provide username along with email. Multiple students may share the same email.",
@@ -2038,23 +2048,20 @@ const resendForgotPasswordOTP = async (req, res) => {
             }
         }
 
-        // Check if password reset was requested
         if (!user.forgotPasswordOTP) {
             return res.status(400).json({
                 message: "No password reset request found. Please use forgot password first."
             });
         }
 
-        // Check if OTP is already verified
         if (user.forgotPasswordOTP.verified) {
             return res.status(400).json({
                 message: "OTP already verified. Please reset your password or request a new OTP."
             });
         }
 
-        // Check cooldown (1 minute)
         if (user.forgotPasswordOTP.lastAttempt) {
-            const cooldownTime = 60 * 1000; // 1 minute
+            const cooldownTime = 60 * 1000;
             const timeSinceLastAttempt = new Date() - new Date(user.forgotPasswordOTP.lastAttempt);
 
             if (timeSinceLastAttempt < cooldownTime) {
@@ -2065,11 +2072,9 @@ const resendForgotPasswordOTP = async (req, res) => {
             }
         }
 
-        // Generate new OTP
         const newOTP = generateOTP();
         const newExpiry = calculateOTPExpiry(10);
 
-        // Update OTP
         user.forgotPasswordOTP.code = newOTP;
         user.forgotPasswordOTP.expiresAt = newExpiry;
         user.forgotPasswordOTP.attempts = 0;
@@ -2077,7 +2082,6 @@ const resendForgotPasswordOTP = async (req, res) => {
         user.forgotPasswordOTP.lastAttempt = new Date();
         await user.save();
 
-        // Send new OTP email
         try {
             await emailService.sendForgotPasswordOTPEmail(
                 user.email,
@@ -2086,7 +2090,6 @@ const resendForgotPasswordOTP = async (req, res) => {
             );
         } catch (emailError) {
             console.error('Failed to send email, but OTP is still generated:', emailError);
-            // Don't fail the request - OTP is still stored
         }
 
         return res.status(200).json({

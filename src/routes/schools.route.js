@@ -3,10 +3,9 @@ const router = express.Router();
 const { validationSchemas } = require('../validators/school.validator');
 const validate = require('../middlewares/validate');
 const multer = require('multer');
-const { verifySchoolOTP, resendSchoolOTP, setSchoolPassword, addSchoolBySuperAdmin, editSchoolBySuperAdmin, deleteSchoolBySuperAdmin, getAllSchools, getPendingRegistrations, getSchoolById } = require('../controllers/schoolController');
+const { verifySchoolOTP, resendSchoolOTP, setSchoolPassword, addSchoolBySuperAdmin, editSchoolBySuperAdmin, deleteSchoolBySuperAdmin, getAllSchools, getPendingRegistrations, getSchoolById } = require('../controllers/school.controller');
 const { upload } = require("../utils/multer");
 
-// OTP Verification Routes
 router.post(
     '/verify-otp',
     validate(validationSchemas.verifyOTP),
@@ -25,7 +24,6 @@ router.post(
     setSchoolPassword
 );
 
-// Existing routes with validation
 router.post(
     '/add-school',
     upload.fields([
