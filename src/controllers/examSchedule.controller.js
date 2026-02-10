@@ -19,6 +19,35 @@ const extractSection = (classObj, sectionId) => {
   return sec ? { _id: sec._id, name: sec.name } : null;
 };
 
+const getClassSectionInfo = (classDoc, sectionId) => {
+  if (!classDoc) {
+    return { classInfo: null, sectionInfo: null };
+  }
+
+  const classInfo = {
+    _id: classDoc._id,
+    name: classDoc.class || classDoc.name
+  };
+
+  let sectionInfo = null;
+
+  if (sectionId && Array.isArray(classDoc.sections)) {
+    const section = classDoc.sections.find(
+      s => String(s._id) === String(sectionId)
+    );
+
+    if (section) {
+      sectionInfo = {
+        _id: section._id,
+        name: section.name
+      };
+    }
+  }
+
+  return { classInfo, sectionInfo };
+};
+
+
 const formatDate = (date) => {
   return date.toISOString().split('T')[0];
 };
@@ -256,14 +285,13 @@ const addExamSchedule = async (req, res) => {
           continue;
         }
 
+
+        console.log(subjectId, classId)
         const subject = await Subject.findOne({
           _id: subjectId,
-          class: classId,
+          classId: classId,
           isActive: true,
-          $or: [
-            { sectionId: sectionId },
-            { sectionId: null }
-          ]
+          sectionId: sectionId
         });
         if (!subject) {
           errors.push({ item, error: "Subject not found for this class/section" });
@@ -405,6 +433,7 @@ const addExamSchedule = async (req, res) => {
 const getSchedule = async (req, res) => {
   try {
     const schoolId = req.user.school;
+    console.log(schoolId)
     const { classId, sectionId, subjectId, teacherId, type, year, status, startDate, endDate, page = 1, limit = 10, sortBy = 'examDate', sortOrder = 'asc' } = req.query;
 
     const filter = { school: schoolId };
@@ -427,10 +456,8 @@ const getSchedule = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
     const sortDirection = sortOrder === 'asc' ? 1 : -1;
 
-    // const total = await ExamSchedule.countDocuments(filter);
 
     const schedules = await ExamSchedule.find(filter)
-      // .populate("subjectId", "name code")
       .populate({
         path: "subjectId",
         select: "name code isActive"
@@ -442,35 +469,46 @@ const getSchedule = async (req, res) => {
       .limit(Number(limit))
       .lean();
 
-    const filteredSchedules = schedules.filter(schedule => {
-      if (!schedule.subjectId) return false;
-      return schedule.subjectId.isActive !== false;
+    const activeSchedules = schedules.filter(s =>
+      s.subjectId && s.subjectId.isActive !== false
+    );
+
+    const formattedSchedules = activeSchedules.map(schedule => {
+      const { classInfo, sectionInfo } = getClassSectionInfo(
+        schedule.classId,
+        schedule.sectionId
+      );
+
+      return {
+        _id: schedule._id,
+        classInfo,
+        sectionInfo,
+        subjectInfo: schedule.subjectId
+          ? {
+            _id: schedule.subjectId._id,
+            name: schedule.subjectId.name,
+            code: schedule.subjectId.code
+          }
+          : null,
+        teacherInfo: schedule.teacherId
+          ? {
+            _id: schedule.teacherId._id,
+            name: schedule.teacherId.name,
+            email: schedule.teacherId.email
+          }
+          : null,
+        examDate: schedule.examDate,
+        day: schedule.day,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        type: schedule.type,
+        year: schedule.year,
+        status: schedule.status,
+        createdAt: schedule.createdAt,
+        updatedAt: schedule.updatedAt
+      };
     });
 
-    const formatted = filteredSchedules.map(schedule => ({
-      _id: schedule._id,
-      class: schedule.classId.class,
-      section: extractSection(schedule.classId, schedule.sectionId),
-      // subject: schedule.subjectId,
-      subject: {
-        _id: schedule.subjectId._id,
-        name: schedule.subjectId.name,
-        code: schedule.subjectId.code,
-        // Don't include isActive in response if you don't want to show it
-      },
-      teacher: schedule.teacherId,
-      examDate: schedule.examDate,
-      day: schedule.day,
-      startTime: schedule.startTime,
-      endTime: schedule.endTime,
-      type: schedule.type,
-      year: schedule.year,
-      status: schedule.status,
-      createdAt: schedule.createdAt,
-      updatedAt: schedule.updatedAt
-    }));
-
-    // const totalPages = Math.ceil(total / Number(limit));
     const totalQuery = ExamSchedule.find(filter)
       .populate({
         path: "subjectId",
@@ -493,7 +531,7 @@ const getSchedule = async (req, res) => {
       limit: Number(limit),
       total,
       totalPages,
-      schedule: formatted,
+      schedule: formattedSchedules,
     });
   } catch (err) {
     res.status(500).json({
@@ -560,17 +598,17 @@ const getScheduleByTeacher = async (req, res) => {
 
     const formatted = paginatedSchedules.map(schedule => ({
       _id: schedule._id,
-      class: {
+      classInfo: {
         _id: schedule.classId._id,
         name: schedule.classId.class,
       },
-      section: extractSection(schedule.classId, schedule.sectionId),
-      subject: {
+      sectionInfo: extractSection(schedule.classId, schedule.sectionId),
+      subjectInfo: {
         _id: schedule.subjectId._id,
         name: schedule.subjectId.name,
         code: schedule.subjectId.code,
       },
-      teacher: {
+      teacherInfo: {
         _id: schedule.teacherId._id,
         name: schedule.teacherId.name,
         email: schedule.teacherId.email,
@@ -670,17 +708,17 @@ const getScheduleByStudent = async (req, res) => {
 
     const formatted = paginatedSchedules.map(schedule => ({
       _id: schedule._id,
-      class: {
+      classInfo: {
         _id: schedule.classId._id,
         name: schedule.classId.class,
       },
-      section: extractSection(schedule.classId, schedule.sectionId),
-      subject: {
+      sectionInfo: extractSection(schedule.classId, schedule.sectionId),
+      subjectInfo: {
         _id: schedule.subjectId._id,
         name: schedule.subjectId.name,
         code: schedule.subjectId.code,
       },
-      teacher: {
+      teacherInfo: {
         _id: schedule.teacherId._id,
         name: schedule.teacherId.name,
         email: schedule.teacherId.email,

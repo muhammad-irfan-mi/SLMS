@@ -134,8 +134,9 @@ const resolveUploader = async (uploadedById, uploadedByModel) => {
 const validateSubjectAssignment = async (subjectId, classId, schoolId) => {
     const subject = await Subject.findOne({
         _id: subjectId,
-        class: classId,
-        school: schoolId
+        classId: classId,
+        school: schoolId,
+        isActive: true
     }).lean();
 
     if (!subject) {
@@ -185,7 +186,6 @@ const validateClassSection = async (classId, sectionId, schoolId) => {
 
 // Helper: Check if teacher is assigned to subject in schedule
 const checkTeacherSubjectAccess = async (teacherId, subjectId, classId, sectionId, schoolId) => {
-    console.log(teacherId, subjectId, classId, sectionId, schoolId)
     const schedule = await Schedule.findOne({
         school: schoolId,
         teacherId: teacherId,
@@ -289,7 +289,7 @@ const createSyllabus = async (req, res) => {
     try {
         const schoolId = req.user.school;
         const userId = req.user._id;
-        const userRole = req.user.role;
+        const userRole = req.user.role || 'school';
 
         const { classId, sectionId, subjectId, title, description, detail, expireDate, status } = req.body;
 
@@ -369,7 +369,7 @@ const createSyllabus = async (req, res) => {
             if (existingActiveSyllabus.expireDate) {
                 message = `Cannot create syllabus. Current date (${formattedPublishDate}) is before the expiry date (${existingActiveSyllabus.expireDate}) of existing syllabus "${existingActiveSyllabus.title}"`;
             } else {
-                message = `Cannot create new syllabus for this subject. Existing syllabus "${existingActiveSyllabus.title}" has no expiry date and is permanently active.`;
+                message = `Cannot create new syllabus for this subject.`;
             }
 
             return res.status(409).json({
@@ -454,20 +454,16 @@ const createSyllabus = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Create Syllabus Error:", err);
         res.status(500).json({ message: "Server error" });
     }
 };
 
 // Get syllabus with filters 
 const getSyllabus = async (req, res) => {
-    console.log("User in getSyllabus:", req.user);
     try {
         const schoolId = req.user.school;
         const userId = req.user._id;
         const userRole = req.user.role;
-
-        console.log("User details:", { userId, userRole, schoolId });
 
         const { classId, sectionId, subjectId, status, uploader } = req.query;
         const { page, limit, skip } = normalizePagination(req.query);
@@ -485,7 +481,6 @@ const getSyllabus = async (req, res) => {
                 teacherId: userId,
             }).lean();
 
-            console.log("Teacher schedules found:", schedules.length);
 
             const teacherSubjects = [...new Set(
                 schedules.map(s => s.subjectId?.toString()).filter(Boolean)
@@ -553,9 +548,10 @@ const getSyllabus = async (req, res) => {
                     title: item.title,
                     description: item.description,
                     detail: item.detail,
-                    subject: item.subjectId,
-                    class: item.class,
-                    section: item.section,
+                    subjectInfo: item.subjectId,
+                    classInfo: item.class,
+                    sectionInfo: item.section,
+                    uploader,
                     publishDate: item.publishDate,
                     expireDate: item.expireDate,
                     status: item.status,
@@ -660,9 +656,9 @@ const getSyllabusBySection = async (req, res) => {
                     title: item.title,
                     description: item.description,
                     detail: item.detail,
-                    subject: item.subjectId,
-                    class: item.class,
-                    section: item.section,
+                    subjectInfo: item.subjectId,
+                    classInfo: item.class,
+                    sectionInfo: item.section,
                     uploader,
                     publishDate: item.publishDate,
                     expireDate: item.expireDate
@@ -675,18 +671,16 @@ const getSyllabusBySection = async (req, res) => {
             page,
             limit,
             totalPages: Math.ceil(total / limit),
-            syllabi: syllabiWithUploaders
+            syllabus: syllabiWithUploaders
         });
 
     } catch (err) {
-        console.error("Get Syllabus By Section Error:", err);
         res.status(500).json({ message: "Server error" });
     }
 };
 
 // Update syllabus with permission checks
 const updateSyllabus = async (req, res) => {
-    console.log(req.user)
     try {
         const { syllabusId } = req.params;
         const schoolId = req.user.school;
@@ -703,10 +697,21 @@ const updateSyllabus = async (req, res) => {
             return res.status(403).json({ message: "You can only update syllabi from your school" });
         }
 
-        const permissionCheck = await checkSyllabusUpdatePermission(syllabus, userId, userRole, schoolId);
-        if (!permissionCheck.canUpdate) {
-            return res.status(403).json({ message: permissionCheck.message });
+        if (userRole === 'teacher') {
+            if (
+                syllabus.uploadedByModel !== 'User' ||
+                syllabus.uploadedBy.toString() !== userId.toString()
+            ) {
+                return res.status(403).json({
+                    message: "You can only update syllabus uploaded by you"
+                });
+            }
         }
+
+        // const permissionCheck = await checkSyllabusUpdatePermission(syllabus, userId, userRole, schoolId);
+        // if (!permissionCheck.canUpdate) {
+        //     return res.status(403).json({ message: permissionCheck.message });
+        // }
 
         const classId = updateData.classId || syllabus.classId;
         const sectionId = updateData.sectionId || syllabus.sectionId;
@@ -725,30 +730,24 @@ const updateSyllabus = async (req, res) => {
                 return res.status(400).json({ message: subjectCheck.message });
             }
 
-            if (userRole === 'teacher') {
-                const teacherAccess = await checkTeacherSubjectAccess(
-                    userId,
-                    subjectId,
-                    classId,
-                    sectionId,
-                    schoolId
-                );
+            // if (userRole === 'teacher') {
+            //     const teacherAccess = await checkTeacherSubjectAccess(
+            //         userId,
+            //         subjectId,
+            //         classId,
+            //         sectionId,
+            //         schoolId
+            //     );
 
-                if (!teacherAccess.hasAccess) {
-                    return res.status(403).json({
-                        message: "You are not assigned to teach the new subject"
-                    });
-                }
-            }
+            //     if (!teacherAccess.hasAccess) {
+            //         return res.status(403).json({
+            //             message: "You are not assigned to teach the new subject"
+            //         });
+            //     }
+            // }
         }
 
         let formattedExpireDate = updateData.expireDate;
-
-        if (updateData.publishDate) {
-            return res.status(400).json({
-                message: "Publish date cannot be changed. It is automatically set to the creation date."
-            });
-        }
 
         if (updateData.expireDate) {
             try {
@@ -768,48 +767,48 @@ const updateSyllabus = async (req, res) => {
             });
         }
 
-        if (updateData.subjectId || updateData.expireDate) {
-            const existingActiveSyllabus = await Syllabus.findOne({
-                _id: { $ne: syllabusId },
-                school: schoolId,
-                classId,
-                sectionId,
-                subjectId,
-                $or: [
-                    {
-                        expireDate: { $gte: finalPublishDate }
-                    },
-                    {
-                        expireDate: null
-                    },
-                    {
-                        publishDate: { $lte: finalPublishDate },
-                        expireDate: { $gte: finalPublishDate }
-                    }
-                ]
-            }).select('title publishDate expireDate status').lean();
+        // if (updateData.subjectId || updateData.expireDate) {
+        //     const existingActiveSyllabus = await Syllabus.findOne({
+        //         _id: { $ne: syllabusId },
+        //         school: schoolId,
+        //         classId,
+        //         sectionId,
+        //         subjectId,
+        //         $or: [
+        //             {
+        //                 expireDate: { $gte: finalPublishDate }
+        //             },
+        //             {
+        //                 expireDate: null
+        //             },
+        //             {
+        //                 publishDate: { $lte: finalPublishDate },
+        //                 expireDate: { $gte: finalPublishDate }
+        //             }
+        //         ]
+        //     }).select('title publishDate expireDate status').lean();
 
-            if (existingActiveSyllabus) {
-                let message = '';
+        //     if (existingActiveSyllabus) {
+        //         let message = '';
 
-                if (existingActiveSyllabus.expireDate) {
-                    message = `Cannot update syllabus. Original publish date (${finalPublishDate}) is before the expiry date (${existingActiveSyllabus.expireDate}) of existing syllabus "${existingActiveSyllabus.title}".`;
-                } else {
-                    message = `Cannot update syllabus. Existing syllabus "${existingActiveSyllabus.title}" has no expiry date and is permanently active.`;
-                }
+        //         if (existingActiveSyllabus.expireDate) {
+        //             message = `Cannot update syllabus. Original publish date (${finalPublishDate}) is before the expiry date (${existingActiveSyllabus.expireDate}) of existing syllabus "${existingActiveSyllabus.title}".`;
+        //         } else {
+        //             message = `Cannot update syllabus. Existing syllabus "${existingActiveSyllabus.title}" has no expiry date and is permanently active.`;
+        //         }
 
-                return res.status(409).json({
-                    message,
-                    existingSyllabus: {
-                        _id: existingActiveSyllabus._id,
-                        title: existingActiveSyllabus.title,
-                        publishDate: existingActiveSyllabus.publishDate,
-                        expireDate: existingActiveSyllabus.expireDate,
-                        status: existingActiveSyllabus.status
-                    }
-                });
-            }
-        }
+        //         return res.status(409).json({
+        //             message,
+        //             existingSyllabus: {
+        //                 _id: existingActiveSyllabus._id,
+        //                 title: existingActiveSyllabus.title,
+        //                 publishDate: existingActiveSyllabus.publishDate,
+        //                 expireDate: existingActiveSyllabus.expireDate,
+        //                 status: existingActiveSyllabus.status
+        //             }
+        //         });
+        //     }
+        // }
 
         delete updateData.uploadedBy;
         delete updateData.uploadedByModel;
@@ -851,7 +850,6 @@ const updateSyllabus = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Update Syllabus Error:", err);
         res.status(500).json({ message: "Server error" });
     }
 };
@@ -864,24 +862,26 @@ const deleteSyllabus = async (req, res) => {
         const userId = req.user._id;
         const userRole = req.user.role;
 
-        // Find syllabus
         const syllabus = await Syllabus.findById(syllabusId);
         if (!syllabus) {
             return res.status(404).json({ message: "Syllabus not found" });
         }
 
-        // Check school boundary
         if (syllabus.school.toString() !== schoolId.toString()) {
-            return res.status(403).json({ message: "You can only delete syllabi from your school" });
+            return res.status(403).json({ message: "You can only delete syllabus from your school" });
         }
 
-        // Check delete permissions
-        const permissionCheck = await checkSyllabusUpdatePermission(syllabus, userId, userRole, schoolId);
-        if (!permissionCheck.canUpdate) {
-            return res.status(403).json({ message: permissionCheck.message });
+        if (userRole === 'teacher') {
+            if (
+                syllabus.uploadedByModel !== 'User' ||
+                syllabus.uploadedBy.toString() !== userId.toString()
+            ) {
+                return res.status(403).json({
+                    message: "You can only update syllabus uploaded by you"
+                });
+            }
         }
 
-        // Delete syllabus
         await syllabus.deleteOne();
 
         res.status(200).json({
@@ -895,7 +895,6 @@ const deleteSyllabus = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Delete Syllabus Error:", err);
         res.status(500).json({ message: "Server error" });
     }
 };

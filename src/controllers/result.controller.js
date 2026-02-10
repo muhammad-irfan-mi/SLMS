@@ -120,7 +120,7 @@ const transformResults = async (results, schoolId) => {
         const transformed = {
             _id: result._id,
             school: result.school,
-            student: result.studentId,
+            studentInfo: result.studentId,
             examType: result.examType,
             year: result.year,
             marksObtained: result.marksObtained,
@@ -133,7 +133,7 @@ const transformResults = async (results, schoolId) => {
         };
 
         if (classSection) {
-            transformed.class = {
+            transformed.classInfo = {
                 _id: classSection._id,
                 name: classSection.class
             };
@@ -143,7 +143,7 @@ const transformResults = async (results, schoolId) => {
                     sec => sec._id.toString() === result.sectionId.toString()
                 );
                 if (section) {
-                    transformed.section = {
+                    transformed.sectionInfo = {
                         _id: section._id,
                         name: section.name
                     };

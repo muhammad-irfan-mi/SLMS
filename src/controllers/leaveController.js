@@ -726,10 +726,10 @@ const getLeaves = async (req, res) => {
                 school: leave.school,
                 studentName: leave.studentName || (leave.studentId?.name) || null,
                 teacherName: leave.teacherName || (leave.teacherId?.name) || null,
-                classId: leave.classId
+                classInfo: leave.classId
                     ? { _id: leave.classId._id, class: leave.classId.class }
                     : null,
-                sectionId: sectionInfo,
+                sectionInfo: sectionInfo,
                 userType: leave.userType,
                 date: leave.dates,
                 subject: leave.subject,
@@ -1083,8 +1083,8 @@ const getLeavesByStudent = async (req, res) => {
 
         // Get leaves with populated data
         const leaves = await Leave.find(filter)
-            .populate("classId", "class")
-            .populate("sectionId", "name")
+            .populate("classId", "class sections")
+            // .populate("sectionId", "name")
             .populate("reviewedBy", "name email")
             .sort({ appliedAt: -1 })
             .skip(skip)
@@ -1102,41 +1102,53 @@ const getLeavesByStudent = async (req, res) => {
         };
 
         // Format leaves response
-        const formattedLeaves = leaves.map(leave => ({
-            _id: leave._id,
-            dates: leave.dates || [],
-            subject: leave.subject,
-            reason: leave.reason,
-            status: leave.status,
-            appliedAt: leave.appliedAt,
-            reviewedBy: leave.reviewedBy ? {
-                _id: leave.reviewedBy._id,
-                name: leave.reviewedBy.name,
-                email: leave.reviewedBy.email
-            } : null,
-            reviewedAt: leave.reviewedAt,
-            remark: leave.remark,
-            class: leave.classId ? {
-                _id: leave.classId._id,
-                name: leave.classId.class
-            } : null,
-            section: leave.sectionId ? {
-                _id: leave.sectionId._id,
-                name: leave.sectionId.name
-            } : null
-        }));
+        const formattedLeaves = leaves.map(leave => {
+            let sectionInfo = null;
+
+            if (leave.classId?.sections && leave.sectionId) {
+                const sec = leave.classId.sections.find(
+                    s => String(s._id) === String(leave.sectionId)
+                );
+                if (sec) {
+                    sectionInfo = {
+                        _id: sec._id,
+                        name: sec.name
+                    };
+                }
+            }
+
+            return {
+                _id: leave._id,
+                dates: leave.dates || [],
+                subject: leave.subject,
+                reason: leave.reason,
+                status: leave.status,
+                appliedAt: leave.appliedAt,
+                reviewedBy: leave.reviewedBy ? {
+                    _id: leave.reviewedBy._id,
+                    name: leave.reviewedBy.name,
+                    email: leave.reviewedBy.email
+                } : null,
+                reviewedAt: leave.reviewedAt,
+                remark: leave.remark,
+                classInfo: leave.classId ? {
+                    _id: leave.classId._id,
+                    name: leave.classId.class
+                } : null,
+                sectionInfo
+            };
+        });
 
         return res.status(200).json({
             total,
             page: parseInt(page),
             limit: parseInt(limit),
             totalPages: Math.ceil(total / limit),
-            student: formattedStudent,
+            studentInfo: formattedStudent,
             leaves: formattedLeaves
         });
 
     } catch (err) {
-        console.error("getLeavesByStudent error:", err);
         return res.status(500).json({
             message: "Server error",
             error: err.message

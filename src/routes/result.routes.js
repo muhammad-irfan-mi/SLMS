@@ -39,7 +39,7 @@ router.put("/:resultId",
 
 router.delete("/:resultId", 
   protect, 
-  isAdminOffice, 
+  isTeacherOrAdminOfficeOrSchool, 
   validate(resultIdParamSchema, "params"),
   deleteResult
 );
