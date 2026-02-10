@@ -524,8 +524,8 @@ const getGroupById = async (req, res) => {
       }
     }
 
-    let classInfo = [];
-    let sectionInfo = [];
+    let classInfo = null;
+    let sectionInfo = null;
 
     if (group.classIds && group.classIds.length > 0) {
       const classes = await ClassSection.find({
@@ -533,25 +533,34 @@ const getGroupById = async (req, res) => {
         school: group.school
       }).lean();
 
-      classInfo = classes.map(cls => ({
-        id: cls._id,
-        name: cls.className || cls.class
-      }));
+      const cls = classes[0]; // quiz belongs to ONE class
 
-      if (group.sectionIds && group.sectionIds.length > 0) {
-        classes.forEach(cls => {
-          cls.sections.forEach(sec => {
-            if (group.sectionIds.includes(sec._id.toString())) {
-              sectionInfo.push({
-                id: sec._id,
-                name: sec.name,
-                className: cls.className || cls.class
-              });
-            }
-          });
-        });
+      if (cls) {
+        classInfo = {
+          id: cls._id,
+          name: cls.className || cls.class
+        };
+
+        if (group.sectionIds && group.sectionIds.length > 0) {
+          const sectionIdStrings = group.sectionIds.map(id => id.toString());
+
+          const sec = (cls.sections || []).find(
+            s => sectionIdStrings.includes(s._id.toString())
+          );
+
+          if (sec) {
+            sectionInfo = {
+              id: sec._id,
+              name: sec.name,
+              classId: cls._id,
+              className: cls.className || cls.class,
+              order: sec.order
+            };
+          }
+        }
       }
     }
+
 
     const safeQuestions = group.questions
       .sort((a, b) => (a.order || 0) - (b.order || 0))
