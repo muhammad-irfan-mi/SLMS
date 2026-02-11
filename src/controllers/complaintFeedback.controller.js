@@ -1,5 +1,6 @@
 const ComplaintFeedback = require("../models/ComplaintFeedback");
 const User = require("../models/User");
+const School = require("../models/School");
 
 // Helper: verify student exists and class/section match
 async function verifyStudentClassSection(studentId, classId, sectionId, schoolId) {
@@ -145,6 +146,7 @@ const deleteEntry = async (req, res) => {
     try {
         const entryId = req.params.id;
         const userId = req.user._id;
+        const userRole = req.user.role || "school";
 
         const entry = await ComplaintFeedback.findById(entryId);
         if (!entry) {
@@ -155,7 +157,7 @@ const deleteEntry = async (req, res) => {
         }
 
         const isOwner = entry.studentId.toString() === userId.toString();
-        const isAdmin = req.user.role === "admin_office" || req.user.role === "superadmin";
+        const isAdmin = userRole === "admin_office" || userRole === "school";
 
         if (!isOwner && !isAdmin) {
             return res.status(403).json({
@@ -181,7 +183,6 @@ const deleteEntry = async (req, res) => {
             message: "Entry deleted successfully"
         });
     } catch (err) {
-        console.error("Delete entry error:", err);
         return res.status(500).json({
             success: false,
             message: "Internal server error",
@@ -216,21 +217,16 @@ const reviewComplaint = async (req, res) => {
             });
         }
 
-        // FIX 1: Determine if reviewer is admin/school or user
-        // For school users, we need to check differently since req.user might not have role field
         let isAdminOrSchool = false;
         let userRole = req.user.role;
 
-        // If role doesn't exist in req.user, check if it's a school by looking for school-specific fields
         if (!userRole) {
-            // Check if this is a school user by looking for school-specific fields
             if (req.user.schoolId || req.user.name?.includes("School")) {
                 isAdminOrSchool = true;
                 userRole = "school";
             }
         } else {
-            // If role exists, check if it's admin/school
-            isAdminOrSchool = ["admin_office", "superadmin", "school"].includes(userRole);
+            isAdminOrSchool = ["superadmin", "school"].includes(userRole);
         }
 
         const reviewerRole = isAdminOrSchool ? "admin" : "user";
@@ -312,7 +308,7 @@ const reviewComplaint = async (req, res) => {
 // Get entries (admin/teacher) - Enhanced with advanced filtering
 const getComplain = async (req, res) => {
     try {
-        const schoolId = req.user.school || req.user._id; // Handle both user and school tokens
+        const schoolId = req.user.school || req.user._id;
         const {
             studentId,
             classId,
@@ -326,14 +322,12 @@ const getComplain = async (req, res) => {
 
         const filter = { school: schoolId };
 
-        // Apply filters
         if (studentId) filter.studentId = studentId;
         if (classId) filter.classId = classId;
         if (sectionId) filter.sectionId = sectionId;
         if (type) filter.type = type;
         if (status) filter.status = status;
 
-        // Text search
         if (search) {
             filter.$or = [
                 { title: { $regex: search, $options: "i" } },
@@ -343,15 +337,12 @@ const getComplain = async (req, res) => {
 
         const skip = (Number(page) - 1) * Number(limit);
 
-        // Query WITHOUT populating reviewerId (we'll handle it manually)
         const query = ComplaintFeedback.find(filter)
             .populate("studentId", "name email rollNo profileImage")
             .populate({
                 path: "classId",
-                select: "class"
+                select: "class sections"
             })
-            // REMOVE this line - we'll handle population manually
-            // .populate("reviews.reviewerId", "name email role")
             .sort({ createdAt: -1 })
             .skip(skip)
             .limit(Number(limit));
@@ -361,9 +352,7 @@ const getComplain = async (req, res) => {
             query.lean()
         ]);
 
-        // We need to manually populate reviewer info for both User and School
-        const School = require("../models/School"); // Import School model
-        const User = require("../models/User"); // Import User model
+
 
         const formattedEntries = await Promise.all(
             entries.map(async (entry) => {
@@ -372,59 +361,66 @@ const getComplain = async (req, res) => {
                 const diffTime = deleteDate - now;
                 const daysUntilAutoDelete = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-                // Process each review to get reviewer info
+                let classInfo = null;
+                if (entry.classId) {
+                    classInfo = {
+                        id: entry.classId._id,
+                        name: entry.classId.class
+                    };
+                }
+
+                let sectionInfo = null;
+                if (
+                    entry.classId &&
+                    entry.sectionId &&
+                    entry.classId.sections
+                ) {
+                    const foundSection = entry.classId.sections.find(
+                        section =>
+                            section._id.toString() ===
+                            entry.sectionId.toString()
+                    );
+
+                    if (foundSection) {
+                        sectionInfo = {
+                            id: foundSection._id,
+                            name: foundSection.name
+                        };
+                    }
+                }
+
                 const processedReviews = await Promise.all(
                     entry.reviews.map(async (review) => {
                         let reviewerInfo = null;
 
-                        // Check if reviewerId exists
                         if (review.reviewerId) {
-                            try {
-                                // First, try to find in User collection
-                                const user = await User.findById(review.reviewerId)
-                                    .select("name email role profileImage")
+                            const user = await User.findById(review.reviewerId)
+                                .select("name email role profileImage")
+                                .lean();
+
+                            if (user) {
+                                reviewerInfo = {
+                                    name: user.name,
+                                    email: user.email,
+                                    role: user.role,
+                                    profileImage: user.profileImage
+                                };
+                            } else {
+                                const school = await School.findById(review.reviewerId)
+                                    .select("name email schoolId")
                                     .lean();
 
-                                if (user) {
+                                if (school) {
                                     reviewerInfo = {
-                                        name: user.name,
-                                        email: user.email,
-                                        role: user.role,
-                                        profileImage: user.profileImage
-                                    };
-                                } else {
-                                    // If not found in User collection, try School collection
-                                    const school = await School.findById(review.reviewerId)
-                                        .select("name email schoolId")
-                                        .lean();
-
-                                    if (school) {
-                                        reviewerInfo = {
-                                            name: school.name,
-                                            email: school.email,
-                                            role: "school",
-                                            schoolId: school.schoolId
-                                        };
-                                    }
-                                }
-                            } catch (err) {
-                                console.error("Error fetching reviewer info:", err);
-                                // If we can't find reviewer, use stored info from review
-                                if (review.reviewerName) {
-                                    reviewerInfo = {
-                                        name: review.reviewerName,
-                                        email: review.reviewerEmail || "",
-                                        role: review.reviewerType || "unknown"
+                                        id: school._id,
+                                        name: school.name,
+                                        email: school.email,
+                                        role: "school",
+                                        schoolId: school.schoolId
                                     };
                                 }
                             }
-                        } else if (review.reviewerName) {
-                            // If reviewer info was stored directly in the review
-                            reviewerInfo = {
-                                name: review.reviewerName,
-                                email: review.reviewerEmail || "",
-                                role: review.reviewerType || "unknown"
-                            };
+
                         }
 
                         return {
@@ -444,20 +440,15 @@ const getComplain = async (req, res) => {
                     title: entry.title,
                     detail: entry.detail,
                     status: entry.status,
-                    student: entry.studentId ? {
+                    studentInfo: entry.studentId ? {
                         id: entry.studentId._id,
                         name: entry.studentId.name,
                         email: entry.studentId.email,
                         rollNo: entry.studentId.rollNo,
                         profileImage: entry.studentId.profileImage
                     } : null,
-                    class: entry.classId ? {
-                        id: entry.classId._id,
-                        name: entry.classId.class
-                    } : null,
-                    section: {
-                        id: entry.sectionId
-                    },
+                    classInfo,
+                    sectionInfo,
                     reviews: processedReviews,
                     autoDeleteAt: entry.autoDeleteAt,
                     createdAt: entry.createdAt,
@@ -507,13 +498,11 @@ const getComplainByStudent = async (req, res) => {
 
         const skip = (Number(page) - 1) * Number(limit);
 
-        // Query WITHOUT populating reviewerId (we'll handle it manually)
         const query = ComplaintFeedback.find(filter)
             .populate({
                 path: "classId",
                 select: "class sections"
             })
-            // REMOVE this line - we'll handle population manually
             // .populate("reviews.reviewerId", "name email role profileImage")
             .sort({ createdAt: -1 })
             .skip(skip)
@@ -524,13 +513,9 @@ const getComplainByStudent = async (req, res) => {
             query.lean()
         ]);
 
-        // Get student information only once
         const student = await User.findById(studentId)
             .select("name email rollNo phone address profileImage")
             .lean();
-
-        // We need to manually populate reviewer info for both User and School
-        const School = require("../models/School"); // Import School model
 
         const formattedEntries = await Promise.all(
             entries.map(async (entry) => {
@@ -539,18 +524,15 @@ const getComplainByStudent = async (req, res) => {
                 const diffTime = deleteDate - now;
                 const daysUntilAutoDelete = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-                // Initialize class and section info
                 let classInfo = {};
                 let sectionInfo = {};
 
                 if (entry.classId) {
-                    // Class info
                     classInfo = {
                         id: entry.classId._id,
                         name: entry.classId.class,
                     };
 
-                    // Find the specific section from the sections array
                     if (entry.sectionId && entry.classId.sections) {
                         const foundSection = entry.classId.sections.find(
                             section => section._id.toString() === entry.sectionId.toString()
@@ -565,15 +547,12 @@ const getComplainByStudent = async (req, res) => {
                     }
                 }
 
-                // Process each review to get reviewer info
                 const processedReviews = await Promise.all(
                     entry.reviews.map(async (review) => {
                         let reviewerInfo = null;
 
-                        // Check if reviewerId exists
                         if (review.reviewerId) {
                             try {
-                                // First, try to find in User collection
                                 const user = await User.findById(review.reviewerId)
                                     .select("name email role profileImage")
                                     .lean();
@@ -587,7 +566,6 @@ const getComplainByStudent = async (req, res) => {
                                         profileImage: user.profileImage
                                     };
                                 } else {
-                                    // If not found in User collection, try School collection
                                     const school = await School.findById(review.reviewerId)
                                         .select("name email schoolId")
                                         .lean();
@@ -603,8 +581,6 @@ const getComplainByStudent = async (req, res) => {
                                     }
                                 }
                             } catch (err) {
-                                console.error("Error fetching reviewer info:", err);
-                                // If we can't find reviewer, use stored info from review
                                 if (review.reviewerName) {
                                     reviewerInfo = {
                                         name: review.reviewerName,
@@ -614,7 +590,6 @@ const getComplainByStudent = async (req, res) => {
                                 }
                             }
                         } else if (review.reviewerName) {
-                            // If reviewer info was stored directly in the review
                             reviewerInfo = {
                                 name: review.reviewerName,
                                 email: review.reviewerEmail || "",
@@ -633,7 +608,6 @@ const getComplainByStudent = async (req, res) => {
                     })
                 );
 
-                // Format student information
                 const studentInfo = student ? {
                     id: student._id,
                     name: student.name,
@@ -650,9 +624,9 @@ const getComplainByStudent = async (req, res) => {
                     title: entry.title,
                     detail: entry.detail,
                     status: entry.status,
-                    class: classInfo,
-                    section: sectionInfo,
-                    student: studentInfo,
+                    classInfo: classInfo,
+                    sectionInfo: sectionInfo,
+                    studentInfo: studentInfo,
                     reviews: processedReviews,
                     autoDeleteAt: entry.autoDeleteAt,
                     createdAt: entry.createdAt,

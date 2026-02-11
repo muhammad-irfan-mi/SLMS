@@ -86,6 +86,8 @@ router.put(
 
 router.delete(
     "/:id",
+    protect,
+    allowedRoles,
     deleteEntry
 );
 
