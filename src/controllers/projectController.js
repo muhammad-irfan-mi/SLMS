@@ -761,10 +761,25 @@ const getProjectSubmissions = async (req, res) => {
       ));
     }
 
+    const formattedSubmissions = filteredSubmissions.map(sub => ({
+      _id: sub._id,
+      files: sub.files,
+      submittedAt: sub.submittedAt,
+      submissionText: sub.submissionText,
+      status: sub.status,
+      grade: sub.grade,
+      studentInfo: sub.studentId ? {
+        _id: sub.studentId._id,
+        name: sub.studentId.name,
+        email: sub.studentId.email,
+        rollNumber: sub.studentId.rollNumber
+      } : null
+    }));
+
     return res.status(200).json({
       totalSubmissions: project.submissions.length,
       filteredSubmissions: filteredSubmissions.length,
-      submissions: filteredSubmissions,
+      submissions: formattedSubmissions,
       // pendingStudents,
       // submissionStats: project.submissionStats
     });

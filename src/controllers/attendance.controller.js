@@ -98,7 +98,7 @@ const getApprovedLeavesForDate = async (school, studentIds, date) => {
         const leaves = await Leave.find({
             school,
             studentId: { $in: studentIds },
-            dates: date, 
+            dates: { $in: [date] },
             status: "approved",
             userType: "student"
         }).select('studentId dates').lean();
@@ -106,9 +106,7 @@ const getApprovedLeavesForDate = async (school, studentIds, date) => {
         const leaveMap = new Map();
 
         leaves.forEach(leave => {
-            if (leave.dates.includes(date)) {
-                leaveMap.set(String(leave.studentId), true);
-            }
+            leaveMap.set(String(leave.studentId), true);
         });
 
         return leaveMap;
@@ -124,13 +122,11 @@ const markAttendance = async (req, res) => {
         const teacherId = req.user._id;
         const school = req.user.school;
 
-        // Validate class existence
         const classDoc = await ClassSection.findById(classId);
         if (!classDoc) {
             return res.status(404).json({ message: "Class not found" });
         }
 
-        // Verify teacher is assigned to this class/section
         const teacherCheck = await validateTeacherAssignment(teacherId, classId, sectionId, school);
         if (!teacherCheck.valid) {
             return res.status(403).json({
@@ -138,7 +134,6 @@ const markAttendance = async (req, res) => {
             });
         }
 
-        // Format date
         let attendanceDate;
         try {
             attendanceDate = formatDate(date);
@@ -149,7 +144,6 @@ const markAttendance = async (req, res) => {
             });
         }
 
-        // Check if date is in the future
         const today = formatDate(new Date());
         if (attendanceDate > today) {
             return res.status(400).json({
@@ -157,7 +151,6 @@ const markAttendance = async (req, res) => {
             });
         }
 
-        // Check if attendance already exists for this date
         const exists = await Attendance.findOne({
             school,
             classId,
@@ -171,10 +164,8 @@ const markAttendance = async (req, res) => {
             });
         }
 
-        // Extract student IDs
         const studentIds = students.map(s => s.studentId);
 
-        // Validate student enrollment
         const enrollmentCheck = await validateStudentEnrollment(studentIds, classId, sectionId, school);
         if (!enrollmentCheck.valid) {
             return res.status(400).json({
@@ -183,7 +174,6 @@ const markAttendance = async (req, res) => {
             });
         }
 
-        // Fetch student details and check for approved leaves
         const [users, leaveMap] = await Promise.all([
             User.find({
                 _id: { $in: studentIds },
@@ -194,15 +184,13 @@ const markAttendance = async (req, res) => {
             getApprovedLeavesForDate(school, studentIds, attendanceDate)
         ]);
 
-        // Create map for quick lookups
         const userMap = new Map(users.map(u => [String(u._id), u]));
 
-        // Prepare final student records with automatic leave status
         const finalStudents = students.map(s => {
             const user = userMap.get(String(s.studentId));
             const hasApprovedLeave = leaveMap.has(String(s.studentId));
+            console.log("hasApprovedLeave", hasApprovedLeave)
 
-            // If student has approved leave for this date, override status to "leave"
             const status = hasApprovedLeave ? "leave" : (s.status || "present");
 
             return {
