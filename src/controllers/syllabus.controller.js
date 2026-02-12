@@ -135,7 +135,7 @@ const validateSubjectAssignment = async (subjectId, classId, schoolId) => {
     console.log("ids",subjectId, classId, schoolId);
     const subject = await Subject.findOne({
         _id: subjectId,
-        class: classId,
+        classId: classId,
         school: schoolId,
         isActive: true
     }).lean();
