@@ -123,5 +123,10 @@ UserSchema.index(
     partialFilterExpression: { verified: false },
   }
 );
+UserSchema.index({ school: 1, role: 1 });
+UserSchema.index({ school: 1, "classInfo.id": 1 });
+UserSchema.index({ school: 1, "sectionInfo.id": 1 });
+UserSchema.index({ school: 1, rollNo: 1 });
+
 
 module.exports = mongoose.model("User", UserSchema);
