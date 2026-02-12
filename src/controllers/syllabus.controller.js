@@ -132,7 +132,7 @@ const resolveUploader = async (uploadedById, uploadedByModel) => {
 
 // Helper: Validate subject belongs to class and school
 const validateSubjectAssignment = async (subjectId, classId, schoolId) => {
-    console.log("Hello",subjectId, classId, schoolId);
+    console.log("ids",subjectId, classId, schoolId);
     const subject = await Subject.findOne({
         _id: subjectId,
         class: classId,
