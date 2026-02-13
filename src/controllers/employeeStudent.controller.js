@@ -909,7 +909,7 @@ const addStudentBySchool = async (req, res) => {
                 attempts: 0,
                 lastAttempt: new Date()
             },
-            verificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+          verificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
         });
 
         await student.save();

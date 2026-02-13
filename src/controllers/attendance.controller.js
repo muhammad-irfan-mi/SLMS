@@ -4,6 +4,13 @@ const UserImported = require("../models/User");
 const ClassSectionImported = require("../models/ClassSection");
 const Leave = require("../models/Leave");
 
+const dayjs = require("dayjs");
+const utc = require("dayjs/plugin/utc");
+const timezone = require("dayjs/plugin/timezone");
+
+dayjs.extend(utc);
+dayjs.extend(timezone);
+
 const Attendance = AttendanceImported.default || AttendanceImported;
 const User = UserImported.default || UserImported;
 const ClassSection = ClassSectionImported.default || ClassSectionImported;
@@ -144,12 +151,19 @@ const markAttendance = async (req, res) => {
             });
         }
 
-        const today = formatDate(new Date());
-        if (attendanceDate > today) {
+        const today = dayjs().tz("Asia/Karachi").startOf("day");
+        const selectedDate = dayjs(attendanceDate).tz("Asia/Karachi").startOf("day");
+
+        if (selectedDate.isAfter(today)) {
             return res.status(400).json({
                 message: "Cannot mark attendance for future dates"
             });
         }
+        // if (attendanceDate > today) {
+        //     return res.status(400).json({
+        //         message: "Cannot mark attendance for future dates"
+        //     });
+        // }
 
         const exists = await Attendance.findOne({
             school,
