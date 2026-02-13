@@ -7,7 +7,7 @@ class EmailService {
         this.transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST || 'smtp.gmail.com',
             port: process.env.SMTP_PORT || 587,
-            secure: 'false',
+            secure: process.env.SMTP_SECURE === 'true',
             auth: {
                 user: process.env.EMAIL_USER,
                 pass: process.env.EMAIL_PASS,
@@ -208,12 +208,12 @@ class EmailService {
     }
 
     // Send student registration email
-    async sendStudentRegistrationEmail(email, otpCode, name, username, schoolId) {
+    async sendStudentRegistrationEmail(email, otpCode, name, username,schoolId) {
         const schoolName = await this.getSchoolName(schoolId);
 
 
         const mailOptions = {
-            from: `"${schoolName}" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
+ from: `"${schoolName}" <${process.env.EMAIL_USER || process.env.SMTP_USER}>`,
             to: email,
             subject: `Student Account Created - ${schoolName}`,
             html: `
