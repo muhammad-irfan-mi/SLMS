@@ -62,6 +62,11 @@ const UserSchema = new Schema({
     lastAttempt: Date,
     verified: { type: Boolean, default: false }
   },
+
+  verificationExpiresAt: {
+    type: Date
+  },
+
   verified: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
   tokenVersion: { type: Number, default: 0 },
@@ -72,15 +77,24 @@ const UserSchema = new Schema({
     default: null
   },
   createdAt: { type: Date, default: Date.now },
+  updatedAt: Date
 });
 
-UserSchema.index({ "otp.expiresAt": 1 }, {
-  expireAfterSeconds: 0,
-  partialFilterExpression: {
-    "otp.expiresAt": { $exists: true },
-    verified: false
+// UserSchema.index({ "otp.expiresAt": 1 }, {
+//   expireAfterSeconds: 0,
+//   partialFilterExpression: {
+//     "otp.expiresAt": { $exists: true },
+//     verified: false
+//   }
+// });
+
+UserSchema.index(
+  { verificationExpiresAt: 1 },
+  {
+    expireAfterSeconds: 0,
+    partialFilterExpression: { verified: false }
   }
-});
+);
 
 UserSchema.index(
   { email: 1, school: 1, role: 1 },

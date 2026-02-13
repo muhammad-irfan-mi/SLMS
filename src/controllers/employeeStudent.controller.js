@@ -209,6 +209,7 @@ const verifyUserOTP = async (req, res) => {
 
         user.verified = true;
         user.otp = undefined;
+        user.verificationExpiresAt = undefined;
         await user.save();
 
         return res.status(200).json({
@@ -532,7 +533,8 @@ const addEmployeeBySchool = async (req, res) => {
                 expiresAt: otpExpiry,
                 attempts: 0,
                 lastAttempt: new Date()
-            }
+            },
+            verificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
         });
 
         await newUser.save();
@@ -906,7 +908,8 @@ const addStudentBySchool = async (req, res) => {
                 expiresAt: otpExpiry,
                 attempts: 0,
                 lastAttempt: new Date()
-            }
+            },
+            verificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
         });
 
         await student.save();
