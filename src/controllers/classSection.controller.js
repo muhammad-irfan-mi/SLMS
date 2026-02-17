@@ -516,6 +516,49 @@ const assignSectionIncharge = async (req, res) => {
     }
 };
 
+const removeSectionIncharge = async (req, res) => {
+    try {
+        const { teacherId } = req.body;
+
+        const teacher = await User.findById(teacherId);
+
+        if (!teacher || teacher.role !== "teacher") {
+            return res.status(404).json({
+                message: "Teacher not found",
+            });
+        }
+
+        if (req.user.school.toString() !== teacher.school.toString()) {
+            return res.status(403).json({
+                message: "Unauthorized access to this school",
+            });
+        }
+
+        if (!teacher.isIncharge) {
+            return res.status(400).json({
+                message: "Teacher is not assigned as section incharge",
+            });
+        }
+
+        teacher.isIncharge = false;
+        teacher.classInfo = null;
+        teacher.sectionInfo = null;
+
+        await teacher.save();
+
+        return res.status(200).json({
+            message: "Section incharge removed successfully",
+            teacherId: teacher._id,
+        });
+
+    } catch (err) {
+        return res.status(500).json({
+            message: "Server error",
+            error: err.message,
+        });
+    }
+};
+
 const promoteStudentsToNextClass = async (req, res) => {
     try {
         const { fromClassId, fromSectionId, toClassId, toSectionId } = req.body;
@@ -714,6 +757,7 @@ module.exports = {
     updateAllClassesAndSections,
     deleteSectionFromClass,
     assignSectionIncharge,
+    removeSectionIncharge,
     getClassesBySchool,
     deleteClass,
     promoteStudentsToNextClass

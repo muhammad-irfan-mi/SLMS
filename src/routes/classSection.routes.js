@@ -8,6 +8,7 @@ const {
     updateAllClassesAndSections,
     assignSectionIncharge,
     promoteStudentsToNextClass,
+    removeSectionIncharge,
 } = require("../controllers/classSection.controller");
 const { protect, isAdminOffice } = require("../middlewares/auth");
 const validate = require("../middlewares/validate");
@@ -59,6 +60,11 @@ router.post(
     '/assign-incharge',
     validate(assignInchargeValidation),
     assignSectionIncharge
+);
+
+router.post(
+    '/remove-incharge',
+    removeSectionIncharge
 );
 
 router.post(
