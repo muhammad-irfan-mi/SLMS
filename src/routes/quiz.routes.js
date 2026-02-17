@@ -1,28 +1,28 @@
 const express = require("express");
 const router = express.Router();
-const { 
-  protect, 
-  isAdminOffice, 
-  allowedRoles, 
+const {
+  protect,
+  isAdminOffice,
+  allowedRoles,
   isStudent,
   isSchool,
-  isTeacher 
+  isTeacher
 } = require("../middlewares/auth");
-const { 
-  createQuizGroup, 
-  updateQuizGroup, 
-  deleteQuizGroup, 
-  getGroups, 
-  getGroupById, 
-  submitQuiz, 
-  getLeaderboard 
+const {
+  createQuizGroup,
+  updateQuizGroup,
+  deleteQuizGroup,
+  getGroups,
+  getGroupById,
+  submitQuiz,
+  getLeaderboard
 } = require("../controllers/quiz.controller");
-const { 
-  validateQuizGroup, 
-  validateQuizSubmission, 
-  validateFilter, 
-  validateLeaderboardFilter, 
-  validateFile 
+const {
+  validateQuizGroup,
+  validateQuizSubmission,
+  validateFilter,
+  validateLeaderboardFilter,
+  validateFile
 } = require("../validators/quiz.validator");
 const { upload } = require("../utils/multer");
 
@@ -40,16 +40,7 @@ const detectRole = (req, res, next) => {
 router.post("/",
   protect,
   detectRole,
-  // (req, res, next) => {
-  //   const allowed = ['school', 'admin_office', 'teacher'];
-  //   if (!allowed.includes(req.user.role)) {
-  //     return res.status(403).json({ 
-  //       message: 'Only school, admin office, or teachers can create quizzes' 
-  //     });
-  //   }
-  //   next();
-  // },
-  upload.single('file'), 
+  upload.single('file'),
   validateFile,
   validateQuizGroup,
   createQuizGroup
@@ -58,6 +49,7 @@ router.post("/",
 router.put("/:id",
   protect,
   detectRole,
+  upload.single("file"),
   validateQuizGroup,
   updateQuizGroup
 );

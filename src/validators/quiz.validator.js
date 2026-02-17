@@ -282,11 +282,11 @@ const validateQuizGroup = (req, res, next) => {
     req.body.sectionIds = parseArray(sectionIds);
 
     // Validate required fields
-    if (!title || title.trim().length < 3) {
-        return res.status(400).json({
-            message: "Title is required and must be at least 3 characters long"
-        });
-    }
+    // if (!title || title.trim().length < 3) {
+    //     return res.status(400).json({
+    //         message: "Title is required and must be at least 3 characters long"
+    //     });
+    // }
 
     // Validate dates if provided
     if (startTime) {

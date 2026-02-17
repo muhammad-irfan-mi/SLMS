@@ -207,21 +207,18 @@ const updateQuizGroup = async (req, res) => {
 
     const group = await QuizGroup.findById(id);
     if (!group) {
-      return res.status(404).json({ message: "Group not found" });
+      return res.status(404).json({ message: "Quiz group not found" });
     }
 
     let isAuthorized = false;
 
-    if (userRole === 'school') {
-      const schoolId = user._id || user.id;
-      isAuthorized = String(group.school) === String(schoolId) &&
+    if (userRole === "school") {
+      isAuthorized =
+        String(group.school) === String(user._id) &&
         String(group.createdBy) === String(user._id);
-    }
-    else if (['admin_office', 'teacher'].includes(userRole)) {
-      const schoolId = user.school;
-      isAuthorized = String(group.school) === String(schoolId);
-    }
-    else if (userRole === 'superadmin') {
+    } else if (["admin_office", "teacher"].includes(userRole)) {
+      isAuthorized = String(group.school) === String(user.school);
+    } else if (userRole === "superadmin") {
       isAuthorized = true;
     }
 
@@ -231,46 +228,107 @@ const updateQuizGroup = async (req, res) => {
       });
     }
 
-    const {
-      title,
-      description,
-      classIds,
-      sectionIds,
-      questions,
-      startTime,
-      endTime,
-      status
-    } = req.body;
+    if (req.file) {
 
-    if (title !== undefined) group.title = title;
-    if (description !== undefined) group.description = description;
-    if (Array.isArray(classIds)) group.classIds = classIds;
-    if (Array.isArray(sectionIds)) group.sectionIds = sectionIds;
-    if (startTime !== undefined) group.startTime = new Date(startTime);
-    if (endTime !== undefined) group.endTime = new Date(endTime);
-    if (status && ['draft', 'published', 'archived'].includes(status)) {
-      group.status = status;
-    }
+      const extractedQuestions = await parseQuizFile(req.file);
 
-    if (Array.isArray(questions) && questions.length > 0) {
-      questions.forEach((q, i) => {
-        if (!q.type || !["mcq", "fill"].includes(q.type)) {
-          throw new Error(`Invalid question type at position ${i}`);
-        }
-        if (!q.title || q.title.trim().length < 3) {
-          throw new Error(`Question title required at position ${i}`);
-        }
-      });
+      if (!Array.isArray(extractedQuestions) || extractedQuestions.length === 0) {
+        return res.status(400).json({
+          message: "Invalid or empty quiz file"
+        });
+      }
 
-      group.questions = questions.map((q, idx) => ({
+      group.questions = [];
+
+      group.questions = extractedQuestions.map((q, index) => ({
         type: q.type,
         title: q.title,
         options: q.options || [],
         correctOptionIndex: q.correctOptionIndex,
         correctAnswer: q.correctAnswer?.toString().trim(),
         marks: Number(q.marks || 1),
-        order: q.order || idx
+        order: index
       }));
+    }
+    else {
+
+      const {
+        title,
+        description,
+        classIds,
+        sectionIds,
+        questions,
+        questionId,
+        question,
+        newQuestion,
+        deleteQuestionId,
+        startTime,
+        endTime,
+        status
+      } = req.body;
+
+      if (title !== undefined) group.title = title;
+      if (description !== undefined) group.description = description;
+      if (Array.isArray(classIds) && classIds.length > 0) {
+        group.classIds = classIds;
+      }
+      if (Array.isArray(sectionIds) && sectionIds.length > 0) {
+        group.sectionIds = sectionIds;
+      }
+      if (startTime !== undefined) group.startTime = new Date(startTime);
+      if (endTime !== undefined) group.endTime = new Date(endTime);
+      if (status && ["draft", "published", "archived"].includes(status)) {
+        group.status = status;
+      }
+
+      if (Array.isArray(questions) && questions.length > 0) {
+        group.questions = questions.map((q, idx) => ({
+          type: q.type,
+          title: q.title,
+          options: q.options || [],
+          correctOptionIndex: q.correctOptionIndex,
+          correctAnswer: q.correctAnswer?.toString().trim(),
+          marks: Number(q.marks || 1),
+          order: idx
+        }));
+      }
+
+      if (questionId && question) {
+        const index = group.questions.findIndex(
+          q => q._id.toString() === questionId
+        );
+
+        if (index === -1) {
+          return res.status(404).json({
+            message: "Question not found"
+          });
+        }
+
+        group.questions[index] = {
+          ...group.questions[index].toObject(),
+          ...question,
+          correctAnswer: question.correctAnswer?.toString().trim(),
+          marks: Number(question.marks || 1)
+        };
+      }
+
+      if (newQuestion) {
+        group.questions.push({
+          type: newQuestion.type,
+          title: newQuestion.title,
+          options: newQuestion.options || [],
+          correctOptionIndex: newQuestion.correctOptionIndex,
+          correctAnswer: newQuestion.correctAnswer?.toString().trim(),
+          marks: Number(newQuestion.marks || 1),
+          order: group.questions.length
+        });
+      }
+
+      if (deleteQuestionId) {
+        group.questions = group.questions.filter(
+          q => q._id.toString() !== deleteQuestionId
+        );
+      }
     }
 
     await group.save();
@@ -280,19 +338,20 @@ const updateQuizGroup = async (req, res) => {
       group: {
         _id: group._id,
         title: group.title,
-        description: group.description,
-        status: group.status,
         totalQuestions: group.questions.length,
+        status: group.status,
         updatedAt: group.updatedAt
       }
     });
-  } catch (err) {
+
+  } catch (error) {
     return res.status(500).json({
       message: "Server error",
-      error: err.message
+      error: error.message
     });
   }
 };
+
 
 // DELETE quiz group
 const deleteQuizGroup = async (req, res) => {
@@ -362,7 +421,6 @@ const getGroups = async (req, res) => {
       search
     } = req.query;
 
-    // Determine school ID based on role
     let schoolId;
     if (userRole === 'school') {
       schoolId = user._id || user.id;
@@ -374,7 +432,6 @@ const getGroups = async (req, res) => {
       });
     }
 
-    // Build filter
     const filter = { school: schoolId };
 
     if (status) filter.status = status;
@@ -390,7 +447,6 @@ const getGroups = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    // Get total count and paginated groups
     const [total, groups] = await Promise.all([
       QuizGroup.countDocuments(filter),
       QuizGroup.find(filter)
@@ -400,56 +456,60 @@ const getGroups = async (req, res) => {
         .lean()
     ]);
 
-    // Get class and section names for each group
-    const enrichedGroups = await Promise.all(
-      groups.map(async (group) => {
-        let classInfo = [];
-        let sectionInfo = [];
+    const allClassIds = [
+      ...new Set(groups.flatMap(g => g.classIds || []))
+    ];
 
-        if (group.classIds && group.classIds.length > 0) {
-          const classes = await ClassSection.find({
-            _id: { $in: group.classIds },
-            school: schoolId
-          }).select('class className sections');
+    const classes = await ClassSection.find({
+      _id: { $in: allClassIds },
+      school: schoolId
+    }).lean();
 
-          classInfo = classes.map(cls => ({
-            id: cls._id,
-            name: cls.className || cls.class
-          }));
+    const classMap = new Map();
+    classes.forEach(cls => {
+      classMap.set(cls._id.toString(), cls);
+    });
 
-          // Get section info
-          if (group.sectionIds && group.sectionIds.length > 0) {
-            classes.forEach(cls => {
-              cls.sections.forEach(sec => {
-                if (group.sectionIds.includes(sec._id.toString())) {
-                  sectionInfo.push({
-                    id: sec._id,
-                    name: sec.name,
-                    className: cls.className || cls.class
-                  });
-                }
-              });
-            });
-          }
-        }
+    const enrichedGroups = groups.map(group => {
+      let classInfo = null;
+      let sectionInfo = null;
 
-        return {
-          _id: group._id,
-          title: group.title,
-          description: group.description,
-          status: group.status,
-          classIds: group.classIds,
-          sectionIds: group.sectionIds,
-          classInfo,
-          sectionInfo,
-          totalQuestions: group.questions.length,
-          startTime: group.startTime,
-          endTime: group.endTime,
-          createdAt: group.createdAt,
-          createdBy: group.createdBy
+      (group.classIds || []).forEach(cid => {
+        const cls = classMap.get(cid.toString());
+        if (!cls) return;
+
+        classInfo = {
+          id: cls._id,
+          name: cls.className || cls.class
         };
-      })
-    );
+
+        (group.sectionIds || []).forEach(secId => {
+          const sec = (cls.sections || []).find(
+            s => s._id.toString() === secId.toString()
+          );
+
+          if (sec) {
+            sectionInfo = {
+              id: sec._id,
+              name: sec.name,
+            };
+          }
+        });
+      });
+      return {
+        _id: group._id,
+        title: group.title,
+        description: group.description,
+        status: group.status,
+        classInfo,
+        sectionInfo,
+        totalQuestions: group.questions.length,
+        startTime: group.startTime,
+        endTime: group.endTime,
+        createdAt: group.createdAt,
+        createdBy: group.createdBy
+      };
+    });
 
     return res.status(200).json({
       total,
@@ -552,9 +612,6 @@ const getGroupById = async (req, res) => {
             sectionInfo = {
               id: sec._id,
               name: sec.name,
-              classId: cls._id,
-              className: cls.className || cls.class,
-              order: sec.order
             };
           }
         }
