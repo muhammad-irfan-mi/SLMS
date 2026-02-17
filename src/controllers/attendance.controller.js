@@ -288,11 +288,11 @@ const updateAttendance = async (req, res) => {
             }
 
             const today = dayjs().tz("Asia/Karachi").startOf("day");
-            const selectedDate = dayjs(attendanceDate).tz("Asia/Karachi").startOf("day");
+            const attendanceDate = dayjs(attendance.date).tz("Asia/Karachi").startOf("day");
 
-            if (selectedDate.isAfter(today)) {
+            if (attendanceDate.isAfter(today)) {
                 return res.status(400).json({
-                    message: "Cannot mark attendance for future dates"
+                    message: "Cannot update attendance for future dates"
                 });
             }
 
