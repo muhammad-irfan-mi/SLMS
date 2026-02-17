@@ -267,38 +267,35 @@ const updateAttendance = async (req, res) => {
         const userId = req.user._id;
         const userRole = req.user.role;
 
-        // Validate attendanceId
         if (!mongoose.Types.ObjectId.isValid(attendanceId)) {
             return res.status(400).json({ message: "Invalid attendance ID" });
         }
 
-        // Find attendance record
         const attendance = await Attendance.findById(attendanceId);
         if (!attendance) {
             return res.status(404).json({ message: "Attendance not found" });
         }
 
-        // Check school access
         if (String(attendance.school) !== String(school)) {
             return res.status(403).json({ message: "Access denied" });
         }
 
-        // Check if user has permission to update
         if (userRole === 'teacher') {
-            // Teacher can only update their own attendance records
             if (String(attendance.teacherId) !== String(userId)) {
                 return res.status(403).json({
                     message: "You can only update attendance records you created"
                 });
             }
 
-            // Check if attendance date is in the past (teachers can't update future attendance)
-            const today = formatDate(new Date());
-            if (attendance.date > today) {
+            const today = dayjs().tz("Asia/Karachi").startOf("day");
+            const selectedDate = dayjs(attendanceDate).tz("Asia/Karachi").startOf("day");
+
+            if (selectedDate.isAfter(today)) {
                 return res.status(400).json({
-                    message: "Cannot update attendance for future dates"
+                    message: "Cannot mark attendance for future dates"
                 });
             }
+
         }
 
         // Validate student IDs in request
