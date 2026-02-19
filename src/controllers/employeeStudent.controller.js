@@ -909,7 +909,7 @@ const addStudentBySchool = async (req, res) => {
                 attempts: 0,
                 lastAttempt: new Date()
             },
-          verificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+            verificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
         });
 
         await student.save();
@@ -1374,27 +1374,27 @@ const getEmployeeById = async (req, res) => {
     }
 };
 
-const deleteEmployeeBySchool = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const employee = await User.findById(id);
-        if (!employee || !["teacher", "admin_office"].includes(employee.role))
-            return res.status(404).json({ message: "Employee not found" });
+// const deleteEmployeeBySchool = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const employee = await User.findById(id);
+//         if (!employee || !["teacher", "admin_office"].includes(employee.role))
+//             return res.status(404).json({ message: "Employee not found" });
 
-        if (employee.school.toString() !== req.user.school.toString())
-            return res.status(403).json({ message: "Unauthorized" });
+//         if (employee.school.toString() !== req.user.school.toString())
+//             return res.status(403).json({ message: "Unauthorized" });
 
-        const { cnicFront, cnicBack, recentPic } = employee.images || {};
-        for (const fileUrl of [cnicFront, cnicBack, recentPic].filter(Boolean))
-            await deleteFileFromS3(fileUrl);
+//         const { cnicFront, cnicBack, recentPic } = employee.images || {};
+//         for (const fileUrl of [cnicFront, cnicBack, recentPic].filter(Boolean))
+//             await deleteFileFromS3(fileUrl);
 
-        await employee.deleteOne();
-        return res.status(200).json({ message: "Employee deleted successfully" });
-    } catch (err) {
-        console.error("Error deleting employee:", err);
-        return res.status(500).json({ message: err.message || "Server error while deleting employee" });
-    }
-};
+//         await employee.deleteOne();
+//         return res.status(200).json({ message: "Employee deleted successfully" });
+//     } catch (err) {
+//         console.error("Error deleting employee:", err);
+//         return res.status(500).json({ message: err.message || "Server error while deleting employee" });
+//     }
+// };
 
 const getAllStudentsBySchool = async (req, res) => {
     try {
@@ -1550,29 +1550,29 @@ const getStudentsBySection = async (req, res) => {
     }
 };
 
-const deleteStudentBySchool = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const student = await User.findById(id);
-        if (!student || student.role !== "student")
-            return res.status(404).json({ message: "Student not found" });
+// const deleteStudentBySchool = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const student = await User.findById(id);
+//         if (!student || student.role !== "student")
+//             return res.status(404).json({ message: "Student not found" });
 
-        if (student.school.toString() !== req.user.school.toString())
-            return res.status(403).json({ message: "Unauthorized" });
+//         if (student.school.toString() !== req.user.school.toString())
+//             return res.status(403).json({ message: "Unauthorized" });
 
-        const { cnicFront, cnicBack, recentPic } = student.images || {};
-        for (const fileUrl of [cnicFront, cnicBack, recentPic].filter(Boolean))
-            await deleteFileFromS3(fileUrl);
+//         const { cnicFront, cnicBack, recentPic } = student.images || {};
+//         for (const fileUrl of [cnicFront, cnicBack, recentPic].filter(Boolean))
+//             await deleteFileFromS3(fileUrl);
 
-        await student.deleteOne();
-        await School.findByIdAndUpdate(req.user.school, { $inc: { noOfStudents: -1 } });
+//         await student.deleteOne();
+//         await School.findByIdAndUpdate(req.user.school, { $inc: { noOfStudents: -1 } });
 
-        return res.status(200).json({ message: "Student deleted successfully" });
-    } catch (err) {
-        console.error("Error deleting student:", err);
-        return res.status(500).json({ message: err.message || "Server error while deleting student" });
-    }
-};
+//         return res.status(200).json({ message: "Student deleted successfully" });
+//     } catch (err) {
+//         console.error("Error deleting student:", err);
+//         return res.status(500).json({ message: err.message || "Server error while deleting student" });
+//     }
+// };
 
 const editOwnProfile = async (req, res) => {
     try {
@@ -2133,6 +2133,12 @@ const toggleUserStatus = async (req, res) => {
         const newStatus = !user.isActive;
         user.isActive = newStatus;
 
+        if (!newStatus) {
+            user.deactivatedAt = new Date();
+        } else {
+            user.deactivatedAt = null;
+        }
+
         user.tokenVersion = (user.tokenVersion || 0) + 1;
 
         await user.save();
@@ -2158,6 +2164,88 @@ const toggleUserStatus = async (req, res) => {
     }
 };
 
+const getDeletedStudents = async (req, res) => {
+    try {
+        const schoolId = req.user.school;
+
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 10;
+        const skip = (page - 1) * limit;
+
+        const { classId, sectionId, year } = req.query;
+
+        const filter = {
+            school: schoolId,
+            role: "student",
+            isActive: false
+        };
+
+        if (classId) {
+            filter["classInfo.id"] = classId;
+        }
+
+        if (sectionId) {
+            filter["sectionInfo.id"] = sectionId;
+        }
+
+        if (year) {
+            const start = new Date(`${year}-01-01`);
+            const end = new Date(`${year}-12-31`);
+            filter.deactivatedAt = { $gte: start, $lte: end };
+        }
+
+        const [students, total] = await Promise.all([
+            User.find(filter)
+                .select("-password -forgotPasswordOTP -otp -tokenVersion -isIncharge")
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+
+            User.countDocuments(filter)
+        ]);
+
+        const formattedStudents = [];
+
+        for (const student of students) {
+            const classId = student.classInfo?.id || null;
+            const sectionId = student.sectionInfo?.id || null;
+
+            const { className, sectionName } =
+                await getClassSectionInfo(classId, sectionId, schoolId);
+
+            formattedStudents.push({
+                ...student,
+                classInfo: {
+                    id: classId,
+                    className
+                },
+                sectionInfo: {
+                    id: sectionId,
+                    sectionName
+                },
+                deactivatedYear: student.deactivatedAt
+                    ? new Date(student.deactivatedAt).getFullYear()
+                    : null
+            });
+        }
+
+        return res.status(200).json({
+            total,
+            page,
+            limit,
+            totalPages: Math.ceil(total / limit),
+            students: formattedStudents
+        });
+
+    } catch (err) {
+        console.error("Error fetching deleted students:", err);
+        return res.status(500).json({
+            message: err.message || "Server error"
+        });
+    }
+};
+
+
 module.exports = {
     sendUserOTP,
     verifyUserOTP,
@@ -2167,7 +2255,7 @@ module.exports = {
     editEmployeeBySchool,
     getAllEmployeesBySchool,
     getEmployeeById,
-    deleteEmployeeBySchool,
+    // deleteEmployeeBySchool,
     addStudentBySchool,
     getAllStudentsBySchool,
     getStudentsBySection,
@@ -2175,7 +2263,7 @@ module.exports = {
     getStudentsByParentEmail,
     getStudentSiblingsByEmail,
     editStudentBySchool,
-    deleteStudentBySchool,
+    // deleteStudentBySchool,
     editOwnProfile,
     forgotPassword,
     verifyForgotPasswordOTP,
@@ -2183,4 +2271,5 @@ module.exports = {
     resetPassword,
     resendForgotPasswordOTP,
     toggleUserStatus,
+    getDeletedStudents
 };

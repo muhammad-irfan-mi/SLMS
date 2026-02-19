@@ -69,6 +69,10 @@ const UserSchema = new Schema({
 
   verified: { type: Boolean, default: false },
   isActive: { type: Boolean, default: true },
+  deactivatedAt: {
+    type: Date,
+    default: null
+  },
   tokenVersion: { type: Number, default: 0 },
   parentEmail: { type: String },
   siblingGroupId: {

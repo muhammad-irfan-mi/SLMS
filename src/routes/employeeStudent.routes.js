@@ -25,7 +25,8 @@ const {
     verifyForgotPasswordOTP,
     forgotPassword,
     resetPasswordWithOTP,
-    toggleUserStatus
+    toggleUserStatus,
+    getDeletedStudents
 } = require("../controllers/employeeStudent.controller");
 const { protect, isAdminOffice, isTeacherOrAdminOfficeOrSchool, allowedRoles } = require("../middlewares/auth");
 const { upload } = require("../utils/multer");
@@ -83,13 +84,13 @@ router.put(
     editEmployeeBySchool
 );
 
-router.delete(
-    "/delete-employee/:id",
-    protect,
-    isAdminOffice,
-    validate(validationSchemas.idParam, 'params'),
-    deleteEmployeeBySchool
-);
+// router.delete(
+//     "/delete-employee/:id",
+//     protect,
+//     isAdminOffice,
+//     validate(validationSchemas.idParam, 'params'),
+//     deleteEmployeeBySchool
+// );
 
 router.get(
     "/employee",
@@ -134,13 +135,13 @@ router.put(
     editStudentBySchool
 );
 
-router.delete(
-    "/delete-student/:id",
-    protect,
-    isAdminOffice,
-    validate(validationSchemas.idParam, 'params'),
-    deleteStudentBySchool
-);
+// router.delete(
+//     "/delete-student/:id",
+//     protect,
+//     isAdminOffice,
+//     validate(validationSchemas.idParam, 'params'),
+//     deleteStudentBySchool
+// );
 
 router.get(
     "/student",
@@ -229,5 +230,7 @@ router.put(
     isAdminOffice,
     toggleUserStatus
 );
+
+router.get("/deleted-students", protect, isAdminOffice, getDeletedStudents);
 
 module.exports = router;
