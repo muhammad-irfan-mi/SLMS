@@ -14,6 +14,7 @@ const formatDate = (d) => {
 const createNotice = async (req, res) => {
   try {
     const school = req.user.school;
+    const userRole = req.user.role || 'school';
     const createdBy = req.user._id;
     const {
       title, message, target, targetTeacherIds, targetStudentIds,
@@ -62,6 +63,12 @@ const createNotice = async (req, res) => {
       }
     }
 
+    let requestedByModel = "User";
+
+    if (userRole === "school") {
+      requestedByModel = "School";
+    }
+
     if (targetStudentIds && targetStudentIds.length > 0) {
       const students = await User.find({
         _id: { $in: targetStudentIds },
@@ -82,6 +89,7 @@ const createNotice = async (req, res) => {
       title,
       message,
       createdBy,
+      requestedByModel,
       target: target || "all",
       targetTeacherIds: targetTeacherIds || [],
       targetStudentIds: targetStudentIds || [],
@@ -110,7 +118,7 @@ const createNotice = async (req, res) => {
   }
 };
 
-// Get notices for teachers/admins
+// Get notices for teachers
 const getNotices = async (req, res) => {
   try {
     const user = req.user;
@@ -125,7 +133,7 @@ const getNotices = async (req, res) => {
     }
 
     const userId = user._id || user.id;
-    const userRole = user.role;
+    const userRole = user.role || 'school';
     const {
       classId,
       sectionId,
@@ -192,12 +200,12 @@ const getNotices = async (req, res) => {
     if (!user.role) {
       console.log("School login - showing all notices for school");
     }
-    else if (user.role === "teacher") {
+    else if (userRole === "teacher") {
 
       const teacherFilters = [
         { target: "all" },
         { target: "all_teachers" },
-        { target: "custom" },
+        // { target: "custom" },
         { target: "selected_teachers", targetTeacherIds: teacherId }
       ];
 
@@ -303,7 +311,7 @@ const getNotices = async (req, res) => {
         if (notice.createdBy) {
           try {
             const userDoc = await User.findById(notice.createdBy)
-              .select('name email role schoolId username');
+              .select('name email role schoolId username images.recentPic');
 
             if (userDoc) {
               noticeObj.createdBy = {
@@ -311,7 +319,8 @@ const getNotices = async (req, res) => {
                 name: userDoc.name,
                 email: userDoc.email,
                 role: userDoc.role,
-                username: userDoc.username
+                username: userDoc.username,
+                image: userDoc.images && userDoc.images.recentPic ? userDoc.images.recentPic : null,
               };
             } else {
               const schoolDoc = await School.findById(notice.createdBy)
@@ -388,7 +397,7 @@ const getAdminNotices = async (req, res) => {
     const now = new Date();
     const filter = {
       school: new mongoose.Types.ObjectId(schoolId),
-      target: "admin"  
+      target: "admin"
     };
 
 
@@ -428,11 +437,11 @@ const getAdminNotices = async (req, res) => {
     const [total, notices] = await Promise.all([
       Notice.countDocuments(filter),
       Notice.find(filter)
-        .populate("createdBy", "name email role")
+        .populate("createdBy", "name email role images.recentPic")
         .populate("classId", "class")
         .populate("targetTeacherIds", "name email role")
         .populate("targetStudentIds", "name email rollNo")
-        .populate("targetAdminIds", "name email role") 
+        .populate("targetAdminIds", "name email role")
         .populate({
           path: 'readBy.user',
           select: 'name email role',
@@ -474,7 +483,7 @@ const getAdminNotices = async (req, res) => {
       page: Number(page),
       limit: Number(limit),
       totalPages,
-      notices: formattedNotices 
+      notices: formattedNotices
     });
 
   } catch (err) {
@@ -585,9 +594,7 @@ const getNoticesForStudent = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
 
     const query = Notice.find(filter)
-      .populate("createdBy", "name email role")
-      .populate("classId", "class")
-      .select('-targetTeacherIds -targetStudentIds -createdBy')
+      .select('-targetTeacherIds -targetStudentIds') 
       .sort({ pinned: -1, createdAt: -1 })
       .skip(skip)
       .limit(Number(limit));
@@ -614,31 +621,87 @@ const getNoticesForStudent = async (req, res) => {
       }
     });
 
-    const processedNotices = notices.map(notice => {
-      const noticeObj = { ...notice };
+    const processedNotices = await Promise.all(
+      notices.map(async (notice) => {
+        const noticeObj = { ...notice };
 
-      const readAt = readMap.get(notice._id.toString());
-      noticeObj.isRead = !!readAt;
+        const readAt = readMap.get(notice._id.toString());
+        noticeObj.isRead = !!readAt;
 
-      if (readAt) {
-        noticeObj.readAt = readAt;
-      }
+        if (readAt) {
+          noticeObj.readAt = readAt;
+        }
 
-      if (notice.readBy) {
-        noticeObj.readCount = notice.readBy.length;
+        noticeObj.readCount = notice.readBy ? notice.readBy.length : 0;
         delete noticeObj.readBy;
-      } else {
-        noticeObj.readCount = 0;
-      }
 
-      if (notice.target === "selected_students" || notice.target === "custom") {
-        noticeObj.isTargetedToMe = true;
-      } else {
-        noticeObj.isTargetedToMe = true;
-      }
+        if (notice.createdBy) {
+          try {
+            let creatorDoc = await User.findById(notice.createdBy)
+              .select('name email role schoolId username images.recentPic')
+              .lean();
 
-      return noticeObj;
-    });
+            if (creatorDoc) {
+              noticeObj.createdBy = {
+                _id: creatorDoc._id,
+                name: creatorDoc.name,
+                email: creatorDoc.email,
+                role: creatorDoc.role,
+                username: creatorDoc.username,
+                image: creatorDoc.images?.recentPic || null,
+              };
+            } else {
+              const schoolDoc = await School.findById(notice.createdBy)
+                .select('name email schoolId')
+                .lean();
+
+              if (schoolDoc) {
+                noticeObj.createdBy = {
+                  _id: schoolDoc._id,
+                  name: schoolDoc.name,
+                  email: schoolDoc.email,
+                  role: "school",
+                  schoolId: schoolDoc.schoolId,
+                  image: null
+                };
+              } else {
+                noticeObj.createdBy = {
+                  _id: notice.createdBy,
+                  name: "Unknown",
+                  email: null,
+                  role: "unknown",
+                  image: null
+                };
+              }
+            }
+          } catch (err) {
+            noticeObj.createdBy = {
+              _id: notice.createdBy,
+              name: "Unknown",
+              email: null,
+              role: "unknown",
+              image: null
+            };
+          }
+        } else {
+          noticeObj.createdBy = {
+            _id: null,
+            name: "System",
+            email: null,
+            role: "system",
+            image: null
+          };
+        }
+        
+        if (notice.target === "selected_students" || notice.target === "custom") {
+          noticeObj.isTargetedToMe = true;
+        } else {
+          noticeObj.isTargetedToMe = true;
+        }
+
+        return noticeObj;
+      })
+    );
 
     const totalPages = Math.ceil(total / Number(limit));
     const hasNextPage = page < totalPages;
