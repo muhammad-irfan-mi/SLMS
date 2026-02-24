@@ -583,7 +583,6 @@ const promoteStudentsToNextClass = async (req, res) => {
         if (!fromSection) {
             return res.status(404).json({
                 message: "Source section not found in class",
-                availableSections: fromClass.sections.map(s => ({ id: s._id, name: s.name }))
             });
         }
 
@@ -644,105 +643,45 @@ const promoteStudentsToNextClass = async (req, res) => {
             });
         }
 
-        const rollNumbers = studentsToPromote.map(s => s.rollNo).filter(Boolean);
-        const existingRollNos = await User.find({
-            school: schoolId,
-            "classInfo.id": toClassId,
-            "sectionInfo.id": toSectionId,
-            rollNo: { $in: rollNumbers },
-            role: "student",
-            isActive: true
-        }).select("rollNo name");
-
-        if (existingRollNos.length > 0) {
-            return res.status(400).json({
-                message: "Some roll numbers already exist in destination",
-                duplicates: existingRollNos.map(s => ({ rollNo: s.rollNo, name: s.name }))
-            });
-        }
-
         const results = {
             successful: 0,
             failed: 0,
             errors: []
         };
 
+        let successful = 0;
+        let failed = 0;
+        const errors = [];
+
         for (const student of studentsToPromote) {
             try {
-                const inactiveStudent = await User.findOne({
-                    school: schoolId,
-                    "classInfo.id": toClassId,
-                    "sectionInfo.id": toSectionId,
-                    email: student.email,
-                    role: "student",
-                    isActive: false
-                });
+                student.classInfo.id = toClassId;
+                student.sectionInfo.id = toSectionId;
 
-                if (inactiveStudent) {
-                    inactiveStudent.name = student.name;
-                    inactiveStudent.classInfo.id = toClassId;
-                    inactiveStudent.sectionInfo.id = toSectionId;
-                    inactiveStudent.isActive = true;
-                    inactiveStudent.rollNo = student.rollNo;
-                    inactiveStudent.promotedFrom = student._id;
-                    inactiveStudent.promotedAt = new Date();
-                    await inactiveStudent.save();
-                } else {
-                    const newStudent = new User({
-                        name: student.name,
-                        email: student.email,
-                        username: student.username,
-                        rollNo: student.rollNo,
-                        fatherName: student.fatherName,
-                        phone: student.phone,
-                        address: student.address,
-                        role: "student",
-                        school: student.school,
-                        classInfo: { id: toClassId },
-                        sectionInfo: { id: toSectionId },
-                        images: student.images,
-                        verified: student.verified,
-                        isActive: true,
-                        promotedFrom: student._id,
-                        promotedAt: new Date(),
-                        createdAt: new Date()
-                    });
-                    await newStudent.save();
-                }
+                student.promotedFromClass = fromClassId;
+                student.promotedFromSection = fromSectionId;
+                student.promotedAt = new Date();
 
-                student.isActive = false;
-                student.archivedAt = new Date();
-                student.archiveReason = `Promoted to ${toClass.class}-${toSection.name}`;
                 await student.save();
 
-                results.successful++;
+                successful++;
             } catch (error) {
-                console.error(`Error promoting student ${student._id}:`, error);
-                results.failed++;
-                results.errors.push({
+                failed++;
+                errors.push({
                     studentId: student._id,
                     name: student.name,
-                    error: error.message
+                    error: error.message,
                 });
             }
         }
 
-        const response = {
-            message: results.failed > 0 ?
-                `Promotion completed with ${results.failed} error(s)` :
-                "All students promoted successfully",
-            results: {
-                total: studentsToPromote.length,
-                successful: results.successful,
-                failed: results.failed
-            }
-        };
-
-        if (results.errors.length > 0) {
-            response.errors = results.errors;
-        }
-
-        res.status(results.failed > 0 ? 207 : 200).json(response);
+        return res.status(200).json({
+            message: "Students promoted successfully",
+            total: studentsToPromote.length,
+            successful,
+            failed,
+            errors,
+        });
 
     } catch (err) {
         res.status(500).json({
