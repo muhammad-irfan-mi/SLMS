@@ -12,6 +12,7 @@ const SchoolSchema = new Schema({
     cnicFront: String,
     cnicBack: String,
     nocDoc: String,
+    logo: String,
   },
   schoolId: { type: String, required: true, unique: true },
   verified: { type: Boolean, default: false },

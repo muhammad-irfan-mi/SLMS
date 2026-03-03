@@ -4,6 +4,7 @@ const otpService = require("../services/otp.service");
 const { uploadFileToS3, deleteFileFromS3 } = require("../services/s3.service");
 const crypto = require('crypto');
 const bcrypt = require("bcryptjs");
+const User = require("../models/User");
 
 
 const addSchoolBySuperAdmin = async (req, res) => {
@@ -68,6 +69,15 @@ const addSchoolBySuperAdmin = async (req, res) => {
       });
     }
 
+    if (req.files?.logo?.[0]) {
+      const file = req.files.logo[0];
+      logo = await uploadFileToS3({
+        fileBuffer: file.buffer,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+      });
+    }
+
     const tempSchoolId = "SCH-" + Date.now().toString().slice(-6);
     const pendingSchool = await School.findOne({ email, verified: false });
 
@@ -78,7 +88,7 @@ const addSchoolBySuperAdmin = async (req, res) => {
         phone: phone || null,
         address: address || null,
         cnic: cnic || null,
-        images: { cnicFront, cnicBack, nocDoc },
+        images: { cnicFront, cnicBack, nocDoc, logo },
         location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
         noOfStudents: Number(noOfStudents) || 0,
       };
@@ -96,7 +106,7 @@ const addSchoolBySuperAdmin = async (req, res) => {
         phone: phone || null,
         address: address || null,
         cnic: cnic || null,
-        images: { cnicFront, cnicBack, nocDoc },
+        images: { cnicFront, cnicBack, nocDoc, logo },
         schoolId: tempSchoolId,
         location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
         noOfStudents: Number(noOfStudents) || 0,
@@ -130,7 +140,6 @@ const addSchoolBySuperAdmin = async (req, res) => {
       note: "OTP is valid for 10 minutes"
     });
   } catch (err) {
-    console.error("Error adding school:", err);
 
     try {
     } catch (cleanupError) {
@@ -191,7 +200,7 @@ const verifySchoolOTP = async (req, res) => {
     school.noOfStudents = school.tempData.noOfStudents;
     school.schoolId = finalSchoolId;
     school.verified = true;
-    school.otp = undefined; 
+    school.otp = undefined;
     school.tempData = undefined;
 
     await school.save();
@@ -379,6 +388,18 @@ const editSchoolBySuperAdmin = async (req, res) => {
       });
     }
 
+    if (req.files?.logo?.[0]) {
+      if (school.images?.logo) {
+        await deleteFileFromS3(school.images.logo);
+      }
+      const file = req.files.logo[0];
+      school.images.logo = await uploadFileToS3({
+        fileBuffer: file.buffer,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+      });
+    }
+
     await school.save();
 
     return res.status(200).json({
@@ -448,9 +469,25 @@ const getAllSchools = async (req, res) => {
 
     const total = await School.countDocuments();
     const schools = await School.find()
-      .select("-password -otp")
+      .select("-password -otp -noOfStudents")
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .lean();
+
+    const schoolData = await Promise.all(
+      schools.map(async (school) => {
+        const activeStudentsCount = await User.countDocuments({
+          school: school._id,
+          role: 'student',
+          isActive: true
+        });
+
+        return {
+          ...school,
+          noOfStudents: activeStudentsCount,
+        };
+      })
+    );
 
     return res.status(200).json({
       message: "All schools fetched successfully",
@@ -459,7 +496,7 @@ const getAllSchools = async (req, res) => {
       limit,
       totalPages: Math.ceil(total / limit),
       count: schools.length,
-      schools,
+      schools: schoolData,
     });
   } catch (err) {
     console.error("Error fetching schools:", err);
@@ -469,7 +506,6 @@ const getAllSchools = async (req, res) => {
     });
   }
 };
-
 
 const getPendingRegistrations = async (req, res) => {
   try {
@@ -494,15 +530,24 @@ const getPendingRegistrations = async (req, res) => {
 const getSchoolById = async (req, res) => {
   try {
     const { id } = req.params;
-    const school = await School.findById(id).select("-password -otp");
+    const school = await School.findById(id).select("-password -otp -noOfStudents").lean();
 
     if (!school) {
       return res.status(404).json({ message: "School not found" });
     }
 
+    const activeStudentsCount = await User.countDocuments({
+      school: school._id,
+      role: 'student',
+      isActive: true
+    });
+
     return res.status(200).json({
       message: "School fetched successfully",
-      school,
+      school: {
+        ...school,
+        noOfStudents: activeStudentsCount
+      }
     });
   } catch (err) {
     console.error("Error fetching school:", err);
@@ -513,6 +558,58 @@ const getSchoolById = async (req, res) => {
   }
 };
 
+const updateSchoolLogo = async (req, res) => {
+  try {
+    const schoolId = req.params.id;
+    const school = await School.findById(schoolId);
+
+    if (!school) {
+      return res.status(404).json({ message: "School not found" });
+    }
+
+    const isSchoolOwner = String(school._id) === String(req.user.school);
+    console.log("Is School Owner:", isSchoolOwner);
+
+    if (!isSchoolOwner) {
+      return res.status(403).json({
+        message: "You don't have permission to update this school's logo"
+      });
+    }
+
+    if (!req.files?.logo?.[0]) {
+      return res.status(400).json({ message: "No logo file provided" });
+    }
+
+    if (req.files?.logo?.[0]) {
+      if (school.images?.logo) {
+        await deleteFileFromS3(school.images.logo);
+      }
+      const file = req.files.logo[0];
+      school.images.logo = await uploadFileToS3({
+        fileBuffer: file.buffer,
+        fileName: file.originalname,
+        mimeType: file.mimetype,
+      });
+    }
+
+    school.logo = school.images.logo;
+    await school.save();
+
+    return res.status(200).json({
+      message: "School logo updated successfully",
+      logo: school.images.logo
+    });
+
+  } catch (err) {
+    console.error("Error updating school logo:", err);
+    return res.status(500).json({
+      message: "Server error while updating school logo",
+      error: err.message,
+    });
+  }
+};
+
+
 module.exports = {
   addSchoolBySuperAdmin,
   verifySchoolOTP,
@@ -522,5 +619,6 @@ module.exports = {
   editSchoolBySuperAdmin,
   getAllSchools,
   getSchoolById,
-  getPendingRegistrations
+  getPendingRegistrations,
+  updateSchoolLogo
 };

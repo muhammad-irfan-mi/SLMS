@@ -316,7 +316,7 @@ const getDocumentRequests = async (req, res) => {
         const query = DocumentRequest.find(filter)
             .populate({
                 path: 'studentId',
-                select: 'name email rollNo school classInfo sectionInfo',
+                select: 'name email rollNo school classInfo sectionInfo images.recentPic',
                 match: { role: 'student' }
             })
             .populate({
@@ -390,7 +390,8 @@ const getDocumentRequests = async (req, res) => {
                     name: reqObj.studentId.name,
                     email: reqObj.studentId.email,
                     rollNo: reqObj.studentId.rollNo,
-                    school: reqObj.studentId.school
+                    school: reqObj.studentId.school,
+                    recentPic: reqObj.studentId.images?.recentPic || null
                 };
                 delete reqObj.studentId;
             }
