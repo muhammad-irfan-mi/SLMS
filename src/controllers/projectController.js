@@ -731,7 +731,7 @@ const getProjectSubmissions = async (req, res) => {
       .populate('assignedBy', 'name email')
       .populate({
         path: 'submissions.studentId',
-        select: 'name email rollNumber images.recentPic'
+        select: 'name email rollNo images.recentPic'
       });
 
     if (!project) return res.status(404).json({ message: "Project not found" });
@@ -753,7 +753,7 @@ const getProjectSubmissions = async (req, res) => {
       const allStudents = await User.find({
         _id: { $in: project.studentIds },
         isActive: true
-      }).select('name email rollNumber images.recentPic').lean();
+      }).select('name email rollNo images.recentPic').lean();
 
       pendingStudents.push(...allStudents.filter(
         student => !submittedStudentIds.includes(String(student._id))
@@ -771,7 +771,7 @@ const getProjectSubmissions = async (req, res) => {
         _id: sub.studentId._id,
         name: sub.studentId.name,
         email: sub.studentId.email,
-        rollNumber: sub.studentId.rollNumber,
+        rollNo: sub.studentId.rollNo,
         recentPic: sub.studentId.images?.recentPic || null
       } : null
     }));
