@@ -305,7 +305,7 @@ const reviewComplaint = async (req, res) => {
     }
 };
 
-// Get entries (admin/teacher) - Enhanced with advanced filtering
+// Get entries (admin/teacher)
 const getComplain = async (req, res) => {
     try {
         const schoolId = req.user.school || req.user._id;
@@ -338,7 +338,7 @@ const getComplain = async (req, res) => {
         const skip = (Number(page) - 1) * Number(limit);
 
         const query = ComplaintFeedback.find(filter)
-            .populate("studentId", "name email rollNo profileImage")
+            .populate("studentId", "name email rollNo images.recentPic")
             .populate({
                 path: "classId",
                 select: "class sections"
@@ -395,7 +395,7 @@ const getComplain = async (req, res) => {
 
                         if (review.reviewerId) {
                             const user = await User.findById(review.reviewerId)
-                                .select("name email role profileImage")
+                                .select("name email role images.recentPic")
                                 .lean();
 
                             if (user) {
@@ -403,7 +403,7 @@ const getComplain = async (req, res) => {
                                     name: user.name,
                                     email: user.email,
                                     role: user.role,
-                                    profileImage: user.profileImage
+                                    profileImage: user.images?.recentPic || null
                                 };
                             } else {
                                 const school = await School.findById(review.reviewerId)
@@ -445,7 +445,7 @@ const getComplain = async (req, res) => {
                         name: entry.studentId.name,
                         email: entry.studentId.email,
                         rollNo: entry.studentId.rollNo,
-                        profileImage: entry.studentId.profileImage
+                        profileImage: entry.studentId.images?.recentPic || null
                     } : null,
                     classInfo,
                     sectionInfo,

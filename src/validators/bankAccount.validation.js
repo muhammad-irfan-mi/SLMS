@@ -50,26 +50,17 @@ const createBankAccountSchema = Joi.object({
             'string.max': 'Branch name cannot exceed 100 characters'
         }),
 
-    accountType: Joi.string()
-        .valid('saving', 'current', 'salary')
-        .default('saving')
-        .messages({
-            'string.base': 'Account type must be a string',
-            'any.only': 'Account type must be one of: saving, current, salary'
-        }),
-
-    ifscCode: Joi.string()
-        .required()
+    iban: Joi.string()
+        .optional()
         .trim()
-        .pattern(/^[A-Z]{4}0[A-Z0-9]{6}$/)
+        .pattern(/^PK[0-9]{2}[A-Z]{4}[0-9]{16}$/)
         .uppercase()
         .messages({
-            'string.base': 'IFSC code must be a string',
-            'string.empty': 'IFSC code is required',
-            'string.pattern.base': 'Invalid IFSC code format (e.g., SBIN0001234)',
-            'any.required': 'IFSC code is required'
-        })
-});
+            'string.base': 'IBAN must be a string',
+            'string.pattern.base': 'Invalid IBAN format. Pakistan IBAN should be 24 characters starting with PK (e.g., PK36SCBL0000001123456702)',
+        }),
+
+}).unknown(false);
 
 // Update Bank Account Schema
 const updateBankAccountSchema = Joi.object({
@@ -116,22 +107,15 @@ const updateBankAccountSchema = Joi.object({
             'string.max': 'Branch name cannot exceed 100 characters'
         }),
 
-    accountType: Joi.string()
-        .optional()
-        .valid('saving', 'current', 'salary')
-        .messages({
-            'string.base': 'Account type must be a string',
-            'any.only': 'Account type must be one of: saving, current, salary'
-        }),
 
-    ifscCode: Joi.string()
+    iban: Joi.string()
         .optional()
         .trim()
-        .pattern(/^[A-Z]{4}0[A-Z0-9]{6}$/)
+        .pattern(/^PK[0-9]{2}[A-Z]{4}[0-9]{16}$/)
         .uppercase()
         .messages({
-            'string.base': 'IFSC code must be a string',
-            'string.pattern.base': 'Invalid IFSC code format (e.g., SBIN0001234)'
+            'string.base': 'IBAN must be a string',
+            'string.pattern.base': 'Invalid IBAN format. Pakistan IBAN should be 24 characters starting with PK (e.g., PK36SCBL0000001123456702)',
         }),
 
     isActive: Joi.boolean()
@@ -171,12 +155,14 @@ const getBankAccountsQuerySchema = Joi.object({
             'boolean.base': 'isActive must be a boolean'
         }),
 
-    accountType: Joi.string()
+    iban: Joi.string()
         .optional()
-        .valid('saving', 'current', 'salary')
+        .trim()
+        .pattern(/^PK[0-9]{2}[A-Z]{4}[0-9]{16}$/)
+        .uppercase()
         .messages({
-            'string.base': 'Account type must be a string',
-            'any.only': 'Account type must be one of: saving, current, salary'
+            'string.base': 'IBAN must be a string',
+            'string.pattern.base': 'Invalid IBAN format. Pakistan IBAN should be 24 characters starting with PK (e.g., PK36SCBL0000001123456702)',
         }),
 
     search: Joi.string()
@@ -210,7 +196,7 @@ const getBankAccountsQuerySchema = Joi.object({
 const validateBody = (schema) => {
     return (req, res, next) => {
         const { error, value } = schema.validate(req.body, { abortEarly: false });
-        
+
         if (error) {
             const errorMessages = error.details.map(detail => detail.message);
             return res.status(400).json({
@@ -219,7 +205,7 @@ const validateBody = (schema) => {
                 errors: errorMessages
             });
         }
-        
+
         req.body = value;
         next();
     };
@@ -228,7 +214,7 @@ const validateBody = (schema) => {
 const validateQuery = (schema) => {
     return (req, res, next) => {
         const { error, value } = schema.validate(req.query, { abortEarly: false });
-        
+
         if (error) {
             const errorMessages = error.details.map(detail => detail.message);
             return res.status(400).json({
@@ -237,7 +223,7 @@ const validateQuery = (schema) => {
                 errors: errorMessages
             });
         }
-        
+
         req.query = value;
         next();
     };

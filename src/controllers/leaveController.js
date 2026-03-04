@@ -28,20 +28,13 @@ const formatDate = (date) => {
 // Check if student belongs to the class/section
 const validateStudentClassSection = async (studentId, classId, sectionId, school) => {
     try {
-        console.log("DEBUG - validateStudentClassSection called with:");
-        console.log("studentId:", studentId);
-        console.log("classId:", classId);
-        console.log("sectionId:", sectionId);
-        console.log("school:", school);
 
-        // First, check if the user exists at all
         const student = await User.findOne({
             _id: new mongoose.Types.ObjectId(String(studentId)),
             school: new mongoose.Types.ObjectId(String(school)),
             role: 'student'
         }).select('classInfo sectionInfo verified').lean();
 
-        console.log("DEBUG - Found student (no status filter):", student);
 
         if (!student) {
             return {
@@ -50,7 +43,6 @@ const validateStudentClassSection = async (studentId, classId, sectionId, school
             };
         }
 
-        // Check if student is verified (if that's your "status" equivalent)
         if (!student.verified) {
             return {
                 valid: false,
@@ -58,7 +50,6 @@ const validateStudentClassSection = async (studentId, classId, sectionId, school
             };
         }
 
-        // Check if student has classInfo and sectionInfo
         if (!student.classInfo || !student.sectionInfo) {
             return {
                 valid: false,
@@ -66,20 +57,10 @@ const validateStudentClassSection = async (studentId, classId, sectionId, school
             };
         }
 
-        // Compare IDs
         const storedClassId = String(student.classInfo.id);
         const storedSectionId = String(student.sectionInfo.id);
         const incomingClassId = String(classId);
         const incomingSectionId = String(sectionId);
-
-        console.log("DEBUG - ID Comparison:", {
-            storedClassId,
-            incomingClassId,
-            storedSectionId,
-            incomingSectionId,
-            classMatch: storedClassId === incomingClassId,
-            sectionMatch: storedSectionId === incomingSectionId
-        });
 
         if (storedClassId !== incomingClassId) {
             return {
@@ -97,7 +78,6 @@ const validateStudentClassSection = async (studentId, classId, sectionId, school
 
         return { valid: true };
     } catch (error) {
-        console.error("Error in validateStudentClassSection:", error);
         return { valid: false, message: "Error validating student enrollment: " + error.message };
     }
 };
@@ -134,17 +114,7 @@ const applyLeave = async (req, res) => {
         const studentName = req.user.name;
         const { classId, sectionId, dates, subject, reason } = req.body;
 
-        console.log("DEBUG - Leave application request:", {
-            studentId,
-            studentName,
-            dates,
-            classId,
-            sectionId,
-            subject,
-            reason
-        });
 
-        // Validate student enrollment
         const enrollmentCheck = await validateStudentClassSection(studentId, classId, sectionId, school);
         if (!enrollmentCheck.valid) {
             return res.status(403).json({
@@ -152,18 +122,15 @@ const applyLeave = async (req, res) => {
             });
         }
 
-        // Format and validate all dates
         const formattedDates = [];
         const validationErrors = [];
 
         for (const date of dates) {
             try {
-                // Ensure we get a consistent format
                 let formattedDate;
                 if (date instanceof Date) {
                     formattedDate = formatDate(date);
                 } else if (typeof date === 'string') {
-                    // Parse the date string
                     const parsedDate = new Date(date);
                     if (isNaN(parsedDate.getTime())) {
                         throw new Error("Invalid date string");
@@ -210,7 +177,6 @@ const applyLeave = async (req, res) => {
         // Check for duplicate dates in the request - using a Set for proper deduplication
         const uniqueDatesSet = new Set(formattedDates);
         if (uniqueDatesSet.size !== formattedDates.length) {
-            // Find the duplicates
             const seen = new Set();
             const duplicates = [];
 
@@ -229,11 +195,6 @@ const applyLeave = async (req, res) => {
             });
         }
 
-        console.log("DEBUG - Valid formatted dates:", formattedDates);
-
-        // Check for existing leaves that overlap with any of the requested dates
-        // Since you're using an array of dates, we need to check if any existing leave
-        // has dates that overlap with our requested dates
         const existingLeaves = await Leave.find({
             school,
             studentId,
@@ -261,7 +222,6 @@ const applyLeave = async (req, res) => {
             }
         }
 
-        // Create single leave object with all dates
         const leaveData = {
             school,
             studentId,
@@ -276,7 +236,6 @@ const applyLeave = async (req, res) => {
             userType: "student"
         };
 
-        console.log("DEBUG - Creating leave with dates:", formattedDates);
 
         // Create the leave document
         const createdLeave = await Leave.create(leaveData);
@@ -302,9 +261,6 @@ const applyLeave = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("applyLeave error:", err);
-
-        // Check if it's a validation error
         if (err.name === 'ValidationError') {
             const validationErrors = Object.values(err.errors).map(error => ({
                 field: error.path,
@@ -1165,15 +1121,6 @@ const applyTeacherLeave = async (req, res) => {
         const teacherName = req.user.name;
         const { dates, subject, reason } = req.body;
 
-        console.log("DEBUG - Teacher leave application:", {
-            teacherId,
-            teacherName,
-            dates,
-            subject,
-            reason
-        });
-
-        // Format and validate all dates
         const formattedDates = [];
         const validationErrors = [];
 
@@ -1181,7 +1128,6 @@ const applyTeacherLeave = async (req, res) => {
             try {
                 const formattedDate = formatDate(date);
 
-                // Check for past dates
                 const today = formatDate(new Date());
                 if (formattedDate < today) {
                     validationErrors.push({
@@ -1200,7 +1146,6 @@ const applyTeacherLeave = async (req, res) => {
             }
         }
 
-        // Return validation errors if any
         if (validationErrors.length > 0) {
             return res.status(400).json({
                 message: "Some dates have validation errors",
@@ -1215,7 +1160,6 @@ const applyTeacherLeave = async (req, res) => {
             });
         }
 
-        // Check for duplicate dates in the request
         const uniqueDates = [...new Set(formattedDates)];
         if (uniqueDates.length !== formattedDates.length) {
             return res.status(400).json({
@@ -1224,7 +1168,6 @@ const applyTeacherLeave = async (req, res) => {
             });
         }
 
-        // Check for existing leaves that overlap with any of the requested dates
         const existingLeaves = await Leave.find({
             school,
             teacherId,
@@ -1234,7 +1177,6 @@ const applyTeacherLeave = async (req, res) => {
         }).select('dates status').lean();
 
         if (existingLeaves.length > 0) {
-            // Find overlapping dates
             const allExistingDates = existingLeaves.flatMap(leave => leave.dates);
             const overlappingDates = formattedDates.filter(date => allExistingDates.includes(date));
 
@@ -1250,7 +1192,6 @@ const applyTeacherLeave = async (req, res) => {
             }
         }
 
-        // Create single leave object with all dates
         const leaveData = {
             school,
             userType: "teacher",
@@ -1285,7 +1226,6 @@ const applyTeacherLeave = async (req, res) => {
             }
         });
     } catch (err) {
-        console.error("applyTeacherLeave error:", err);
         res.status(500).json({
             success: false,
             message: "Server error",

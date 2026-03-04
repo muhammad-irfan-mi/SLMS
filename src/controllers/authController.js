@@ -11,7 +11,11 @@ const superAdminLogin = async (req, res) => {
     if (!email || !password)
       return res.status(400).json({ message: "Email and password required" });
 
-    const user = await User.findOne({ email, role: "superadmin" });
+    const user = await User.findOne({
+      email: { $regex: new RegExp(`^${email}$`, 'i') },
+      role: "superadmin"
+    });
+
     if (!user)
       return res.status(404).json({ message: "SuperAdmin not found" });
 
@@ -45,7 +49,7 @@ const setPassword = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const school = await School.findOne({ email });
+    const school = await School.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
     if (!school) return res.status(404).json({ message: "School not found" });
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -69,7 +73,7 @@ const schoolLogin = async (req, res) => {
     if (!email || !password)
       return res.status(400).json({ message: "Email and password are required" });
 
-    const school = await School.findOne({ email });
+    const school = await School.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
     if (!school) return res.status(404).json({ message: "School not found" });
     if (!school.verified)
       return res.status(401).json({ message: "Please set your password first." });
@@ -118,8 +122,8 @@ const setPasswordForStudent = async (req, res) => {
     }
 
     const user = await User.findOne({
-      email: email.toLowerCase(),
-      username: username.toLowerCase(),
+      email: { $regex: new RegExp(`^${email}$`, 'i') },
+      username: { $regex: new RegExp(`^${username}$`, 'i') },
       role: "student"
     });
 
@@ -193,7 +197,7 @@ const setPasswordForStaff = async (req, res) => {
     }
 
     const user = await User.findOne({
-      email: email.toLowerCase(),
+      email: { $regex: new RegExp(`^${email}$`, 'i') },
       role: { $in: ["teacher", "admin_office", "superadmin"] }
     });
 
@@ -219,22 +223,8 @@ const setPasswordForStaff = async (req, res) => {
     user.password = hashedPassword;
     await user.save();
 
-    // Generate JWT token
-    // const jwt = require('jsonwebtoken');
-    // const token = jwt.sign(
-    //   {
-    //     id: user._id,
-    //     email: user.email,
-    //     role: user.role,
-    //     school: user.school
-    //   },
-    //   process.env.JWT_SECRET,
-    //   { expiresIn: "7d" }
-    // );
-
     return res.status(200).json({
       message: `Password set successfully for ${user.role} ${user.name}`,
-      // token: token,
       user: {
         id: user._id,
         name: user.name,
@@ -265,7 +255,7 @@ const staffLogin = async (req, res) => {
     }
 
     const user = await User.findOne({
-      email: email.toLowerCase(),
+      email: { $regex: new RegExp(`^${email}$`, 'i') },
       role: { $in: ["teacher", "admin_office", "superadmin"] },
       isActive: true
     });
@@ -349,8 +339,8 @@ const studentLogin = async (req, res) => {
     }
 
     const user = await User.findOne({
-      email: email.toLowerCase(),
-      username: username.toLowerCase(),
+      email: { $regex: new RegExp(`^${email}$`, 'i') },
+      username: { $regex: new RegExp(`^${username}$`, 'i') },
       role: "student",
       isActive: true
     });

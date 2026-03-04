@@ -13,7 +13,7 @@ const createBankAccount = async (req, res) => {
             });
         }
 
-        const { accountHolderName, accountNumber, bankName, branchName, accountType, ifscCode } = req.body;
+        const { accountHolderName, accountNumber, bankName, branchName, iban } = req.body;
 
         const existingAccount = await BankAccount.findOne({
             school: schoolId,
@@ -27,14 +27,27 @@ const createBankAccount = async (req, res) => {
             });
         }
 
+        if (iban) {
+            const existingIban = await BankAccount.findOne({
+                school: schoolId,
+                iban: iban
+            });
+
+            if (existingIban) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Bank account with this IBAN already exists for your school"
+                });
+            }
+        }
+
         const bankAccount = await BankAccount.create({
             school: schoolId,
             accountHolderName,
             accountNumber,
             bankName,
             branchName: branchName || '',
-            accountType,
-            ifscCode,
+            iban: iban || '',
             createdBy: user._id
         });
 
@@ -70,7 +83,6 @@ const getBankAccounts = async (req, res) => {
             page = 1,
             limit = 10,
             isActive = true,
-            accountType,
             search,
             sortBy = 'createdAt',
             sortOrder = 'desc'
@@ -78,17 +90,13 @@ const getBankAccounts = async (req, res) => {
 
         const filter = { school: schoolId };
 
-        if (accountType) {
-            filter.accountType = accountType;
-        }
-
         if (search) {
             filter.$or = [
                 { accountHolderName: { $regex: search, $options: 'i' } },
                 { accountNumber: { $regex: search, $options: 'i' } },
                 { bankName: { $regex: search, $options: 'i' } },
                 { branchName: { $regex: search, $options: 'i' } },
-                { ifscCode: { $regex: search, $options: 'i' } }
+                { iban: { $regex: search, $options: 'i' } }
             ];
         }
 
@@ -106,9 +114,15 @@ const getBankAccounts = async (req, res) => {
             BankAccount.countDocuments(filter)
         ]);
 
+        const formattedAccounts = bankAccounts.map(account => ({
+            ...account,
+            formattedIban: account.iban ?
+                account.iban.replace(/(.{4})/g, '$1 ').trim() : null
+        }));
+
         res.status(200).json({
             success: true,
-            data: bankAccounts,
+            data: formattedAccounts,
             pagination: {
                 total,
                 page: Number(page),

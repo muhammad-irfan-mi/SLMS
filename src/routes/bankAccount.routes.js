@@ -11,13 +11,14 @@ const {
 
 const { protect, isAdminOffice } = require('../middlewares/auth');
 const { createBankAccountSchema, getBankAccountsQuerySchema, validateQuery, updateBankAccountSchema, validateBody } = require('../validators/bankAccount.validation');
+const validate = require('../middlewares/validate');
 
 
 router.post(
     '/',
     protect,
     isAdminOffice,
-    validateBody(createBankAccountSchema),
+    validate(createBankAccountSchema),
     createBankAccount
 );
 
@@ -40,7 +41,7 @@ router.put(
     '/:id',
     protect,
     isAdminOffice,
-    validateBody(updateBankAccountSchema),
+    validate(updateBankAccountSchema),
     updateBankAccount
 );
 

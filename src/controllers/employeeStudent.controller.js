@@ -90,10 +90,10 @@ const sendUserOTP = async (req, res) => {
     try {
         const { email, username } = req.body;
 
-        const query = { email: email.toLowerCase() };
+        const query = { email: { $regex: new RegExp(`^${email}$`, 'i') } };
 
         if (username) {
-            query.username = username.toLowerCase();
+            query.username = { $regex: new RegExp(`^${username}$`, 'i') };
         }
 
         const existingUser = await User.findOne(query);
@@ -152,12 +152,12 @@ const verifyUserOTP = async (req, res) => {
         const { email, otp, username } = req.body;
 
         const query = {
-            email: email.toLowerCase(),
+            email: { $regex: new RegExp(`^${email}$`, 'i') },
             verified: false
         };
 
         if (username) {
-            query.username = username.toLowerCase();
+            query.username = { $regex: new RegExp(`^${username}$`, 'i') };
         }
 
         const user = await User.findOne(query);
@@ -237,12 +237,12 @@ const resendUserOTP = async (req, res) => {
         const { email, username } = req.body;
 
         const query = {
-            email: email.toLowerCase(),
+            email: { $regex: new RegExp(`^${email}$`, 'i') },
             verified: false
         };
 
         if (username) {
-            query.username = username.toLowerCase();
+            query.username = { $regex: new RegExp(`^${username}$`, 'i') };
         }
 
         const user = await User.findOne(query);
@@ -305,12 +305,12 @@ const setPasswordAfterOTP = async (req, res) => {
         const { email, password, username } = req.body;
 
         const query = {
-            email: email.toLowerCase(),
+            email: { $regex: new RegExp(`^${email}$`, 'i') },
             verified: true
         };
 
         if (username) {
-            query.username = username.toLowerCase();
+            query.username = { $regex: new RegExp(`^${username}$`, 'i') };
         }
 
         const user = await User.findOne(query);
@@ -375,24 +375,21 @@ async function generateUniqueUsername(name, email, schoolId) {
     let username = baseUsername;
     let counter = 1;
 
-    // Check if this username already exists for this email in the same school
     const existing = await User.findOne({
-        email: email.toLowerCase(),
+        email: { $regex: new RegExp(`^${email}$`, 'i') },
         username: username,
         school: schoolId,
         role: "student"
     });
 
-    // If not exists, return it
     if (!existing) {
         return username;
     }
 
-    // If exists, try with numbers
     while (true) {
         username = `${baseUsername}_${counter}`;
         const existing = await User.findOne({
-            email: email.toLowerCase(),
+            email: { $regex: new RegExp(`^${email}$`, 'i') },
             username: username,
             school: schoolId,
             role: "student"
@@ -456,7 +453,7 @@ const addEmployeeBySchool = async (req, res) => {
         const schoolId = req.user.school;
 
         const existing = await User.findOne({
-            email: email.toLowerCase(),
+            email: { $regex: new RegExp(`^${email}$`, 'i') },
             role: { $in: ["teacher", "admin_office"] }
         });
 
@@ -610,7 +607,7 @@ const editEmployeeBySchool = async (req, res) => {
 
                 const emailExists = await User.findOne({
                     _id: { $ne: id },
-                    email: newEmail,
+                    email: { $regex: new RegExp(`^${newEmail}$`, 'i') },
                     school: schoolId,
                     role: existing.role,
                     isActive: true
@@ -739,7 +736,7 @@ const addStudentBySchool = async (req, res) => {
         const schoolId = req.user.school;
 
         const emailInOtherSchool = await User.findOne({
-            email: email.toLowerCase(),
+            email: { $regex: new RegExp(`^${email}$`, 'i') },
             school: { $ne: schoolId },
             role: "student",
             isActive: true
@@ -790,14 +787,14 @@ const addStudentBySchool = async (req, res) => {
         }
 
         const activeSiblings = await User.find({
-            email: email.toLowerCase(),
+            email: { $regex: new RegExp(`^${email}$`, 'i') },
             school: schoolId,
             role: "student",
             isActive: true
         });
 
         const allSiblings = await User.find({
-            email: email.toLowerCase(),
+            email: { $regex: new RegExp(`^${email}$`, 'i') },
             school: schoolId,
             role: "student"
         });
@@ -863,7 +860,7 @@ const addStudentBySchool = async (req, res) => {
             if (allSiblings.length > 1) {
                 await User.updateMany(
                     {
-                        email: email.toLowerCase(),
+                        email: { $regex: new RegExp(`^${email}$`, 'i') },
                         school: schoolId,
                         role: "student"
                     },
@@ -918,7 +915,7 @@ const addStudentBySchool = async (req, res) => {
             siblingGroupId = siblingGroupId || student._id;
             await User.updateMany(
                 {
-                    email: email.toLowerCase(),
+                    email: { $regex: new RegExp(`^${email}$`, 'i') },
                     school: schoolId,
                     role: "student"
                 },
@@ -938,7 +935,7 @@ const addStudentBySchool = async (req, res) => {
 
         return res.status(201).json({
             message: "Student added successfully. OTP sent.",
-            student
+            // student
         });
 
     } catch (err) {
@@ -1076,7 +1073,7 @@ const editStudentBySchool = async (req, res) => {
 
             const emailExists = await User.findOne({
                 _id: { $ne: id },
-                email: email.toLowerCase(),
+                email: { $regex: new RegExp(`^${email}$`, 'i') },
                 school: schoolId,
                 role: "student",
                 isActive: true
@@ -1188,7 +1185,7 @@ const getStudentSiblingsByEmail = async (req, res) => {
         const schoolId = req.user.school;
 
         const siblings = await User.find({
-            email,
+            email: { $regex: new RegExp(`^${email}$`, 'i') },
             role: "student",
             isActive: true,
             school: schoolId
@@ -1215,12 +1212,14 @@ const getStudentSiblingsByEmail = async (req, res) => {
 const getStudentById = async (req, res) => {
     try {
         const { id } = req.params;
-        const student = await User.findById(id).select("-password -otp -forgotPasswordOTP");
+        const student = await User.findById(id)
+            .select("-password -otp -forgotPasswordOTP")
+            .populate('school', 'name logo');
 
         if (!student || student.role !== "student")
             return res.status(404).json({ message: "Student not found" });
 
-        if (student.school.toString() !== req.user.school.toString())
+        if (student.school._id.toString() !== req.user.school.toString())
             return res.status(403).json({ message: "Unauthorized" });
 
         const classSectionInfo = await getClassSectionInfo(
@@ -1229,8 +1228,15 @@ const getStudentById = async (req, res) => {
             req.user.school
         );
 
+        const schoolInfo = student.school ? {
+            _id: student.school._id,
+            name: student.school.name,
+            logo: student.school.logo
+        } : null;
+
         const studentResponse = {
             ...student.toObject(),
+            school: schoolInfo,
             classInfo: {
                 ...student.classInfo,
                 className: classSectionInfo.className
@@ -1242,11 +1248,13 @@ const getStudentById = async (req, res) => {
         };
 
         const siblings = await User.find({
-            email: student.email.toLowerCase(),
+            email: { $regex: new RegExp(`^${student.email}$`, 'i') },
             school: req.user.school,
             role: "student",
             _id: { $ne: id }
-        }).select("name username classInfo sectionInfo rollNo email");
+        })
+            .select("name username classInfo sectionInfo rollNo email")
+            .populate('school', 'name logo');
 
         const enrichedSiblings = await Promise.all(
             siblings.map(async (sibling) => {
@@ -1256,8 +1264,16 @@ const getStudentById = async (req, res) => {
                     req.user.school
                 );
 
+                // Extract school info for sibling
+                const siblingSchoolInfo = sibling.school ? {
+                    _id: sibling.school._id,
+                    name: sibling.school.name,
+                    logo: sibling.school.logo
+                } : null;
+
                 return {
                     ...sibling.toObject(),
+                    school: siblingSchoolInfo,
                     classInfo: {
                         ...sibling.classInfo,
                         className: siblingClassSectionInfo.className
@@ -1287,7 +1303,7 @@ const getStudentsByParentEmail = async (req, res) => {
         const schoolId = req.user.school;
 
         const students = await User.find({
-            email,
+            email: { $regex: new RegExp(`^${email}$`, 'i') },
             role: "student",
             isActive: true,
             school: schoolId
@@ -1299,7 +1315,6 @@ const getStudentsByParentEmail = async (req, res) => {
             return res.status(404).json({ message: "No students found for this parent email" });
         }
 
-        // Group by class for better organization
         const studentsByClass = students.reduce((acc, student) => {
             const className = student.classInfo.id?.className || 'Unassigned';
             if (!acc[className]) {
@@ -1342,11 +1357,14 @@ const getAllEmployeesBySchool = async (req, res) => {
 const getEmployeeById = async (req, res) => {
     try {
         const { id } = req.params;
-        const employee = await User.findById(id).select("-password -otp -forgotPasswordOTP");
+        const employee = await User.findById(id)
+            .select("-password -otp -forgotPasswordOTP")
+            .populate('school', 'name logo');
+
         if (!employee || !["teacher", "admin_office"].includes(employee.role))
             return res.status(404).json({ message: "Employee not found" });
 
-        if (employee.school.toString() !== req.user.school.toString())
+        if (employee.school?._id.toString() !== req.user.school.toString())
             return res.status(403).json({ message: "Unauthorized" });
 
         const classSectionInfo = await getClassSectionInfo(
@@ -1355,8 +1373,15 @@ const getEmployeeById = async (req, res) => {
             req.user.school
         );
 
+        const schoolInfo = employee.school ? {
+            _id: employee.school._id,
+            name: employee.school.name,
+            logo: employee.school.logo
+        } : null;
+
         const employeeResponse = {
             ...employee.toObject(),
+            // school: schoolInfo,
             classInfo: {
                 ...employee.classInfo,
                 className: classSectionInfo.className
@@ -1373,28 +1398,6 @@ const getEmployeeById = async (req, res) => {
         return res.status(500).json({ message: err.message || "Server error while fetching employee" });
     }
 };
-
-// const deleteEmployeeBySchool = async (req, res) => {
-//     try {
-//         const { id } = req.params;
-//         const employee = await User.findById(id);
-//         if (!employee || !["teacher", "admin_office"].includes(employee.role))
-//             return res.status(404).json({ message: "Employee not found" });
-
-//         if (employee.school.toString() !== req.user.school.toString())
-//             return res.status(403).json({ message: "Unauthorized" });
-
-//         const { cnicFront, cnicBack, recentPic } = employee.images || {};
-//         for (const fileUrl of [cnicFront, cnicBack, recentPic].filter(Boolean))
-//             await deleteFileFromS3(fileUrl);
-
-//         await employee.deleteOne();
-//         return res.status(200).json({ message: "Employee deleted successfully" });
-//     } catch (err) {
-//         console.error("Error deleting employee:", err);
-//         return res.status(500).json({ message: err.message || "Server error while deleting employee" });
-//     }
-// };
 
 const getAllStudentsBySchool = async (req, res) => {
     try {
@@ -1550,30 +1553,6 @@ const getStudentsBySection = async (req, res) => {
     }
 };
 
-// const deleteStudentBySchool = async (req, res) => {
-//     try {
-//         const { id } = req.params;
-//         const student = await User.findById(id);
-//         if (!student || student.role !== "student")
-//             return res.status(404).json({ message: "Student not found" });
-
-//         if (student.school.toString() !== req.user.school.toString())
-//             return res.status(403).json({ message: "Unauthorized" });
-
-//         const { cnicFront, cnicBack, recentPic } = student.images || {};
-//         for (const fileUrl of [cnicFront, cnicBack, recentPic].filter(Boolean))
-//             await deleteFileFromS3(fileUrl);
-
-//         await student.deleteOne();
-//         await School.findByIdAndUpdate(req.user.school, { $inc: { noOfStudents: -1 } });
-
-//         return res.status(200).json({ message: "Student deleted successfully" });
-//     } catch (err) {
-//         console.error("Error deleting student:", err);
-//         return res.status(500).json({ message: err.message || "Server error while deleting student" });
-//     }
-// };
-
 const editOwnProfile = async (req, res) => {
     try {
         const userId = req.user._id;
@@ -1629,7 +1608,7 @@ const forgotPassword = async (req, res) => {
                 return res.status(400).json({ message: "Email does not match username" });
             }
         } else if (email) {
-            user = await User.findOne({ email: email.toLowerCase() });
+            user = await User.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
             if (!user) {
                 return res.status(404).json({ message: "User not found" });
             }
@@ -1712,10 +1691,8 @@ const verifyForgotPasswordOTP = async (req, res) => {
                 });
             }
         } else if (email) {
-            // If only email is provided
-            query.email = email.toLowerCase();
+            query.email = { $regex: new RegExp(`^${email}$`, 'i') };
 
-            // Find user by email
             user = await User.findOne(query);
 
             if (!user) {
@@ -1724,7 +1701,6 @@ const verifyForgotPasswordOTP = async (req, res) => {
                 });
             }
 
-            // For students, require username when using email
             if (user.role === 'student') {
                 return res.status(400).json({
                     message: "For students, please provide username along with email. Multiple students may share the same email.",
@@ -1733,21 +1709,18 @@ const verifyForgotPasswordOTP = async (req, res) => {
             }
         }
 
-        // Check if forgotPasswordOTP exists
         if (!user.forgotPasswordOTP) {
             return res.status(400).json({
                 message: "No password reset request found. Please request a new OTP."
             });
         }
 
-        // Check OTP attempts
         if (user.forgotPasswordOTP.attempts >= 5) {
             return res.status(429).json({
                 message: "Too many OTP attempts. Please request a new OTP."
             });
         }
 
-        // Validate OTP
         const isExpired = new Date() > new Date(user.forgotPasswordOTP.expiresAt);
         if (isExpired) {
             user.forgotPasswordOTP.attempts += 1;
@@ -1821,7 +1794,7 @@ const resetPasswordWithOTP = async (req, res) => {
                 });
             }
         } else if (email) {
-            query.email = email.toLowerCase();
+            query.email = { $regex: new RegExp(`^${email}$`, 'i') };
 
             user = await User.findOne(query);
 
@@ -1928,7 +1901,6 @@ const resetPassword = async (req, res) => {
                 return res.status(404).json({ message: "User not found" });
             }
 
-            // If email provided, ensure it matches
             if (email && user.email.toLowerCase() !== email.toLowerCase()) {
                 return res.status(400).json({
                     message: "Email does not match the provided username"
@@ -1936,13 +1908,12 @@ const resetPassword = async (req, res) => {
             }
         }
         else if (email) {
-            user = await User.findOne({ email: email.toLowerCase() });
+            user = await User.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
 
             if (!user) {
                 return res.status(404).json({ message: "User not found" });
             }
 
-            // Students MUST provide username
             if (user.role === "student") {
                 return res.status(400).json({
                     message: "Students must provide username with email"
@@ -1955,7 +1926,6 @@ const resetPassword = async (req, res) => {
             });
         }
 
-        // ---------------- VERIFY OLD PASSWORD ----------------
         const isMatch = await bcrypt.compare(oldPassword, user.password);
         if (!isMatch) {
             return res.status(400).json({
@@ -1963,7 +1933,6 @@ const resetPassword = async (req, res) => {
             });
         }
 
-        // Prevent reusing same password
         const isSame = await bcrypt.compare(newPassword, user.password);
         if (isSame) {
             return res.status(400).json({
@@ -1971,11 +1940,9 @@ const resetPassword = async (req, res) => {
             });
         }
 
-        // ---------------- UPDATE PASSWORD ----------------
         user.password = await bcrypt.hash(newPassword, 10);
         await user.save();
 
-        // ---------------- NOTIFY USER ----------------
         try {
             await emailService.sendPasswordChangedNotification(
                 user.email,
@@ -2033,7 +2000,7 @@ const resendForgotPasswordOTP = async (req, res) => {
                 });
             }
         } else if (email) {
-            query.email = email.toLowerCase();
+            query.email = { $regex: new RegExp(`^${email}$`, 'i') };
 
             user = await User.findOne(query);
 

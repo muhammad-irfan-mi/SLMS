@@ -26,14 +26,8 @@ const bankAccountSchema = new Schema({
         type: String,
         trim: true
     },
-    accountType: {
+    iban: {
         type: String,
-        enum: ['saving', 'current', 'salary'],
-        default: 'saving'
-    },
-    ifscCode: {
-        type: String,
-        required: true,
         trim: true,
         uppercase: true
     },

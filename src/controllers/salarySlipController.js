@@ -165,7 +165,6 @@ const getTeacherSlips = async (req, res) => {
             slips,
         });
     } catch (err) {
-        console.error("Error getting slips:", err);
         return res.status(500).json({ message: err.message });
     }
 };
@@ -209,7 +208,7 @@ const getTeachersSalaryStatus = async (req, res) => {
         const teachers = await User.find({
             school: schoolId,
             role: "teacher",
-        }).select("_id name email salary");
+        }).select("_id name email salary joiningDate").lean();
 
         const result = teachers.map((t) => {
             const slip = slipMap[t._id.toString()];
@@ -218,6 +217,7 @@ const getTeachersSalaryStatus = async (req, res) => {
                 name: t.name,
                 email: t.email,
                 salary: t.salary,
+                joinindDate: t.joiningDate,
                 status: slip ? slip.status : "pending",
                 slip,
             };
@@ -228,7 +228,6 @@ const getTeachersSalaryStatus = async (req, res) => {
             teachers: result,
         });
     } catch (err) {
-        console.error("Error getting teacher salary status:", err);
         return res.status(500).json({ message: err.message });
     }
 };
