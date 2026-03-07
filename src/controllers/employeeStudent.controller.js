@@ -500,7 +500,7 @@ const addEmployeeBySchool = async (req, res) => {
 
             await existing.save();
 
-            await emailService.sendUserOTPEmail(email, otpCode, name, schoolId, null, role);
+            await emailService.sendUserOTPEmail(email, otpCode, name, schoolId, role);
 
             return res.status(201).json({
                 message: "Employee added successfully. OTP sent for verification.",
@@ -536,7 +536,7 @@ const addEmployeeBySchool = async (req, res) => {
 
         await newUser.save();
 
-        await emailService.sendUserOTPEmail(email, otpCode, name, schoolId, null, role);
+        await emailService.sendUserOTPEmail(email, otpCode, name, schoolId, role);
 
         return res.status(201).json({
             message: "Employee added successfully. OTP sent to email for verification.",

@@ -224,7 +224,7 @@ router.post(
     resendForgotPasswordOTP
 );
 
-router.put(
+router.delete(
     "/diactivate/:userId",
     protect,
     isAdminOffice,
