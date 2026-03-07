@@ -272,9 +272,10 @@ class EmailService {
             appDownloadMessage = "Download Yooyo App from Google Play Store";
         } else if (role === "admin_office") {
             appDownloadMessage = "Download Desktop App";
-        } else {
-            appDownloadMessage = " ";
         }
+
+        const showAppBox = ["teacher", "student", "admin_office"].includes(role);
+
         return `
     <div style="margin:0;padding:10px;background:#f4f4f7;font-family:Arial,sans-serif;">
       <div style="max-width:600px;margin:20px auto;background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 4px 10px rgba(0,0,0,0.05);">
@@ -293,20 +294,26 @@ class EmailService {
         <!-- Body -->
         <div style="padding:10px 30px;">
 
+       ${showAppBox
+                ? `
         <div style="margin:20px 0;padding:15px;background:${role === 'teacher' ? '#e8f5e8' :
-                role === 'student' ? '#fff3e0' :
-                    '#f0f0f0'
-            };border-radius:8px;text-align:center;border-left:5px solid ${role === 'teacher' ? '#4CAF50' :
-                role === 'student' ? '#FF9800' :
-                    '#9C27B0'
-            };">
+                    role === 'student' ? '#fff3e0' :
+                        '#f0f0f0'
+                };border-radius:8px;text-align:center;border-left:5px solid ${role === 'teacher' ? '#4CAF50' :
+                    role === 'student' ? '#FF9800' :
+                        '#9C27B0'
+                };">
+
             <p style="margin:0;font-size:16px;font-weight:bold;color:${role === 'teacher' ? '#2e7d32' :
-                role === 'student' ? '#e65100' :
-                    '#6a1b9a'
-            };">
+                    role === 'student' ? '#e65100' :
+                        '#6a1b9a'
+                };">
               ${appDownloadMessage}
             </p>
-          </div>
+        </div>
+        `
+                : ""
+            }
 
           ${username ? `<p><strong>Username: ${username}</strong></p>` : ""}
           <p style="color:#444;">${message}</p>
