@@ -1604,7 +1604,8 @@ const forgotPassword = async (req, res) => {
                 return res.status(404).json({ message: "User not found" });
             }
 
-            if (email && user.email.toLowerCase() !== email.toLowerCase()) {
+            if (email && user.email.toLowerCase() !== email) {
+
                 return res.status(400).json({ message: "Email does not match username" });
             }
         } else if (email) {
