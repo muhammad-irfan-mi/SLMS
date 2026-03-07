@@ -237,7 +237,6 @@ class EmailService {
                 html,
             });
 
-            console.log("Email sent:", response.id);
             return true;
         } catch (error) {
             console.error("Resend error:", error);
@@ -264,7 +263,6 @@ class EmailService {
         role,
     }) {
 
-        console.log("generateTemplate - role:", role);
 
         let appDownloadMessage = "";
 
@@ -272,8 +270,10 @@ class EmailService {
             appDownloadMessage = "Download Yushay App from Google Play Store";
         } else if (role === "student") {
             appDownloadMessage = "Download Yooyo App from Google Play Store";
-        } else {
+        } else if (role === "admin_office") {
             appDownloadMessage = "Download Desktop App";
+        } else {
+            appDownloadMessage = " ";
         }
         return `
     <div style="margin:0;padding:10px;background:#f4f4f7;font-family:Arial,sans-serif;">
@@ -374,7 +374,6 @@ class EmailService {
 
     async sendUserOTPEmail(email, otpCode, username, schoolId, role) {
         const schoolName = await this.getSchoolName(schoolId);
-        console.log('role', role)
         return this.sendEmail({
             to: email,
             subject: `Verify Your Account - ${schoolName}`,
@@ -405,13 +404,14 @@ class EmailService {
         });
     }
 
-    async sendPasswordChangedNotification(email, userName) {
+    async sendPasswordChangedNotification(email, userName, schoolName) {
         return this.sendEmail({
             to: email,
             subject: "Password Changed Successfully",
             html: this.generateTemplate({
                 title: "Password Updated",
                 message: `Hello ${userName}, your password has been changed successfully.`,
+                schoolName
             }),
         });
     }
