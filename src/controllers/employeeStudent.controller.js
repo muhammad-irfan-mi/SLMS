@@ -1674,52 +1674,51 @@ const verifyForgotPasswordOTP = async (req, res) => {
             });
         }
 
-        const query = {};
         let user = null;
 
-        if (username && email) {
+        if (email && username) {
+            user = await User.findOne({
+                email: { $regex: new RegExp(`^${email}$`, "i") },
+                username: username.toLowerCase(),
+            });
+        }
+        else if (email) {
+            user = await User.findOne({
+                email: { $regex: new RegExp(`^${email}$`, "i") },
+            });
+        }
+        else if (username) {
             user = await User.findOne({
                 username: username.toLowerCase(),
-                email: { $regex: new RegExp(`^${email}$`, "i") }
             });
+        }
 
-            if (!user) {
-                return res.status(404).json({
-                    message: "User not found with this username and email"
-                });
-            }
-        } else if (email) {
-            query.email = { $regex: new RegExp(`^${email}$`, 'i') };
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found",
+            });
+        }
 
-            user = await User.findOne(query);
-
-            if (!user) {
-                return res.status(404).json({
-                    message: "No user found with this email"
-                });
-            }
-
-            if (user.role === 'student') {
-                return res.status(400).json({
-                    message: "For students, please provide username along with email. Multiple students may share the same email.",
-                    suggestion: "Provide username parameter in your request"
-                });
-            }
+        if (user.role === "student" && !username) {
+            return res.status(400).json({
+                message: "Students must provide username with email",
+            });
         }
 
         if (!user.forgotPasswordOTP) {
             return res.status(400).json({
-                message: "No password reset request found. Please request a new OTP."
+                message: "No password reset request found. Please request a new OTP.",
             });
         }
 
         if (user.forgotPasswordOTP.attempts >= 5) {
             return res.status(429).json({
-                message: "Too many OTP attempts. Please request a new OTP."
+                message: "Too many OTP attempts. Please request a new OTP.",
             });
         }
 
         const isExpired = new Date() > new Date(user.forgotPasswordOTP.expiresAt);
+
         if (isExpired) {
             user.forgotPasswordOTP.attempts += 1;
             user.forgotPasswordOTP.lastAttempt = new Date();
@@ -1727,7 +1726,7 @@ const verifyForgotPasswordOTP = async (req, res) => {
 
             return res.status(400).json({
                 message: "OTP has expired. Please request a new OTP.",
-                attemptsRemaining: 5 - user.forgotPasswordOTP.attempts
+                attemptsRemaining: 5 - user.forgotPasswordOTP.attempts,
             });
         }
 
@@ -1738,23 +1737,21 @@ const verifyForgotPasswordOTP = async (req, res) => {
 
             return res.status(400).json({
                 message: "Invalid OTP",
-                attemptsRemaining: 5 - user.forgotPasswordOTP.attempts
+                attemptsRemaining: 5 - user.forgotPasswordOTP.attempts,
             });
         }
 
-        // Mark OTP as verified for password reset
         user.forgotPasswordOTP.verified = true;
         await user.save();
 
         return res.status(200).json({
-            message: "OTP verified successfully. You can now set new password.",
+            message: "OTP verified successfully. You can now reset your password.",
             canResetPassword: true,
             email: user.email,
-            username: user.username,
-            role: user.role
+            username: user.username || null,
+            role: user.role,
         });
     } catch (err) {
-        console.error("Error verifying forgot password OTP:", err);
         return res.status(500).json({
             message: "Server error while verifying OTP",
             error: err.message,

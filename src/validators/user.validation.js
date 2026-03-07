@@ -217,16 +217,16 @@ const validationSchemas = {
     .unknown(false),
 
   sendOTP: Joi.object({
-      email: commonValidations.email,
-      username: Joi.string().optional() // Only for students
-    }).when(Joi.object({ role: Joi.string().valid('student') }).unknown(), {
-      then: Joi.object({
-        username: commonValidations.username.required()
-      }),
-      otherwise: Joi.object({
-        username: Joi.string().optional()
-      })
+    email: commonValidations.email,
+    username: Joi.string().optional() // Only for students
+  }).when(Joi.object({ role: Joi.string().valid('student') }).unknown(), {
+    then: Joi.object({
+      username: commonValidations.username.required()
     }),
+    otherwise: Joi.object({
+      username: Joi.string().optional()
+    })
+  }),
 
   // Verify OTP schema
   verifyOTP: Joi.object({
@@ -335,21 +335,20 @@ const validationSchemas = {
       }),
     username: Joi.string().optional()
   })
-    .custom((value, helpers) => {
-      const { email, username } = value;
+    // .custom((value, helpers) => {
+    //   const { email, username } = value;
 
-      if (email && !username) {
-        return helpers.error('any.custom', {
-          message: 'Username is required for students when using email'
-        });
-      }
+    //   if (email && !username) {
+    //     return helpers.error('any.custom', {
+    //       message: 'Username is required for students when using email'
+    //     });
+    //   }
 
-      return value;
-    })
-    .or('email', 'username')
+    //   return value;
+    // })
+    .or("email", "username")
     .messages({
-      'object.missing': 'Please provide either email or username',
-      'any.custom': 'Username is required for students when using email'
+      "object.missing": "Please provide email or username",
     }),
 
   // And for resetPasswordWithOTP
