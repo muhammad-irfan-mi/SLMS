@@ -1598,18 +1598,16 @@ const forgotPassword = async (req, res) => {
 
         let user;
 
-        if (username) {
-            user = await User.findOne({ username: username.toLowerCase() });
-            console.log("User found by username:", user);
+        if (username && email) {
+            user = await User.findOne({
+                username: username.toLowerCase(),
+                email: { $regex: new RegExp(`^${email}$`, "i") }
+            });
+
             if (!user) {
-                return res.status(404).json({ message: "User not found" });
-            }
-
-            console.log("User found :", user.email.toLowerCase());
-            console.log("User  :", email.toLowerCase());
-            if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-
-                return res.status(400).json({ message: "Email does not match username" });
+                return res.status(404).json({
+                    message: "User not found with this username and email"
+                });
             }
         } else if (email) {
             user = await User.findOne({ email: { $regex: new RegExp(`^${email}$`, 'i') } });
@@ -1679,19 +1677,15 @@ const verifyForgotPasswordOTP = async (req, res) => {
         const query = {};
         let user = null;
 
-        if (username) {
-            query.username = username.toLowerCase();
-            user = await User.findOne(query);
+        if (username && email) {
+            user = await User.findOne({
+                username: username.toLowerCase(),
+                email: { $regex: new RegExp(`^${email}$`, "i") }
+            });
 
             if (!user) {
                 return res.status(404).json({
-                    message: "No user found with this username"
-                });
-            }
-
-            if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-                return res.status(400).json({
-                    message: "Email does not match the provided username"
+                    message: "User not found with this username and email"
                 });
             }
         } else if (email) {
@@ -1782,19 +1776,15 @@ const resetPasswordWithOTP = async (req, res) => {
         const query = {};
         let user = null;
 
-        if (username) {
-            query.username = username.toLowerCase();
-            user = await User.findOne(query);
+        if (username && email) {
+            user = await User.findOne({
+                username: username.toLowerCase(),
+                email: { $regex: new RegExp(`^${email}$`, "i") }
+            });
 
             if (!user) {
                 return res.status(404).json({
-                    message: "No user found with this username"
-                });
-            }
-
-            if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-                return res.status(400).json({
-                    message: "Email does not match the provided username"
+                    message: "User not found with this username and email"
                 });
             }
         } else if (email) {
@@ -1898,16 +1888,15 @@ const resetPassword = async (req, res) => {
 
         let user;
 
-        if (username) {
-            user = await User.findOne({ username: username.toLowerCase() });
+        if (username && email) {
+            user = await User.findOne({
+                username: username.toLowerCase(),
+                email: { $regex: new RegExp(`^${email}$`, "i") }
+            });
 
             if (!user) {
-                return res.status(404).json({ message: "User not found" });
-            }
-
-            if (email && user.email.toLowerCase() !== email.toLowerCase()) {
-                return res.status(400).json({
-                    message: "Email does not match the provided username"
+                return res.status(404).json({
+                    message: "User not found with this username and email"
                 });
             }
         }
