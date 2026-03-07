@@ -1600,6 +1600,7 @@ const forgotPassword = async (req, res) => {
 
         if (username) {
             user = await User.findOne({ username: username.toLowerCase() });
+            console.log("User found by username:", user);
             if (!user) {
                 return res.status(404).json({ message: "User not found" });
             }
