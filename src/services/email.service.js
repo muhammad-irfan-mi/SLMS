@@ -411,7 +411,8 @@ class EmailService {
         });
     }
 
-    async sendPasswordChangedNotification(email, userName, schoolName) {
+    async sendPasswordChangedNotification(email, userName, schoolId) {
+        const schoolName = await this.getSchoolName(schoolId);
         return this.sendEmail({
             to: email,
             subject: "Password Changed Successfully",
