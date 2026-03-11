@@ -40,7 +40,7 @@ const addSchoolBySuperAdmin = async (req, res) => {
     const otpCode = otpService.generateOTP();
     const otpExpiry = otpService.calculateExpiry(10);
 
-    let cnicFront = null, cnicBack = null, nocDoc = null;
+    let cnicFront = null, cnicBack = null, nocDoc = null , logo = null;
 
     if (req.files?.cnicFront?.[0]) {
       const file = req.files.cnicFront[0];
@@ -117,7 +117,7 @@ const addSchoolBySuperAdmin = async (req, res) => {
           phone: phone || null,
           address: address || null,
           cnic: cnic || null,
-          images: { cnicFront, cnicBack, nocDoc },
+          images: { cnicFront, cnicBack, nocDoc, logo },
           location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
           noOfStudents: Number(noOfStudents) || 0,
         },
