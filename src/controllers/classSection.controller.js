@@ -275,57 +275,57 @@ const updateAllClassesAndSections = async (req, res) => {
     }
 };
 
-// const deleteSectionFromClass = async (req, res) => {
-//     try {
-//         const { classId, sectionName } = req.body;
+const deleteSectionFromClass = async (req, res) => {
+    try {
+        const { classId, sectionName } = req.body;
 
-//         const classDoc = await ClassSection.findById(classId);
-//         if (!classDoc) return res.status(404).json({ message: "Class not found" });
+        const classDoc = await ClassSection.findById(classId);
+        if (!classDoc) return res.status(404).json({ message: "Class not found" });
 
-//         // Check if user is authorized for this school
-//         if (req.user.school.toString() !== classDoc.school.toString()) {
-//             return res.status(403).json({
-//                 message: "Unauthorized access to this school"
-//             });
-//         }
+        // Check if user is authorized for this school
+        if (req.user.school.toString() !== classDoc.school.toString()) {
+            return res.status(403).json({
+                message: "Unauthorized access to this school"
+            });
+        }
 
-//         const updatedSections = classDoc.sections.filter(
-//             (s) => s.name.toLowerCase() !== sectionName.toLowerCase()
-//         );
+        const updatedSections = classDoc.sections.filter(
+            (s) => s.name.toLowerCase() !== sectionName.toLowerCase()
+        );
 
-//         if (updatedSections.length === classDoc.sections.length)
-//             return res.status(404).json({ message: "Section not found" });
+        if (updatedSections.length === classDoc.sections.length)
+            return res.status(404).json({ message: "Section not found" });
 
-//         classDoc.sections = updatedSections;
-//         await classDoc.save();
+        classDoc.sections = updatedSections;
+        await classDoc.save();
 
-//         res.status(200).json({ message: "Section deleted successfully", classData: classDoc });
-//     } catch (err) {
-//         console.error("Error deleting section:", err);
-//         res.status(500).json({ message: "Server error", error: err.message });
-//     }
-// };
+        res.status(200).json({ message: "Section deleted successfully", classData: classDoc });
+    } catch (err) {
+        console.error("Error deleting section:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
 
-// const deleteClass = async (req, res) => {
-//     try {
-//         const { id } = req.params;
-//         const classDoc = await ClassSection.findById(id);
-//         if (!classDoc) return res.status(404).json({ message: "Class not found" });
+const deleteClass = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const classDoc = await ClassSection.findById(id);
+        if (!classDoc) return res.status(404).json({ message: "Class not found" });
 
-//         // Check if user is authorized for this school
-//         if (req.user.school.toString() !== classDoc.school.toString()) {
-//             return res.status(403).json({
-//                 message: "Unauthorized access to this school"
-//             });
-//         }
+        // Check if user is authorized for this school
+        if (req.user.school.toString() !== classDoc.school.toString()) {
+            return res.status(403).json({
+                message: "Unauthorized access to this school"
+            });
+        }
 
-//         await classDoc.deleteOne();
-//         res.status(200).json({ message: "Class and all its sections deleted successfully" });
-//     } catch (err) {
-//         console.error("Error deleting class:", err);
-//         res.status(500).json({ message: "Server error", error: err.message });
-//     }
-// };
+        await classDoc.deleteOne();
+        res.status(200).json({ message: "Class and all its sections deleted successfully" });
+    } catch (err) {
+        console.error("Error deleting class:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
 
 const getClassesBySchool = async (req, res) => {
     try {
@@ -694,10 +694,10 @@ const promoteStudentsToNextClass = async (req, res) => {
 module.exports = {
     addMultipleClassesWithSections,
     updateAllClassesAndSections,
-    // deleteSectionFromClass,
+    deleteSectionFromClass,
     assignSectionIncharge,
     removeSectionIncharge,
     getClassesBySchool,
-    // deleteClass,
+    deleteClass,
     promoteStudentsToNextClass
 };
