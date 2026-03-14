@@ -420,7 +420,6 @@ const getClassesBySchool = async (req, res) => {
     }
 };
 
-// Assign or reassign a section incharge
 const assignSectionIncharge = async (req, res) => {
     try {
         const { classId, sectionId, teacherId } = req.body;
