@@ -690,6 +690,56 @@ const promoteStudentsToNextClass = async (req, res) => {
     }
 };
 
+const updateSectionName = async (req, res) => {
+    try {
+        const { sectionId, newSectionName } = req.body;
+        const schoolId = req.user.school;
+
+        const classDoc = await ClassSection.findOne({
+            'sections._id': sectionId,
+            school: schoolId
+        });
+
+        if (!classDoc) {
+            return res.status(404).json({
+                message: "Section not found in your school"
+            });
+        }
+
+        const section = classDoc.sections.id(sectionId);
+
+        if (!section) {
+            return res.status(404).json({
+                message: "Section not found"
+            });
+        }
+
+        const existingSection = classDoc.sections.find(
+            s => s.name.toLowerCase() === newSectionName.toLowerCase() &&
+                s._id.toString() !== sectionId.toString()
+        );
+
+        if (existingSection) {
+            return res.status(400).json({
+                message: "Section with this name already exists in this class"
+            });
+        }
+
+        section.name = newSectionName.trim();
+        await classDoc.save();
+
+        res.status(200).json({
+            message: "Section name updated successfully",
+        });
+
+    } catch (err) {
+        res.status(500).json({
+            message: "Server error",
+            error: err.message
+        });
+    }
+};
+
 module.exports = {
     addMultipleClassesWithSections,
     updateAllClassesAndSections,
@@ -698,5 +748,6 @@ module.exports = {
     removeSectionIncharge,
     getClassesBySchool,
     // deleteClass,
-    promoteStudentsToNextClass
+    promoteStudentsToNextClass,
+    updateSectionName
 };

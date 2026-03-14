@@ -9,6 +9,7 @@ const {
     assignSectionIncharge,
     promoteStudentsToNextClass,
     removeSectionIncharge,
+    updateSectionName,
 } = require("../controllers/classSection.controller");
 const { protect, isAdminOffice } = require("../middlewares/auth");
 const validate = require("../middlewares/validate");
@@ -21,6 +22,7 @@ const {
     idParamValidation,
     schoolIdParamValidation,
     promoteStudentsSchema,
+    updateSectionNameValidation,
 } = require("../validators/classSection.validation");
 
 router.use(protect, isAdminOffice);
@@ -71,6 +73,12 @@ router.post(
     '/promote-student',
     validate(promoteStudentsSchema),
     promoteStudentsToNextClass
+);
+
+router.put(
+    '/update-section-name',
+    validate(updateSectionNameValidation),
+    updateSectionName
 );
 
 module.exports = router;

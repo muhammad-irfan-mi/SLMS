@@ -118,6 +118,20 @@ const schoolIdParamValidation = Joi.object({
   }),
 });
 
+const updateSectionNameValidation = Joi.object({
+  sectionId: Joi.string().hex().length(24).required().messages({
+    'string.hex': 'Section ID must be a valid hexadecimal string',
+    'string.length': 'Section ID must be 24 characters long',
+    'any.required': 'Section ID is required',
+  }),
+  newSectionName: Joi.string().trim().min(1).required().messages({
+    'string.base': 'Section name must be a string',
+    'string.empty': 'Section name cannot be empty',
+    'string.min': 'Section name must be at least 1 character',
+    'any.required': 'New section name is required',
+  }),
+});
+
 module.exports = {
   addMultipleClassesValidation,
   updateAllClassesValidation,
@@ -127,4 +141,5 @@ module.exports = {
   paginationQueryValidation,
   idParamValidation,
   schoolIdParamValidation,
+  updateSectionNameValidation,
 };
