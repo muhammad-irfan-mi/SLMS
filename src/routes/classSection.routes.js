@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const {
-    deleteSectionFromClass,
-    deleteClass,
+    // deleteSectionFromClass,
+    // deleteClass,
     getClassesBySchool,
     addMultipleClassesWithSections,
     updateAllClassesAndSections,
@@ -37,17 +37,17 @@ router.put(
     updateAllClassesAndSections
 );
 
-router.delete(
-    "/delete-section",
-    validate(deleteSectionValidation),
-    deleteSectionFromClass
-);
+// router.delete(
+//     "/delete-section",
+//     validate(deleteSectionValidation),
+//     deleteSectionFromClass
+// );
 
-router.delete(
-    "/:id",
-    validate(idParamValidation, 'params'),
-    deleteClass
-);
+// router.delete(
+//     "/:id",
+//     validate(idParamValidation, 'params'),
+//     deleteClass
+// );
 
 router.get(
     "/:schoolId",
