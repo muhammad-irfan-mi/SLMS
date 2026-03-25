@@ -16,7 +16,7 @@ const validate = require("../middlewares/validate");
 const {
     addMultipleClassesValidation,
     updateAllClassesValidation,
-    deleteSectionValidation,
+    // deleteSectionValidation,
     assignInchargeValidation,
     paginationQueryValidation,
     idParamValidation,

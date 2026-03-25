@@ -9,6 +9,7 @@ const ClassSectionSchema = new mongoose.Schema(
     school: { type: mongoose.Schema.Types.ObjectId, ref: "School", required: true },
     class: { type: String, required: true },
     order: { type: Number, default: 0, index: true },
+    fee: { type: Number, default: 0, },
     sections: [SectionSchema],
   },
   { timestamps: true }

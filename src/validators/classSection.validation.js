@@ -15,7 +15,10 @@ const classWithSectionsSchema = Joi.object({
     'any.required': 'Class name is required',
   }),
   order: Joi.number().integer().min(0).required().messages({
-    'any.required': 'Order is required for every class.Must be a positive integer',
+    'any.required': 'Order is required for every class.Must be a positive Number',
+  }),
+  fee: Joi.number().integer().min(0).required().messages({
+    'any.required': 'Fee is required for every class.Must be a positive Number',
   }),
   sections: Joi.array().items(Joi.string().trim().required()).min(1).required().messages({
     'array.base': 'Sections must be an array',
@@ -59,18 +62,18 @@ const updateAllClassesValidation = Joi.object({
   }),
 });
 
-const deleteSectionValidation = Joi.object({
-  classId: Joi.string().hex().length(24).required().messages({
-    'string.hex': 'Class ID must be a valid hexadecimal string',
-    'string.length': 'Class ID must be 24 characters long',
-    'any.required': 'Class ID is required',
-  }),
-  sectionName: Joi.string().trim().required().messages({
-    'string.base': 'Section name must be a string',
-    'string.empty': 'Section name cannot be empty',
-    'any.required': 'Section name is required',
-  }),
-});
+// const deleteSectionValidation = Joi.object({
+//   classId: Joi.string().hex().length(24).required().messages({
+//     'string.hex': 'Class ID must be a valid hexadecimal string',
+//     'string.length': 'Class ID must be 24 characters long',
+//     'any.required': 'Class ID is required',
+//   }),
+//   sectionName: Joi.string().trim().required().messages({
+//     'string.base': 'Section name must be a string',
+//     'string.empty': 'Section name cannot be empty',
+//     'any.required': 'Section name is required',
+//   }),
+// });
 
 const assignInchargeValidation = Joi.object({
   classId: Joi.string().hex().length(24).required().messages({
@@ -135,7 +138,7 @@ const updateSectionNameValidation = Joi.object({
 module.exports = {
   addMultipleClassesValidation,
   updateAllClassesValidation,
-  deleteSectionValidation,
+  // deleteSectionValidation,
   assignInchargeValidation,
   promoteStudentsSchema,
   paginationQueryValidation,

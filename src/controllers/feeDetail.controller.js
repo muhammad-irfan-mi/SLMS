@@ -13,6 +13,7 @@ const {
   bulkUpdateFeeDetailsSchema
 } = require("../validators/feeDetail.validation");
 const { createNotification, NOTIFICATION_TYPES, NOTIFICATION_TARGETS } = require("../utils/notificationService");
+const Student = require("../models/Student");
 
 async function uploadImage(files, fieldName, existingImage = null) {
   let image = existingImage;
@@ -62,7 +63,7 @@ const getClassSectionInfo = async (classId, sectionId, schoolId) => {
 
 const sendFeeNotificationToStudent = async (fee, actor, action = 'created') => {
   try {
-    const student = await User.findById(fee.studentId).select('name email school');
+    const student = await Student.findById(fee.studentId).select('name email school');
     if (!student) return null;
 
     let title, message;
@@ -108,7 +109,7 @@ const sendFeeNotificationToAdmins = async (fee, actor) => {
       role: { $in: ['admin_office', 'superadmin', 'school'] }
     }).select('_id');
 
-    const student = await User.findById(fee.studentId).select('name');
+    const student = await Student.findById(fee.studentId).select('name');
 
     const title = 'Payment Proof Submitted';
     const message = `Student ${student?.name || 'Unknown'} has submitted payment proof for fee of ₹${fee.amount} (${fee.month}).`;
@@ -142,7 +143,7 @@ const sendFeeNotificationToAdmins = async (fee, actor) => {
 // Send notification when payment is approved/rejected
 const sendPaymentStatusNotification = async (fee, actor, status) => {
   try {
-    const student = await User.findById(fee.studentId).select('name email school');
+    const student = await Student.findById(fee.studentId).select('name email school');
     if (!student) return null;
 
     const title = `Payment ${status === 'approved' ? 'Approved' : 'Rejected'}`;
@@ -171,7 +172,54 @@ const sendPaymentStatusNotification = async (fee, actor, status) => {
   }
 };
 
-// Bulk Create Fee Details - Accepts JSON data without images
+// Helper function to get class fee and calculate student fee
+const calculateStudentFee = async (studentId, schoolId, customAmount = null) => {
+  try {
+    const student = await Student.findById(studentId)
+      .select('classInfo discount school');
+
+    if (!student) {
+      throw new Error('Student not found');
+    }
+
+    if (customAmount !== null && customAmount !== undefined) {
+      const discountAmount = (customAmount * student.discount) / 100;
+      const finalAmount = customAmount - discountAmount;
+
+      return {
+        originalAmount: customAmount,
+        discount: student.discount,
+        discountAmount: discountAmount,
+        finalAmount: finalAmount,
+        source: 'custom'
+      };
+    }
+
+    const classInfo = await ClassSection.findById(student.classInfo?.id)
+      .select('fee');
+
+    if (!classInfo) {
+      throw new Error('Class not found for this student');
+    }
+
+    const classFee = classInfo.fee || 0;
+
+    const discountAmount = (classFee * student.discount) / 100;
+    const finalAmount = classFee - discountAmount;
+
+    return {
+      originalAmount: classFee,
+      discount: student.discount,
+      discountAmount: discountAmount,
+      finalAmount: finalAmount,
+      source: 'class_fee'
+    };
+  } catch (error) {
+    console.error('Error calculating student fee:', error);
+    throw error;
+  }
+};
+
 const bulkCreateFeeDetails = async (req, res) => {
   try {
     const { error } = bulkCreateFeeDetailsSchema.validate(req.body);
@@ -181,13 +229,14 @@ const bulkCreateFeeDetails = async (req, res) => {
     const schoolId = req.user.school;
     const actor = req.user;
 
+    // Get all student IDs
     const studentIds = feeDetails.map(fd => fd.studentId);
 
-    const students = await User.find({
+    const students = await Student.find({
       _id: { $in: studentIds },
-      role: "student",
       school: schoolId,
-    }).select('_id name email rollNo classInfo sectionInfo');
+      isActive: true
+    }).select('_id name email rollNo classInfo sectionInfo discount');
 
     const studentMap = new Map();
     students.forEach(student => {
@@ -199,6 +248,19 @@ const bulkCreateFeeDetails = async (req, res) => {
       return res.status(400).json({
         message: `Some students not found in your school`,
         invalidStudentIds: invalidStudents
+      });
+    }
+
+    const classIds = [...new Set(students.map(s => s.classInfo?.id).filter(id => id))];
+    const classFeeMap = new Map();
+
+    if (classIds.length > 0) {
+      const classes = await ClassSection.find({
+        _id: { $in: classIds }
+      }).select('_id fee');
+
+      classes.forEach(cls => {
+        classFeeMap.set(cls._id.toString(), cls.fee || 0);
       });
     }
 
@@ -223,12 +285,28 @@ const bulkCreateFeeDetails = async (req, res) => {
       });
     }
 
-    const feeDocuments = feeDetails.map((feeData, index) => {
+    const feeDocuments = await Promise.all(feeDetails.map(async (feeData, index) => {
+      const student = studentMap.get(feeData.studentId);
+
+      let feeCalculation;
+      if (feeData.amount) {
+        feeCalculation = await calculateStudentFee(
+          feeData.studentId,
+          schoolId,
+          feeData.amount
+        );
+      } else {
+        feeCalculation = await calculateStudentFee(
+          feeData.studentId,
+          schoolId
+        );
+      }
+
       const feeDoc = {
         studentId: feeData.studentId,
         school: schoolId,
         month: feeData.month,
-        amount: feeData.amount,
+        amount: feeCalculation.finalAmount,
         title: feeData.title,
         description: feeData.description || '',
         status: "pending",
@@ -241,12 +319,10 @@ const bulkCreateFeeDetails = async (req, res) => {
       }
 
       return feeDoc;
-    });
+    }));
 
-    // Bulk insert
     const createdFees = await FeeDetail.insertMany(feeDocuments);
 
-    // Send notifications to students
     const notificationPromises = createdFees.map(async (fee) => {
       try {
         await sendFeeNotificationToStudent(fee, actor, 'created');
@@ -257,14 +333,12 @@ const bulkCreateFeeDetails = async (req, res) => {
 
     await Promise.allSettled(notificationPromises);
 
-    // Populate student info in response
     const populatedFees = await FeeDetail.find({
       _id: { $in: createdFees.map(f => f._id) }
     })
-      .populate("studentId", "name email rollNo classInfo sectionInfo")
+      .populate("studentId", "name email rollNo classInfo sectionInfo discount")
       .lean();
 
-    // Format response with class/section info
     const formattedFees = await Promise.all(populatedFees.map(async (fee) => {
       const feeObj = { ...fee };
 
@@ -301,6 +375,7 @@ const bulkCreateFeeDetails = async (req, res) => {
           name: feeObj.studentId.name,
           email: feeObj.studentId.email,
           rollNo: feeObj.studentId.rollNo,
+          discount: feeObj.studentId.discount,
           school: feeObj.studentId.school
         };
         delete feeObj.studentId;
@@ -315,12 +390,73 @@ const bulkCreateFeeDetails = async (req, res) => {
       fees: formattedFees,
     });
   } catch (err) {
-    console.error("Error bulk creating fee details:", err);
     res.status(500).json({ message: err.message });
   }
 };
 
-// Bulk Update Fee Details - Accepts JSON data without images
+// Single fee creation with automatic calculation
+const createFeeDetail = async (req, res) => {
+  try {
+    const { error } = createFeeDetailSchema.validate(req.body);
+    if (error) return res.status(400).json({ message: error.details[0].message });
+
+    const { studentId, month, amount, title, description } = req.body;
+    const schoolId = req.user.school;
+    const actor = req.user;
+
+    const student = await Student.findOne({
+      _id: studentId,
+      school: schoolId,
+      isActive: true
+    }).select('name email rollNo classInfo sectionInfo discount');
+
+    if (!student) {
+      return res.status(404).json({ message: "Student not found in your school" });
+    }
+
+    let feeCalculation;
+    if (amount) {
+      feeCalculation = await calculateStudentFee(studentId, schoolId, amount);
+    } else {
+      feeCalculation = await calculateStudentFee(studentId, schoolId);
+    }
+
+    const voucherImage = await uploadImage(req.files, "voucherImage");
+
+    const fee = new FeeDetail({
+      studentId,
+      school: schoolId,
+      month,
+      amount: feeCalculation.finalAmount,
+      title,
+      description,
+      voucherImage,
+      status: "pending",
+    });
+
+    await fee.save();
+
+    await sendFeeNotificationToStudent(fee, actor, 'created');
+
+    const responseFee = fee.toObject();
+    responseFee.studentInfo = {
+      _id: student._id,
+      name: student.name,
+      email: student.email,
+      rollNo: student.rollNo,
+      discount: student.discount,
+    };
+
+    res.status(201).json({
+      message: "Fee detail created successfully",
+      fee: responseFee,
+    });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Bulk update fee details
 const bulkUpdateFeeDetails = async (req, res) => {
   try {
     const { error } = bulkUpdateFeeDetailsSchema.validate(req.body);
@@ -335,7 +471,7 @@ const bulkUpdateFeeDetails = async (req, res) => {
     const existingFees = await FeeDetail.find({
       _id: { $in: feeIds },
       school: schoolId
-    }).select('_id voucherImage studentId');
+    }).populate('studentId', 'discount');
 
     const existingFeeMap = new Map();
     existingFees.forEach(fee => {
@@ -371,38 +507,61 @@ const bulkUpdateFeeDetails = async (req, res) => {
       });
     }
 
-    const bulkOps = feeUpdates.map((updateData, index) => {
-      const updateObj = {
-        updateOne: {
-          filter: { _id: updateData.feeId, school: schoolId },
-          update: {
-            $set: {
-              month: updateData.month,
-              amount: updateData.amount,
-              title: updateData.title,
-              description: updateData.description || '',
-              updatedAt: new Date()
-            }
-          }
-        }
-      };
+    const bulkOps = await Promise.all(feeUpdates.map(async (updateData, index) => {
+      const existingFee = existingFeeMap.get(updateData.feeId);
+      const updateObj = { $set: {} };
 
+      if (updateData.month) updateObj.$set.month = updateData.month;
+      if (updateData.title) updateObj.$set.title = updateData.title;
+      if (updateData.description !== undefined) updateObj.$set.description = updateData.description;
+
+      let feeCalculation;
+
+      if (updateData.amount !== undefined) {
+        if (updateData.amount === null || updateData.amount === 0) {
+          feeCalculation = await calculateStudentFee(
+            existingFee.studentId._id,
+            schoolId
+          );
+        } else {
+          feeCalculation = await calculateStudentFee(
+            existingFee.studentId._id,
+            schoolId,
+            updateData.amount
+          );
+        }
+      } else {
+        feeCalculation = await calculateStudentFee(
+          existingFee.studentId._id,
+          schoolId
+        );
+      }
+      updateObj.$set.amount = feeCalculation.finalAmount;
+      updateObj.$set.updatedAt = new Date();
+
+      // Handle image update
       if (imageMap.has(index)) {
-        const existingFee = existingFeeMap.get(updateData.feeId);
-        if (existingFee && existingFee.voucherImage) {
+        if (existingFee.voucherImage) {
           deleteFileFromS3(existingFee.voucherImage).catch(console.error);
         }
-        updateObj.updateOne.update.$set.voucherImage = imageMap.get(index);
+        updateObj.$set.voucherImage = imageMap.get(index);
       }
 
-      return updateObj;
-    });
+      return {
+        updateOne: {
+          filter: { _id: updateData.feeId, school: schoolId },
+          update: updateObj
+        }
+      };
+    }));
 
     const bulkResult = await FeeDetail.bulkWrite(bulkOps);
 
     const updatedFees = await FeeDetail.find({
       _id: { $in: feeIds }
-    }).lean();
+    })
+      .populate("studentId", "name email rollNo classInfo sectionInfo discount")
+      .lean();
 
     const notificationPromises = updatedFees.map(async (fee) => {
       try {
@@ -414,41 +573,8 @@ const bulkUpdateFeeDetails = async (req, res) => {
 
     await Promise.allSettled(notificationPromises);
 
-    const feesWithStudentInfo = await FeeDetail.find({
-      _id: { $in: feeIds }
-    })
-      .populate("studentId", "name email rollNo classInfo sectionInfo")
-      .lean();
-
-    const formattedFees = await Promise.all(feesWithStudentInfo.map(async (fee) => {
+    const formattedFees = await Promise.all(updatedFees.map(async (fee) => {
       const feeObj = { ...fee };
-
-      let studentSchoolId = null;
-      if (feeObj.studentId && feeObj.studentId.school) {
-        studentSchoolId = feeObj.studentId.school;
-      }
-
-      if (feeObj.studentId && feeObj.studentId.classInfo && feeObj.studentId.classInfo.id) {
-        const classSectionInfo = await getClassSectionInfo(
-          feeObj.studentId.classInfo.id,
-          feeObj.studentId.sectionInfo ? feeObj.studentId.sectionInfo.id : null,
-          studentSchoolId
-        );
-
-        if (classSectionInfo.class) {
-          feeObj.classInfo = {
-            id: classSectionInfo.class._id,
-            name: classSectionInfo.class.name
-          };
-        }
-
-        if (classSectionInfo.section) {
-          feeObj.sectionInfo = {
-            id: classSectionInfo.section._id,
-            name: classSectionInfo.section.name
-          };
-        }
-      }
 
       if (feeObj.studentId) {
         feeObj.studentInfo = {
@@ -456,6 +582,7 @@ const bulkUpdateFeeDetails = async (req, res) => {
           name: feeObj.studentId.name,
           email: feeObj.studentId.email,
           rollNo: feeObj.studentId.rollNo,
+          discount: feeObj.studentId.discount,
           school: feeObj.studentId.school
         };
         delete feeObj.studentId;
@@ -471,55 +598,89 @@ const bulkUpdateFeeDetails = async (req, res) => {
       fees: formattedFees,
     });
   } catch (err) {
-    console.error("Error bulk updating fee details:", err);
     res.status(500).json({ message: err.message });
   }
 };
 
-// Single fee creation (existing, works with form-data)
-const createFeeDetail = async (req, res) => {
+// Update single fee detail with recalculation
+const updateFeeDetail = async (req, res) => {
   try {
-    const { error } = createFeeDetailSchema.validate(req.body);
+    const { error } = updateFeeDetailSchema.validate(req.body);
     if (error) return res.status(400).json({ message: error.details[0].message });
 
-    const { studentId, month, amount, title, description } = req.body;
+    const feeId = req.params.id;
     const schoolId = req.user.school;
     const actor = req.user;
 
-    const student = await User.findOne({
-      _id: studentId,
-      role: "student",
-      school: schoolId,
-    });
+    const fee = await FeeDetail.findOne({ _id: feeId, school: schoolId })
+      .populate('studentId', 'discount');
 
-    if (!student) return res.status(404).json({ message: "Student not found in your school" });
+    if (!fee) {
+      return res.status(404).json({ message: "Fee record not found" });
+    }
 
-    const voucherImage = await uploadImage(req.files, "voucherImage");
+    if (!fee.studentId) {
+      return res.status(400).json({ message: "Associated student not found" });
+    }
 
-    const fee = new FeeDetail({
-      studentId,
-      school: schoolId,
-      month,
-      amount,
-      title,
-      description,
-      voucherImage,
-      status: "pending",
-    });
+    const { month, amount, title, description } = req.body;
+
+    // Update basic fields
+    if (month) fee.month = month;
+    if (title) fee.title = title;
+    if (description !== undefined) fee.description = description;
+
+    let feeCalculation;
+
+    if (amount !== undefined) {
+      if (amount === null || amount === 0) {
+        feeCalculation = await calculateStudentFee(
+          fee.studentId._id,
+          schoolId
+        );
+      } else {
+        feeCalculation = await calculateStudentFee(
+          fee.studentId._id,
+          schoolId,
+          amount
+        );
+      }
+    } else {
+      feeCalculation = await calculateStudentFee(
+        fee.studentId._id,
+        schoolId
+      );
+    }
+
+    fee.amount = feeCalculation.finalAmount;
+
+    fee.voucherImage = await uploadImage(req.files, "voucherImage", fee.voucherImage);
 
     await fee.save();
 
-    await sendFeeNotificationToStudent(fee, actor, 'created');
+    await sendFeeNotificationToStudent(fee, actor, 'updated');
 
-    res.status(201).json({
-      message: "Fee detail created successfully",
-      fee,
+    const responseFee = fee.toObject();
+    if (fee.studentId) {
+      responseFee.studentInfo = {
+        _id: fee.studentId._id,
+        name: fee.studentId.name,
+        email: fee.studentId.email,
+        rollNo: fee.studentId.rollNo,
+        discount: fee.studentId.discount,
+      };
+      delete responseFee.studentId;
+    }
+
+    res.status(200).json({
+      message: "Fee detail updated successfully",
+      fee: responseFee
     });
   } catch (err) {
-    console.error("Error creating fee detail:", err);
     res.status(500).json({ message: err.message });
   }
 };
+
 
 const uploadStudentProof = async (req, res) => {
   try {
@@ -581,38 +742,6 @@ const approvePayment = async (req, res) => {
     });
   } catch (err) {
     console.error("Error approving payment:", err);
-    res.status(500).json({ message: err.message });
-  }
-};
-
-const updateFeeDetail = async (req, res) => {
-  try {
-    const { error } = updateFeeDetailSchema.validate(req.body);
-    if (error) return res.status(400).json({ message: error.details[0].message });
-
-    const feeId = req.params.id;
-    const schoolId = req.user.school;
-    const actor = req.user;
-
-    const fee = await FeeDetail.findOne({ _id: feeId, school: schoolId });
-    if (!fee) return res.status(404).json({ message: "Fee record not found" });
-
-    const { month, amount, title, description } = req.body;
-
-    if (month) fee.month = month;
-    if (amount) fee.amount = amount;
-    if (title) fee.title = title;
-    if (description) fee.description = description;
-
-    fee.voucherImage = await uploadImage(req.files, "voucherImage", fee.voucherImage);
-    await fee.save();
-
-    // Send notification to student
-    await sendFeeNotificationToStudent(fee, actor, 'updated');
-
-    res.status(200).json({ message: "Fee detail updated", fee });
-  } catch (err) {
-    console.error("Error updating fee:", err);
     res.status(500).json({ message: err.message });
   }
 };
@@ -718,7 +847,6 @@ const getAllFeeDetails = async (req, res) => {
       fees: formattedFees,
     });
   } catch (err) {
-    console.error("Error fetching all fee records:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
@@ -735,7 +863,7 @@ const getMyFeeDetails = async (req, res) => {
 
     const skip = (page - 1) * limit;
 
-    const student = await User.findById(studentId)
+    const student = await Student.findById(studentId)
       .select("name email school classInfo sectionInfo")
       .lean();
 

@@ -21,11 +21,10 @@ const createFeeDetailSchema = Joi.object({
       'string.pattern.base': 'Month must be in YYYY-MM format',
       'any.required': 'Month is required'
     }),
-  amount: Joi.number().positive().required()
+  amount: Joi.number().positive()
     .messages({
       'number.base': 'Amount must be a number',
       'number.positive': 'Amount must be positive',
-      'any.required': 'Amount is required'
     }),
   title: Joi.string().min(1).max(200).required()
     .messages({
@@ -101,11 +100,10 @@ const bulkCreateFeeDetailsSchema = Joi.object({
           'string.pattern.base': 'Month must be in YYYY-MM format',
           'any.required': 'Month is required'
         }),
-      amount: Joi.number().positive().required()
+      amount: Joi.number().positive()
         .messages({
           'number.base': 'Amount must be a number',
           'number.positive': 'Amount must be positive',
-          'any.required': 'Amount is required'
         }),
       title: Joi.string().min(1).max(200).required()
         .messages({

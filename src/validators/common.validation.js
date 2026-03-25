@@ -1,99 +1,202 @@
+const Joi = require('joi');
 
-//  Disallow {}, <>, [] etc. (company-compliance safe name)
-const nameRegex = /^[A-Za-z0-9\s.'-]{2,50}$/;
-const schoolNameRegex = /^[A-Za-z0-9\s.,'&-]{3,150}$/;
+// Exact regex patterns from your code
+const namePattern = /^[A-Za-z0-9\s.'-]{2,50}$/;
+const usernamePattern = /^[a-zA-Z0-9._-]{3,30}$/;
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const passwordPattern = /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,20}$/;
+const cnicPattern = /^\d{5}-\d{7}-\d{1}$/;
+const phonePattern = /^[0-9+]{10,15}$/;
 
-// Email without spaces
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Common validation schemas
+const commonValidations = {
+  name: Joi.string()
+    .pattern(namePattern)
+    .min(2)
+    .max(50)
+    .required()
+    .messages({
+      'string.pattern.base': 'Name contains invalid characters',
+      'string.empty': 'Name is required',
+      'string.min': 'Name must be at least 2 characters long',
+      'string.max': 'Name must not exceed 50 characters'
+    }),
 
-// Password: 8–20 chars, 1 uppercase, 1 number, 1 symbol
-const passwordRegex =
-    /^(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,20}$/;
+  username: Joi.string()
+    .pattern(usernamePattern)
+    .min(3)
+    .max(20)
+    .lowercase()
+    .required()
+    .messages({
+      'string.pattern.base': 'Username can only contain letters, numbers, dots, hyphens, and underscores',
+      'string.empty': 'Username is required',
+      'string.min': 'Username must be at least 3 characters long',
+      'string.max': 'Username must not exceed 20 characters'
+    }),
 
-// CNIC (Pakistan format optional)
-const cnicRegex = /^\d{5}-\d{7}-\d{1}$/;
+  email: Joi.string()
+    .pattern(emailPattern)
+    .email({ tlds: { allow: false } })
+    .required()
+    .messages({
+      'string.pattern.base': 'Invalid email format',
+      'string.email': 'Invalid email format',
+      'string.empty': 'Email is required'
+    }),
 
-// Phone (simple validation)
-const phoneRegex = /^[0-9+]{10,15}$/;
+  password: Joi.string()
+    .pattern(passwordPattern)
+    .min(8)
+    .max(20)
+    .required()
+    .messages({
+      'string.pattern.base': 'Password must contain at least 1 uppercase letter, 1 number, and 1 special character (@$!%*?&#)',
+      'string.empty': 'Password is required',
+      'string.min': 'Password must be at least 8 characters long',
+      'string.max': 'Password must not exceed 20 characters'
+    }),
 
+  cnic: Joi.string()
+    .pattern(cnicPattern)
+    .allow('', null)
+    .optional()
+    .messages({
+      'string.pattern.base': 'Invalid CNIC format. Use: xxxxx-xxxxxxx-x'
+    }),
 
+  phone: Joi.string()
+    .pattern(phonePattern)
+    .allow('', null)
+    .optional()
+    .messages({
+      'string.pattern.base': 'Phone number must be 10-15 digits'
+    }),
 
-const validateName = (name) => {
-    if (!name) return "Name is required";
+  address: Joi.string()
+    .max(500)
+    .allow('', null)
+    .optional(),
 
-    const trimmed = name.trim();
+  classId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Invalid class ID format',
+      'string.empty': 'Class ID is required'
+    }),
 
-    if (trimmed.length < 2)
-        return "Name must be at least 2 characters long";
+  sectionId: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Invalid section ID format',
+      'string.empty': 'Section ID is required'
+    }),
 
-    if (trimmed.length > 50)
-        return "Name must not exceed 50 characters";
+  fatherName: Joi.string()
+    .pattern(namePattern)
+    .min(2)
+    .max(50)
+    .allow('', null)
+    .optional()
+    .messages({
+      'string.pattern.base': 'Father name contains invalid characters',
+      'string.min': 'Father name must be at least 2 characters long',
+      'string.max': 'Father name must not exceed 50 characters'
+    }),
 
-    if (!/^[A-Za-z0-9\s.'-]+$/.test(trimmed))
-        return "Name contains invalid characters";
+  rollNo: Joi.string()
+    .max(20)
+    .allow('', null)
+    .optional(),
 
-    return null;
+  otp: Joi.string()
+    .pattern(/^\d{6}$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'OTP must be a 6-digit number',
+      'string.empty': 'OTP is required',
+      'any.required': 'OTP is required'
+    }),
+
+  nameOptional: Joi.string()
+    .pattern(namePattern)
+    .min(2)
+    .max(50)
+    .optional()
+    .messages({
+      'string.pattern.base': 'Name contains invalid characters',
+      'string.min': 'Name must be at least 2 characters long',
+      'string.max': 'Name must not exceed 50 characters'
+    }),
+
+  usernameOptional: Joi.string()
+    .pattern(usernamePattern)
+    .min(3)
+    .max(20)
+    .lowercase()
+    .optional()
+    .messages({
+      'string.pattern.base': 'Username can only contain letters, numbers, dots, hyphens, and underscores',
+      'string.min': 'Username must be at least 3 characters long',
+      'string.max': 'Username must not exceed 20 characters'
+    }),
+
+  emailOptional: Joi.string()
+    .pattern(emailPattern)
+    .email({ tlds: { allow: false } })
+    .optional()
+    .messages({
+      'string.pattern.base': 'Invalid email format',
+      'string.email': 'Invalid email format'
+    }),
+
+  classIdOptional: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .optional()
+    .messages({
+      'string.pattern.base': 'Invalid class ID format'
+    }),
+
+  sectionIdOptional: Joi.string()
+    .pattern(/^[0-9a-fA-F]{24}$/)
+    .optional()
+    .messages({
+      'string.pattern.base': 'Invalid section ID format'
+    }),
+
+  idParam: Joi.object({
+    id: Joi.string()
+      .pattern(/^[0-9a-fA-F]{24}$/)
+      .required()
+      .messages({
+        'string.pattern.base': 'Invalid ID format',
+        'string.empty': 'ID is required'
+      })
+  }),
+
+  sectionParam: Joi.object({
+    sectionId: Joi.string()
+      .pattern(/^[0-9a-fA-F]{24}$/)
+      .required()
+      .messages({
+        'string.pattern.base': 'Invalid section ID format',
+        'string.empty': 'Section ID is required'
+      })
+  }),
+
+  emailParam: Joi.object({
+    email: Joi.string()
+      .pattern(emailPattern)
+      .email({ tlds: { allow: false } })
+      .required()
+      .messages({
+        'string.pattern.base': 'Invalid email format',
+        'string.email': 'Invalid email format',
+        'string.empty': 'Email is required'
+      })
+  })
 };
 
-const validateSchoolName = (name) => {
-    if (!name) return "School name is required";
-
-    if (!schoolNameRegex.test(name))
-        return "School name contains invalid characters";
-
-    return null;
-};
-
-const validateEmail = (email) => {
-    if (!email) return "Email is required";
-    if (email.includes(" "))
-        return "Email must not contain spaces";
-    if (!emailRegex.test(email))
-        return "Invalid email format";
-    return null;
-};
-
-const validatePassword = (password) => {
-    if (!password) return "Password is required";
-
-    if (password.includes(" "))
-        return "Password must not contain spaces";
-
-    if (password.length < 8 || password.length > 20)
-        return "Password must be between 8 and 20 characters";
-
-    if (!/[A-Z]/.test(password))
-        return "Password must contain at least one uppercase letter";
-
-    if (!/\d/.test(password))
-        return "Password must contain at least one number";
-
-    if (!/[@$!%*?&#]/.test(password))
-        return "Password must contain at least one special character";
-
-    return null;
-};
-
-
-const validateCNIC = (cnic) => {
-    if (!cnic) return null;
-    if (!cnicRegex.test(cnic))
-        return "Invalid CNIC format (xxxxx-xxxxxxx-x)";
-    return null;
-};
-
-const validatePhone = (phone) => {
-    if (!phone) return null;
-    if (!phoneRegex.test(phone))
-        return "Invalid phone number. Phone must be 10-15 digits";
-    return null;
-};
-
-module.exports = {
-    validateName,
-    validateSchoolName,
-    validateEmail,
-    validatePassword,
-    validateCNIC,
-    validatePhone,
-};
+module.exports = { commonValidations };

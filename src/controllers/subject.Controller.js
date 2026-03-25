@@ -2,37 +2,6 @@ const Subject = require("../models/Subject");
 const ClassSection = require("../models/ClassSection");
 const Schedule = require("../models/Schedule");
 
-// const extractClassSection = (subject) => {
-//   const response = subject.toObject ? subject.toObject() : { ...subject };
-
-//   // Ensure we have proper nested objects
-//   if (!response.class || typeof response.class === 'string') {
-//     response.class = {
-//       _id: response.class,
-//       name: '',
-//       sections: []
-//     };
-//   }
-
-//   if (!response.section || typeof response.section === 'string') {
-//     if (response.sectionId) {
-//       response.section = {
-//         _id: response.sectionId,
-//         name: ''
-//       };
-//     } else {
-//       response.section = null;
-//     }
-//   }
-
-//   // Remove duplicate sectionId if we have section object
-//   if (response.section && response.sectionId) {
-//     delete response.sectionId;
-//   }
-
-//   return response;
-// };
-
 //   Get class and section data with validation
 const getClassSectionData = async (classId, schoolId, sectionId = null) => {
   try {
@@ -289,7 +258,6 @@ const getSubjectById = async (req, res) => {
 
 const getSubjectsByTeacher = async (req, res) => {
   try {
-    console.log(req.user)
     const teacherId = req.user._id;
     const schoolId = req.user.school;
     const { page = 1, limit = 20 } = req.query;

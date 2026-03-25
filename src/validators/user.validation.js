@@ -335,17 +335,6 @@ const validationSchemas = {
       }),
     username: Joi.string().optional()
   })
-    // .custom((value, helpers) => {
-    //   const { email, username } = value;
-
-    //   if (email && !username) {
-    //     return helpers.error('any.custom', {
-    //       message: 'Username is required for students when using email'
-    //     });
-    //   }
-
-    //   return value;
-    // })
     .or("email", "username")
     .messages({
       "object.missing": "Please provide email or username",
@@ -362,17 +351,6 @@ const validationSchemas = {
     .messages({
       'object.missing': 'Provide email or username'
     }),
-
-  // resetPassword: Joi.object({
-  //   email: Joi.string().email().optional(),
-  //   oldPassword: Joi.string().required(),
-  //   newPassword: commonValidations.password,
-  //   username: Joi.string().optional()
-  // }).or('email', 'username')
-  //   .messages({
-  //     'object.missing': 'Please provide either email or username'
-  //   }),
-
 
   resetPassword: Joi.object({
     email: Joi.string().email().optional(),
