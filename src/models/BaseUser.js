@@ -15,7 +15,12 @@ const baseUserSchema = {
     school: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "School",
-        required: true
+        required: function() {
+      if (this.role === 'superadmin') {
+        return false;
+      }
+      return true;
+    }
     },
     password: {
         type: String,

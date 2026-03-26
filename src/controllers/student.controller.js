@@ -40,6 +40,28 @@ const getClassAndSection = async (classId, sectionId, schoolId) => {
     return { classInfo, sectionInfo };
 };
 
+// Helper function to get class fee and validate discount
+const validateAndGetClassFee = async (classId, schoolId, discount, isFixed) => {
+    const classDoc = await ClassSection.findOne({ _id: classId, school: schoolId });
+    if (!classDoc) {
+        throw new Error('Class not found');
+    }
+
+    const classFee = classDoc.fee || 0;
+
+    if (isFixed === true) {
+        if (discount >= classFee) {
+            throw new Error(`Fixed students cannot have discount (${discount}) greater than or equal to class fee (${classFee})`);
+        }
+    } else {
+        if (discount < 0 || discount > 100) {
+            throw new Error(`Discount must be between 0 and 100 for non-fixed students`);
+        }
+    }
+
+    return { classDoc, classFee };
+};
+
 // Generate unique username
 const generateUniqueUsername = async (name, email, schoolId) => {
     const baseUsername = name.toLowerCase().replace(/\s+/g, '_');
@@ -86,10 +108,19 @@ const addStudent = async (req, res) => {
             sectionId,
             rollNo,
             parentEmail,
+            isFixed,
             discount
         } = req.body;
 
         const schoolId = req.user.school;
+
+        let classDoc;
+        try {
+            const result = await validateAndGetClassFee(classId, schoolId, discount || 0, isFixed || false);
+            classDoc = result.classDoc;
+        } catch (error) {
+            return res.status(400).json({ message: error.message });
+        }
 
         const existingUsername = await Student.findOne({
             username: username.toLowerCase(),
@@ -102,10 +133,10 @@ const addStudent = async (req, res) => {
             });
         }
 
-        const classDoc = await ClassSection.findOne({ _id: classId, school: schoolId });
-        if (!classDoc) {
-            return res.status(400).json({ message: "Class not found" });
-        }
+        // const classDoc = await ClassSection.findOne({ _id: classId, school: schoolId });
+        // if (!classDoc) {
+        //     return res.status(400).json({ message: "Class not found" });
+        // }
 
         if (sectionId) {
             const sectionExists = classDoc.sections.some(
@@ -181,6 +212,7 @@ const addStudent = async (req, res) => {
             images,
             siblingGroupId,
             parentEmail: parentEmail?.toLowerCase(),
+            isFixed: isFixed || false,
             discount: discount || 0,
             verified: false,
             isActive: true,
@@ -254,10 +286,36 @@ const updateStudent = async (req, res) => {
             sectionId,
             rollNo,
             parentEmail,
+            isFixed,
             discount
         } = req.body;
 
         const changes = [];
+
+        let finalIsFixed = student.isFixed;
+        let finalDiscount = student.discount;
+
+        if (isFixed !== undefined) {
+            finalIsFixed = isFixed;
+        }
+
+        if (discount !== undefined) {
+            finalDiscount = discount;
+        }
+
+        if (classId) {
+            try {
+                await validateAndGetClassFee(classId, schoolId, finalDiscount, finalIsFixed);
+            } catch (error) {
+                return res.status(400).json({ message: error.message });
+            }
+        } else if (student.classInfo?.id) {
+            try {
+                await validateAndGetClassFee(student.classInfo.id, schoolId, finalDiscount, finalIsFixed);
+            } catch (error) {
+                return res.status(400).json({ message: error.message });
+            }
+        }
 
         // Track changes
         if (name && name !== student.name) {
@@ -277,6 +335,9 @@ const updateStudent = async (req, res) => {
         }
         if (discount && discount !== student.discount) {
             changes.push(`Discount updated`);
+        }
+        if (isFixed !== undefined && isFixed !== student.isFixed) {
+            changes.push(`Fixed status changed from ${student.isFixed} to ${isFixed}`);
         }
 
         // Check username uniqueness if changed
@@ -384,6 +445,7 @@ const updateStudent = async (req, res) => {
         if (address !== undefined) student.address = address;
         if (cnic !== undefined) student.cnic = cnic;
         if (discount !== undefined) student.discount = discount;
+        if (isFixed !== undefined) student.isFixed = isFixed;
         if (fatherName !== undefined) student.fatherName = fatherName;
         if (parentEmail !== undefined) student.parentEmail = parentEmail?.toLowerCase();
 
@@ -459,12 +521,12 @@ const updateStudent = async (req, res) => {
 const getAllStudents = async (req, res) => {
     try {
         const schoolId = req.user.school;
-        const { 
-            page = 1, 
-            limit = 10, 
-            classId, 
+        const {
+            page = 1,
+            limit = 10,
+            classId,
             sectionId,
-            search 
+            search
         } = req.query;
 
         const filter = {
@@ -733,8 +795,8 @@ const updateOwnProfile = async (req, res) => {
         };
 
         const updated = await Student.findByIdAndUpdate(
-            userId, 
-            updatableFields, 
+            userId,
+            updatableFields,
             { new: true }
         ).select("-password -otp -forgotPasswordOTP");
 

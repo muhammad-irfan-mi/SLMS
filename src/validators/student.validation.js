@@ -19,7 +19,10 @@ const studentValidation = {
             .optional(),
         discount: Joi.number()
             .min(0)
-            .max(100)
+            .custom((value, helpers) => {
+                const { isFixed } = helpers.state.ancestors[0];
+                return value;
+            })
             .default(0)
             .optional()
             .messages({
@@ -43,7 +46,6 @@ const studentValidation = {
         isFixed: Joi.boolean().optional(),
         discount: Joi.number()
             .min(0)
-            .max(100)
             .optional()
             .messages({
                 'number.min': 'Discount must be at least 0',

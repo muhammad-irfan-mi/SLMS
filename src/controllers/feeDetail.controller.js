@@ -176,22 +176,20 @@ const sendPaymentStatusNotification = async (fee, actor, status) => {
 const calculateStudentFee = async (studentId, schoolId, customAmount = null) => {
   try {
     const student = await Student.findById(studentId)
-      .select('classInfo discount school');
+      .select('classInfo discount isFixed school');
 
     if (!student) {
       throw new Error('Student not found');
     }
 
     if (customAmount !== null && customAmount !== undefined) {
-      const discountAmount = (customAmount * student.discount) / 100;
-      const finalAmount = customAmount - discountAmount;
-
       return {
         originalAmount: customAmount,
         discount: student.discount,
-        discountAmount: discountAmount,
-        finalAmount: finalAmount,
-        source: 'custom'
+        discountAmount: 0,
+        finalAmount: customAmount,
+        source: 'custom',
+        isFixed: student.isFixed
       };
     }
 
@@ -204,18 +202,28 @@ const calculateStudentFee = async (studentId, schoolId, customAmount = null) => 
 
     const classFee = classInfo.fee || 0;
 
-    const discountAmount = (classFee * student.discount) / 100;
-    const finalAmount = classFee - discountAmount;
+    let finalAmount = classFee;
+    let discountAmount = 0;
+
+    if (student.isFixed === true) {
+      const fixedDiscount = Math.min(student.discount, classFee - 1); 
+      finalAmount = classFee - fixedDiscount;
+      discountAmount = fixedDiscount;
+    } else {
+      const percentageDiscount = (classFee * student.discount) / 100;
+      finalAmount = classFee - percentageDiscount;
+      discountAmount = percentageDiscount;
+    }
 
     return {
       originalAmount: classFee,
       discount: student.discount,
       discountAmount: discountAmount,
       finalAmount: finalAmount,
-      source: 'class_fee'
+      source: 'class_fee',
+      isFixed: student.isFixed
     };
   } catch (error) {
-    console.error('Error calculating student fee:', error);
     throw error;
   }
 };

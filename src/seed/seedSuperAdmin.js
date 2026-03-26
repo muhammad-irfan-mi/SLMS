@@ -1,21 +1,22 @@
 const dotenv = require("dotenv");
 const bcrypt = require("bcryptjs");
-const User = require("../models/User");
+// const User = require("../models/User");
 const connectDB = require("../config/db");
+const Staff = require("../models/Staff");
 
 dotenv.config();
 
 const seedSuperAdmin = async () => {
   await connectDB(process.env.MONGO_URL || 'mongodb://localhost:27017/schoolauth');
 
-  const exists = await User.findOne({ role: "superadmin" });
+  const exists = await Staff.findOne({ role: "superadmin" });
   if (exists) {
-    console.log("SuperAdmin already exists:", exists.email);
+    console.log("SuperAdmin already exists:", );
     return;
   }
 
   const hashedPassword = await bcrypt.hash(process.env.SUPERADMIN_PASSWORD, 10);
-  await User.create({
+  await Staff.create({
     name: "System SuperAdmin",
     email: process.env.SUPERADMIN_EMAIL,
     password: hashedPassword,
