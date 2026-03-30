@@ -3,6 +3,7 @@ const Subject = require("../models/Subject");
 const ClassSection = require("../models/ClassSection");
 const User = require("../models/User");
 const Notice = require("../models/Notice");
+const Staff = require("../models/Staff");
 
 const toMinutes = (t) => {
   const [h, m] = t.split(":").map(Number);
@@ -298,10 +299,10 @@ const addExamSchedule = async (req, res) => {
           continue;
         }
 
-        const teacher = await User.findOne({
+        const teacher = await Staff.findOne({
           _id: teacherId,
           school: schoolId,
-          role: 'teacher'
+          // role: 'teacher'
         });
         if (!teacher) {
           errors.push({ item, error: "Teacher not found in your school" });
@@ -433,7 +434,6 @@ const addExamSchedule = async (req, res) => {
 const getSchedule = async (req, res) => {
   try {
     const schoolId = req.user.school;
-    console.log(schoolId)
     const { classId, sectionId, subjectId, teacherId, type, year, status, startDate, endDate, page = 1, limit = 10, sortBy = 'examDate', sortOrder = 'asc' } = req.query;
 
     const filter = { school: schoolId };
@@ -921,8 +921,8 @@ const updateExamSchedule = async (req, res) => {
     }
 
     if (updateData.teacherId && updateData.teacherId !== existingSchedule.teacherId.toString()) {
-      const oldTeacher = await User.findById(existingSchedule.teacherId);
-      const newTeacher = await User.findById(updateData.teacherId);
+      const oldTeacher = await Staff.findById(existingSchedule.teacherId);
+      const newTeacher = await Staff.findById(updateData.teacherId);
 
       if (newTeacher) {
         if (newTeacher.school.toString() !== schoolId.toString() || newTeacher.role !== 'teacher') {

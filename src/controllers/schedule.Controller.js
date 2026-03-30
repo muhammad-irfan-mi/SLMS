@@ -3,6 +3,7 @@ const Subject = require("../models/Subject");
 const ClassSection = require("../models/ClassSection");
 const User = require("../models/User");
 const { getClassSectionData } = require("../utils/classHelper");
+const Staff = require("../models/Staff");
 
 const timeToMinutes = (time) => {
   const [h, m] = time.split(':').map(Number);
@@ -24,65 +25,11 @@ const isOverlap = (s1, e1, s2, e2) => {
   return s1 < e2 && s2 < e1;
 };
 
-
-// const formatScheduleResponse = (schedule) => {
-//   const response = schedule.toObject ? schedule.toObject() : { ...schedule };
-
-//   if (response.classId) {
-//     if (typeof response.classId === 'object') {
-//       response.classInfo = {
-//         _id: response.classId._id,
-//         name: response.classId.class || response.classId.name
-//       };
-//       delete response.classId;
-//     }
-//   }
-
-//   if (response.sectionId && schedule.classId && schedule.classId.sections) {
-//     const foundSection = schedule.classId.sections.find(
-//       section => section._id.toString() === response.sectionId.toString()
-//     );
-//     if (foundSection) {
-//       response.sectionInfo = {
-//         _id: foundSection._id,
-//         name: foundSection.name
-//       };
-//     }
-//   }
-
-//   if (response.subjectId) {
-//     if (typeof response.subjectId === 'object') {
-//       response.subjectInfo = {
-//         _id: response.subjectId._id,
-//         name: response.subjectId.name,
-//         code: response.subjectId.code
-//       };
-//     }
-//     delete response.subjectId;
-//   }
-
-//   if (response.teacherId) {
-//     if (typeof response.teacherId === 'object') {
-//       response.teacherInfo = {
-//         _id: response.teacherId._id,
-//         name: response.teacherId.name,
-//         email: response.teacherId.email
-//       };
-//     }
-//     delete response.teacherId;
-//   }
-
-//   return response;
-// };
-
-// Add new schedule
-
 const formatScheduleResponse = (schedule) => {
   const response = schedule?.toObject
     ? schedule.toObject()
     : { ...schedule };
 
-  /* ---------- CLASS ---------- */
   if (response.classId && typeof response.classId === "object") {
     response.classInfo = {
       _id: response.classId._id,
@@ -90,7 +37,6 @@ const formatScheduleResponse = (schedule) => {
     };
   }
 
-  /* ---------- SECTION ---------- */
   if (
     response.sectionId &&
     response.classId &&
@@ -108,7 +54,6 @@ const formatScheduleResponse = (schedule) => {
     }
   }
 
-  /* ---------- SUBJECT ---------- */
   if (response.subjectId && typeof response.subjectId === "object") {
     response.subjectInfo = {
       _id: response.subjectId._id,
@@ -117,7 +62,6 @@ const formatScheduleResponse = (schedule) => {
     };
   }
 
-  /* ---------- TEACHER ---------- */
   if (response.teacherId && typeof response.teacherId === "object") {
     response.teacherInfo = {
       _id: response.teacherId._id,
@@ -126,7 +70,6 @@ const formatScheduleResponse = (schedule) => {
     };
   }
 
-  /* ---------- CLEANUP ---------- */
   delete response.classId;
   delete response.sectionId;
   delete response.subjectId;
@@ -166,7 +109,7 @@ const addSchedule = async (req, res) => {
         const subject = await Subject.findOne({ _id: s.subjectId, school: schoolId });
         if (!subject) return res.status(400).json({ message: "Subject not found" });
 
-        const teacher = await User.findOne({
+        const teacher = await Staff.findOne({
           _id: s.teacherId,
           school: schoolId,
           role: 'teacher'

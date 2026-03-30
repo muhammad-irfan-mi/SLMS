@@ -14,6 +14,7 @@ const {
 } = require("../validators/feeDetail.validation");
 const { createNotification, NOTIFICATION_TYPES, NOTIFICATION_TARGETS } = require("../utils/notificationService");
 const Student = require("../models/Student");
+const Staff = require("../models/Staff");
 
 async function uploadImage(files, fieldName, existingImage = null) {
   let image = existingImage;
@@ -104,7 +105,7 @@ const sendFeeNotificationToStudent = async (fee, actor, action = 'created') => {
 
 const sendFeeNotificationToAdmins = async (fee, actor) => {
   try {
-    const adminUsers = await User.find({
+    const adminUsers = await Staff.find({
       school: fee.school,
       role: { $in: ['admin_office', 'superadmin', 'school'] }
     }).select('_id');

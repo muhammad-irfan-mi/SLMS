@@ -1,4 +1,5 @@
 const DailyIslamicAttendance = require("../models/DailyIslamicAttendance");
+const Student = require("../models/Student");
 const User = require("../models/User");
 
 // Helpers
@@ -11,7 +12,7 @@ function formatDateToYMD(d) {
 }
 
 async function verifyStudentClassSection(studentId, classId, sectionId, schoolId) {
-    const student = await User.findById(studentId).lean();
+    const student = await Student.findById(studentId).lean();
     if (!student) throw { status: 404, message: "Student not found" };
     if (student.role !== "student") throw { status: 400, message: "User is not a student" };
 

@@ -5,6 +5,8 @@ const User = require("../models/User");
 const ClassSection = require("../models/ClassSection");
 const School = require("../models/School");
 const { sendStudentLeaveNotification, sendTeacherLeaveNotification } = require("../utils/notificationService");
+const Student = require("../models/Student");
+const Staff = require("../models/Staff");
 const Attendance = AttendanceImported.default || AttendanceImported;
 
 const formatDate = (date) => {
@@ -29,10 +31,10 @@ const formatDate = (date) => {
 const validateStudentClassSection = async (studentId, classId, sectionId, school) => {
     try {
 
-        const student = await User.findOne({
+        const student = await Student.findOne({
             _id: new mongoose.Types.ObjectId(String(studentId)),
             school: new mongoose.Types.ObjectId(String(school)),
-            role: 'student'
+            // role: 'student'
         }).select('classInfo sectionInfo verified').lean();
 
 
@@ -85,10 +87,10 @@ const validateStudentClassSection = async (studentId, classId, sectionId, school
 // Check if teacher is assigned to class/section
 const validateTeacherClassSection = async (teacherId, school) => {
     try {
-        const teacher = await User.findOne({
+        const teacher = await Staff.findOne({
             _id: teacherId,
             school,
-            role: 'teacher',
+            // role: 'teacher',
             isIncharge: true,
         }).select('classInfo sectionInfo').lean();
 
@@ -645,7 +647,7 @@ const getLeaves = async (req, res) => {
         for (const leave of leaves) {
             if (!leave.reviewedBy) continue;
 
-            let reviewer = await User.findById(leave.reviewedBy)
+            let reviewer = await Student.findById(leave.reviewedBy)
                 .select("name email role")
                 .lean();
 
@@ -951,10 +953,10 @@ const getLeavesByStudent = async (req, res) => {
                 });
             }
 
-            const student = await User.findOne({
+            const student = await Student.findOne({
                 _id: studentId,
                 school,
-                role: 'student'
+                // role: 'student'
             }).select('name email rollNumber fatherName phone classInfo sectionInfo verified').lean();
 
             console.log("DEBUG - Student found:", student);
@@ -1025,10 +1027,10 @@ const getLeavesByStudent = async (req, res) => {
 
         const total = await Leave.countDocuments(filter);
 
-        const studentInfo = await User.findOne({
+        const studentInfo = await Student.findOne({
             _id: studentId,
             school,
-            role: 'student'
+            // role: 'student'
         }).select('name email rollNumber fatherName phone classInfo sectionInfo').lean();
 
         if (!studentInfo) {
@@ -1277,7 +1279,7 @@ const getTeacherLeaves = async (req, res) => {
             .filter(l => l.reviewedBy)
             .map(l => l.reviewedBy.toString());
 
-        const users = await User.find({ _id: { $in: reviewerIds } })
+        const users = await Staff.find({ _id: { $in: reviewerIds } })
             .select("name email role")
             .lean();
 

@@ -1,5 +1,7 @@
 const ClassSection = require("../models/ClassSection");
 const Result = require("../models/Result");
+const Staff = require("../models/Staff");
+const Student = require("../models/Student");
 const User = require("../models/User");
 const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
 const { sendResultNotification } = require("../utils/notificationService");
@@ -38,7 +40,7 @@ const getClassSectionInfo = async (classId, sectionId, schoolId) => {
 
 // Check if user is section incharge
 const isSectionIncharge = async (userId, sectionId, schoolId) => {
-    const user = await User.findOne({
+    const user = await Staff.findOne({
         _id: userId,
         school: schoolId,
         role: 'teacher'
@@ -167,10 +169,10 @@ const addResult = async (req, res) => {
             if (!isIncharge) return res.status(403).json({ message: "You can only add results for your assigned section" });
         }
 
-        const student = await User.findOne({
+        const student = await Student.findOne({
             _id: studentId,
             school: schoolId,
-            role: "student"
+            // role: "student"
         });
 
         if (!student) return res.status(404).json({ message: "Student not found in your school" });
@@ -315,7 +317,7 @@ const getResults = async (req, res) => {
         const filter = { school: schoolId };
 
         if (userRole === 'teacher') {
-            const teacher = await User.findById(userId).select('sectionInfo classInfo isIncharge');
+            const teacher = await Staff.findById(userId).select('sectionInfo classInfo isIncharge');
             if (!teacher || !teacher.sectionInfo?.id || !teacher.isIncharge) return res.status(403).json({ message: "You are not authorized to view results" });
 
             const assignedSectionId = teacher.sectionInfo.id.toString();
@@ -426,7 +428,7 @@ const getResultsByPosition = async (req, res) => {
         if (sectionId) filter.sectionId = sectionId;
 
         if (userRole === 'teacher') {
-            const teacher = await User.findById(userId).select('sectionInfo');
+            const teacher = await Staff.findById(userId).select('sectionInfo');
             if (!teacher || !teacher.sectionInfo) return res.status(403).json({ message: "You are not assigned to any section" });
 
             const assignedSectionIds = teacher.sectionInfo.map(s => s.id.toString());

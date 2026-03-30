@@ -1,4 +1,5 @@
 const SalarySlip = require("../models/SalarySlip");
+const Staff = require("../models/Staff");
 const User = require("../models/User");
 const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
 
@@ -28,7 +29,7 @@ const sendSalarySlip = async (req, res) => {
         if (!teacherId || !month || !title || !salary)
             return res.status(400).json({ message: "Missing required fields" });
 
-        const teacher = await User.findOne({
+        const teacher = await Staff.findOne({
             _id: teacherId,
             role: "teacher",
             school: schoolId,
@@ -205,7 +206,7 @@ const getTeachersSalaryStatus = async (req, res) => {
             slipMap[s.teacherId.toString()] = s;
         });
 
-        const teachers = await User.find({
+        const teachers = await Staff.find({
             school: schoolId,
             role: "teacher",
         }).select("_id name email salary joiningDate").lean();

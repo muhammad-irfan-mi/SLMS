@@ -3,6 +3,8 @@ const ClassSection = require("../models/ClassSection");
 const Notice = require("../models/Notice");
 const User = require("../models/User");
 const School = require('../models/School');
+const Staff = require("../models/Staff");
+const Student = require("../models/Student");
 
 const formatDate = (d) => {
   if (!d) return undefined;
@@ -49,7 +51,7 @@ const createNotice = async (req, res) => {
     }
 
     if (targetTeacherIds && targetTeacherIds.length > 0) {
-      const teachers = await User.find({
+      const teachers = await Staff.find({
         _id: { $in: targetTeacherIds },
         school: school,
         role: 'teacher'
@@ -70,10 +72,10 @@ const createNotice = async (req, res) => {
     }
 
     if (targetStudentIds && targetStudentIds.length > 0) {
-      const students = await User.find({
+      const students = await Student.find({
         _id: { $in: targetStudentIds },
         school: school,
-        role: 'student'
+        // role: 'student'
       });
 
       if (students.length !== targetStudentIds.length) {
@@ -765,7 +767,7 @@ const updateNotice = async (req, res) => {
 
     // Validate teacher/student IDs if provided in update
     if (req.body.targetTeacherIds && req.body.targetTeacherIds.length > 0) {
-      const teachers = await User.find({
+      const teachers = await Staff.find({
         _id: { $in: req.body.targetTeacherIds },
         school: schoolId,
         role: 'teacher'
@@ -780,10 +782,10 @@ const updateNotice = async (req, res) => {
     }
 
     if (req.body.targetStudentIds && req.body.targetStudentIds.length > 0) {
-      const students = await User.find({
+      const students = await Student.find({
         _id: { $in: req.body.targetStudentIds },
         school: schoolId,
-        role: 'student'
+        // role: 'student'
       });
 
       if (students.length !== req.body.targetStudentIds.length) {

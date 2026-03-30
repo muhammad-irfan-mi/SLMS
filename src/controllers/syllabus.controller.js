@@ -4,6 +4,7 @@ const User = require("../models/User");
 const School = require("../models/School");
 const Syllabus = require("../models/Syllabus");
 const Schedule = require("../models/Schedule");
+const Staff = require("../models/Staff");
 
 // Helper: Get class and section info
 const getClassSectionInfo = async (classId, sectionId, schoolId) => {
@@ -96,7 +97,7 @@ const resolveUploader = async (uploadedById, uploadedByModel) => {
 
     try {
         if (uploadedByModel === 'User') {
-            const user = await User.findById(uploadedById)
+            const user = await Staff.findById(uploadedById)
                 .select("name email role")
                 .lean();
 

@@ -3,6 +3,7 @@ const { QuizGroup, QuizSubmission } = require("../models/Quiz");
 const User = require("../models/User");
 const mongoose = require("mongoose");
 const { parseQuizFile } = require("../utils/quizFileParser");
+const Student = require("../models/Student");
 
 // Helper to detect user role
 const detectUserRole = (user) => {
@@ -558,7 +559,7 @@ const getGroupById = async (req, res) => {
     }
 
     if (userRole === 'student') {
-      const student = await User.findById(user._id);
+      const student = await Student.findById(user._id);
       const isEligible = await validateStudentClassSection(
         student,
         group.classIds,
@@ -697,7 +698,7 @@ const submitQuiz = async (req, res) => {
       });
     }
 
-    const student = await User.findById(user._id);
+    const student = await Student.findById(user._id);
     const isEligible = await validateStudentClassSection(
       student,
       group.classIds,

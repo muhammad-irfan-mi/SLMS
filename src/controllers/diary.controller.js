@@ -10,6 +10,7 @@ const {
     getDiaryQuerySchema
 } = require("../validators/diary.validation");
 const { sendDiaryNotification } = require("../utils/notificationService");
+const Student = require("../models/Student");
 
 
 const formatClassSection = (classDoc, sectionId) => {
@@ -131,10 +132,10 @@ const createDiary = async (req, res) => {
                 });
             }
 
-            const students = await User.find({
+            const students = await Student.find({
                 _id: { $in: studentIds },
                 school,
-                role: "student",
+                // role: "student",
                 "classInfo.id": classId,
                 "sectionInfo.id": sectionId
             }).select("_id");
@@ -229,10 +230,10 @@ const updateDiary = async (req, res) => {
         }
 
         if (forAll === false && Array.isArray(studentIds)) {
-            const students = await User.find({
+            const students = await Student.find({
                 _id: { $in: studentIds },
                 school,
-                role: "student",
+                // role: "student",
                 "classInfo.id": diary.classId,
                 "sectionInfo.id": diary.sectionId
             }).select("_id");

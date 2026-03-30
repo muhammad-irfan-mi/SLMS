@@ -6,6 +6,8 @@ const School = require("../models/School");
 const Project = require("../models/Project");
 const Subject = require("../models/Subject");
 const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
+const Staff = require("../models/Staff");
+const Student = require("../models/Student");
 
 // const getClassAndSection = async (classId, sectionId, schoolId) => {
 //   if (!classId) return { classInfo: null, sectionInfo: null };
@@ -90,7 +92,7 @@ const checkTeacherAuthorization = async (school, teacherId, classId, sectionId, 
 const validateStudentsInClass = async (studentIds, school, classId, sectionId) => {
   if (!studentIds || studentIds.length === 0) return { validStudents: [], invalidIds: [] };
 
-  const students = await User.find({
+  const students = await Student.find({
     _id: { $in: studentIds },
     role: "student",
     school,
@@ -161,7 +163,7 @@ const handleSubmissionUploads = async (files) => {
 };
 
 const getCreatorInfo = async (assignedBy, schoolId) => {
-  const user = await User.findById(assignedBy)
+  const user = await Staff.findById(assignedBy)
     .select('name email role')
     .lean();
 
@@ -265,7 +267,7 @@ const createProject = async (req, res) => {
 
       validatedStudentIds = parsedStudentIds;
     } else if (targetType === "section") {
-      const sectionStudents = await User.find({
+      const sectionStudents = await Student.find({
         school,
         'classInfo.id': classId,
         'sectionInfo.id': sectionId,
@@ -344,7 +346,7 @@ const getProjects = async (req, res) => {
     if (role === 'teacher') {
       filter.assignedBy = userId;
     } else if (role === 'admin_office' || role === 'school') {
-      const allowedUsers = await User.find({
+      const allowedUsers = await Staff.find({
         school,
         role: role === 'admin_office' ? 'admin_office' : { $in: ['admin_office', 'teacher'] }
       }).select('_id').lean();
@@ -750,7 +752,7 @@ const getProjectSubmissions = async (req, res) => {
     const pendingStudents = [];
 
     if (project.targetType === 'students') {
-      const allStudents = await User.find({
+      const allStudents = await Student.find({
         _id: { $in: project.studentIds },
         isActive: true
       }).select('name email rollNo images.recentPic').lean();
@@ -814,7 +816,7 @@ const getSubmission = async (req, res) => {
 
     const populatedSubmission = { ...submission.toObject() };
     if (submission.studentId) {
-      const student = await User.findById(submission.studentId).select('name email rollNumber');
+      const student = await Student.findById(submission.studentId).select('name email rollNumber');
       populatedSubmission.student = student;
     }
 

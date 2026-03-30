@@ -1,6 +1,6 @@
 const express = require("express");
 const router = express.Router();
-const { protect, isAdminOffice, isTeacherOrAdminOfficeOrSchool } = require("../middlewares/auth");
+const { protect, isAdminOffice, isTeacherOrAdminOfficeOrSchool, allowedRoles } = require("../middlewares/auth");
 const { upload } = require("../utils/multer");
 const validate = require("../middlewares/validate");
 const studentValidation = require("../validators/student.validation");
@@ -135,6 +135,7 @@ router.get(
 router.get(
     "/:id",
     protect,
+    allowedRoles,
     validate(studentValidation.idParam, 'params'),
     getStudentById
 );

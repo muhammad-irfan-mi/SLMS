@@ -7,6 +7,8 @@ const Leave = require("../models/Leave");
 const dayjs = require("dayjs");
 const utc = require("dayjs/plugin/utc");
 const timezone = require("dayjs/plugin/timezone");
+const Student = require("../models/Student");
+const Staff = require("../models/Staff");
 
 dayjs.extend(utc);
 dayjs.extend(timezone);
@@ -43,7 +45,7 @@ const normalizePagination = ({ page = 1, limit = 20 }) => {
 // Helper function to validate teacher assignment
 const validateTeacherAssignment = async (teacherId, classId, sectionId, school) => {
     try {
-        const teacher = await User.findOne({
+        const teacher = await Staff.findOne({
             _id: teacherId,
             school,
             role: 'teacher',
@@ -74,10 +76,9 @@ const validateTeacherAssignment = async (teacherId, classId, sectionId, school) 
 // Helper function to validate student enrollment
 const validateStudentEnrollment = async (studentIds, classId, sectionId, school) => {
     try {
-        const enrolledStudents = await User.find({
+        const enrolledStudents = await Student.find({
             _id: { $in: studentIds },
             school,
-            role: 'student',
             'classInfo.id': classId,
             'sectionInfo.id': sectionId
         }).select('_id').lean();
@@ -189,7 +190,7 @@ const markAttendance = async (req, res) => {
         }
 
         const [users, leaveMap] = await Promise.all([
-            User.find({
+            Student.find({
                 _id: { $in: studentIds },
                 school
             })
@@ -251,7 +252,6 @@ const markAttendance = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("markAttendance error:", err);
         return res.status(500).json({
             message: "Server error",
             error: err.message
@@ -336,7 +336,7 @@ const updateAttendance = async (req, res) => {
         let newUsers = [];
 
         if (newStudentIds.length > 0) {
-            newUsers = await User.find({
+            newUsers = await Student.find({
                 _id: { $in: newStudentIds },
                 school
             }).select("name email").lean();
@@ -402,7 +402,6 @@ const updateAttendance = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("updateAttendance error:", err);
         return res.status(500).json({
             message: "Server error",
             error: err.message
@@ -423,7 +422,7 @@ const getAttendanceBySection = async (req, res) => {
         }
 
         if (userRole === 'teacher') {
-            const teacher = await User.findOne({
+            const teacher = await Staff.findOne({
                 _id: userId,
                 school,
                 role: 'teacher',
@@ -562,7 +561,7 @@ const getAttendanceByStudent = async (req, res) => {
                 });
             }
         } else if (userRole === 'teacher') {
-            const teacher = await User.findOne({
+            const teacher = await Staff.findOne({
                 _id: userId,
                 school,
                 role: 'teacher',
@@ -574,10 +573,10 @@ const getAttendanceByStudent = async (req, res) => {
                 });
             }
 
-            const student = await User.findOne({
+            const student = await Student.findOne({
                 _id: studentId,
                 school,
-                role: 'student',
+                // role: 'student',
                 'classInfo.id': teacher.classInfo?.id,
                 'sectionInfo.id': teacher.sectionInfo?.id
             });

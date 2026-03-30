@@ -1,10 +1,11 @@
 const ComplaintFeedback = require("../models/ComplaintFeedback");
 const User = require("../models/User");
 const School = require("../models/School");
+const Student = require("../models/Student");
 
 // Helper: verify student exists and class/section match
 async function verifyStudentClassSection(studentId, classId, sectionId, schoolId) {
-    const student = await User.findById(studentId).lean();
+    const student = await Student.findById(studentId).lean();
     if (!student) throw new Error("Student not found");
 
     if (student.school && student.school.toString() !== schoolId.toString()) {
@@ -194,9 +195,6 @@ const deleteEntry = async (req, res) => {
 // Add review to complaint
 const reviewComplaint = async (req, res) => {
     try {
-        console.log("req.user:", req.user);
-        console.log("req.user.role:", req.user.role);
-        console.log("req.user._id:", req.user._id);
 
         const entryId = req.params.id;
         const reviewerId = req.user._id;
@@ -237,9 +235,6 @@ const reviewComplaint = async (req, res) => {
 
         // Authorization check
         if (isAdminOrSchool) {
-            // Admin/school can only review complaints from their school
-            // For school users: req.user._id is the school ID
-            // For admin users: req.user.school is the school ID
             const schoolId = userRole === "school" ? req.user._id : req.user.school;
 
             console.log("schoolId from user:", schoolId);
@@ -268,10 +263,9 @@ const reviewComplaint = async (req, res) => {
             comment,
             action: action || "",
             reviewedAt: new Date(),
-            // Store reviewer info directly
             reviewerName: req.user.name || "School Admin",
             reviewerEmail: req.user.email || "",
-            reviewerType: userRole || "unknown" // Store the actual role
+            reviewerType: userRole || "unknown" 
         };
 
         console.log("New review:", newReview);
@@ -394,7 +388,7 @@ const getComplain = async (req, res) => {
                         let reviewerInfo = null;
 
                         if (review.reviewerId) {
-                            const user = await User.findById(review.reviewerId)
+                            const user = await Student.findById(review.reviewerId)
                                 .select("name email role images.recentPic")
                                 .lean();
 
@@ -513,7 +507,7 @@ const getComplainByStudent = async (req, res) => {
             query.lean()
         ]);
 
-        const student = await User.findById(studentId)
+        const student = await Student.findById(studentId)
             .select("name email rollNo phone address profileImage")
             .lean();
 
@@ -553,7 +547,7 @@ const getComplainByStudent = async (req, res) => {
 
                         if (review.reviewerId) {
                             try {
-                                const user = await User.findById(review.reviewerId)
+                                const user = await Student.findById(review.reviewerId)
                                     .select("name email role profileImage")
                                     .lean();
 

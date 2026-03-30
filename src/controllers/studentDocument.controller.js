@@ -9,6 +9,8 @@ const {
     validateQuery
 } = require("../validators/studentDocument.validation");
 const { sendDocumentRequestNotification, sendDocumentUploadNotification } = require("../utils/notificationService");
+const Student = require("../models/Student");
+const Staff = require("../models/Staff");
 
 async function handleFilesUpload(files, maxFiles = 5) {
     if (!files || files.length === 0) return [];
@@ -107,7 +109,7 @@ const populateClassSectionInfo = async (documents) => {
 
         // Populate student info if needed
         if (doc.studentId && typeof doc.studentId === 'string') {
-            const student = await User.findById(doc.studentId)
+            const student = await Student.findById(doc.studentId)
                 .select('name email rollNo');
             if (student) {
                 docObj.studentId = {
@@ -146,7 +148,7 @@ const createDocumentRequest = async (req, res) => {
             requestedByModel = 'School';
         }
 
-        const student = await User.findById(studentId);
+        const student = await Student.findById(studentId);
         if (!student || student.role !== "student") {
             return res.status(404).json({
                 success: false,
@@ -209,20 +211,11 @@ const createDocumentRequest = async (req, res) => {
             school: schoolId // Make sure school is saved with the document request
         });
 
-        console.log('Document request created:', {
-            id: documentRequest._id,
-            school: documentRequest.school,
-            requestedBy: documentRequest.requestedBy,
-            studentId: documentRequest.studentId,
-            createdByRole: user.role
-        });
-
-        // ALWAYS notify student when document request is created
-        // (regardless of who creates it - teacher, admin, or school)
+       
         const notification = await sendDocumentRequestNotification({
             documentRequest: documentRequest,
             actor: req.user,
-            targetType: 'student' // Always student for document request creation
+            targetType: 'student'
         });
 
         console.log('Notification result:', notification ? 'Success' : 'Failed');
@@ -446,7 +439,7 @@ const getStudentDocumentRequests = async (req, res) => {
 
         const skip = (Number(page) - 1) * Number(limit);
 
-        const student = await User.findById(studentId)
+        const student = await Student.findById(studentId)
             .select('name email rollNo classInfo sectionInfo school')
             .lean();
 
@@ -561,7 +554,7 @@ const updateDocumentRequest = async (req, res) => {
         }
         else if (['admin_office'].includes(user.role) || !user.role) {
             const requesterSchoolId = getSchoolId(user);
-            const student = await User.findById(documentRequest.studentId);
+            const student = await Student.findById(documentRequest.studentId);
             if (student) {
                 const studentSchoolId = getSchoolId(student);
                 if (requesterSchoolId && studentSchoolId &&
@@ -762,7 +755,7 @@ const uploadDocumentForRequest = async (req, res) => {
         if (documentRequest.requestedByModel === 'School') {
             uploadedFor = 'school';
         } else if (documentRequest.requestedByModel === 'User') {
-            const requester = await User.findById(documentRequest.requestedBy);
+            const requester = await Staff.findById(documentRequest.requestedBy);
             if (requester) {
 
                 if (requester.role === 'teacher') {
@@ -775,16 +768,15 @@ const uploadDocumentForRequest = async (req, res) => {
             }
         }
 
-        // FIX: Get school ID properly
         let schoolId = documentRequest.school;
 
         if (!schoolId) {
-            const student = await User.findById(documentRequest.studentId).select('school');
+            const student = await Student.findById(documentRequest.studentId).select('school');
             if (student && student.school) {
                 schoolId = student.school;
             } else {
                 if (documentRequest.requestedByModel === 'User') {
-                    const requester = await User.findById(documentRequest.requestedBy).select('school');
+                    const requester = await Staff.findById(documentRequest.requestedBy).select('school');
                     if (requester && requester.school) {
                         schoolId = requester.school;
                     }
@@ -868,9 +860,8 @@ const uploadGeneralDocument = async (req, res) => {
         } = req.body;
 
         const studentId = req.user._id;
-        const student = await User.findById(studentId);
+        const student = await Student.findById(studentId);
 
-        // Verify student is in the specified class and section
         if (
             !student.classInfo?.id ||
             student.classInfo.id.toString() !== classId ||
@@ -1063,7 +1054,7 @@ const deleteDocument = async (req, res) => {
 const getStudentDocuments = async (req, res) => {
     try {
         const studentId = req.user._id;
-        const student = await User.findById(req.user._id)
+        const student = await Student.findById(req.user._id)
             .select('name email rollNo classInfo sectionInfo school')
             .lean();
 
@@ -1253,7 +1244,7 @@ const getDocuments = async (req, res) => {
         }
 
         if (studentId) {
-            const student = await User.findById(studentId);
+            const student = await Student.findById(studentId);
             if (student && requesterSchoolId) {
                 const studentSchoolId = getSchoolId(student);
                 if (studentSchoolId && studentSchoolId.toString() === requesterSchoolId.toString()) {
@@ -1390,7 +1381,7 @@ const getDocumentsForRequest = async (req, res) => {
             }
         }
         else if (documentRequest.requestedByModel === 'User') {
-            const requesterUser = await User.findById(documentRequest.requestedBy);
+            const requesterUser = await Staff.findById(documentRequest.requestedBy);
             if (requesterUser) {
                 if (requesterUser.role === 'teacher') {
                     if (user._id.toString() === documentRequest.requestedBy.toString()) {
@@ -1478,18 +1469,14 @@ const updateDocumentStatus = async (req, res) => {
         const requesterSchoolId = getSchoolId(user);
 
         // Get student to check school
-        const student = await User.findById(document.studentId);
+        const student = await Student.findById(document.studentId);
         if (student) {
             const studentSchoolId = getSchoolId(student);
 
-            // First check if same school
             if (requesterSchoolId && studentSchoolId &&
                 requesterSchoolId.toString() === studentSchoolId.toString()) {
 
-                // Now check specific permissions
                 if (document.uploadedFor === 'teacher' && user.role === 'teacher') {
-                    // Teacher can only update documents uploaded for teachers
-                    // and only from their class/section
                     if (document.classId.toString() === user.classId?.toString() &&
                         document.sectionId.toString() === user.sectionId?.toString()) {
                         hasPermission = true;
@@ -1497,12 +1484,10 @@ const updateDocumentStatus = async (req, res) => {
                 }
                 else if (document.uploadedFor === 'admin_office' &&
                     (user.role === 'admin_office' || user.role === 'superadmin' || !user.role)) {
-                    // Admins and school can update admin documents
                     hasPermission = true;
                 }
                 else if (document.uploadedFor === 'school' &&
                     (!user.role || user.role === 'admin_office' || user.role === 'superadmin')) {
-                    // School and admins can update school documents
                     hasPermission = true;
                 }
             }

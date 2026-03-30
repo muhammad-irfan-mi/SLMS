@@ -5,6 +5,7 @@ const { uploadFileToS3, deleteFileFromS3 } = require("../services/s3.service");
 const crypto = require('crypto');
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
+const Student = require("../models/Student");
 
 
 const addSchoolBySuperAdmin = async (req, res) => {
@@ -476,9 +477,9 @@ const getAllSchools = async (req, res) => {
 
     const schoolData = await Promise.all(
       schools.map(async (school) => {
-        const activeStudentsCount = await User.countDocuments({
+        const activeStudentsCount = await Student.countDocuments({
           school: school._id,
-          role: 'student',
+          // role: 'student',
           isActive: true
         });
 
@@ -536,9 +537,9 @@ const getSchoolById = async (req, res) => {
       return res.status(404).json({ message: "School not found" });
     }
 
-    const activeStudentsCount = await User.countDocuments({
+    const activeStudentsCount = await Student.countDocuments({
       school: school._id,
-      role: 'student',
+      // role: 'student',
       isActive: true
     });
 
