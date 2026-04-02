@@ -10,7 +10,7 @@ const Student = require("../models/Student");
 
 const addSchoolBySuperAdmin = async (req, res) => {
   try {
-    const { name, email, phone, address, cnic, lat, lon, noOfStudents } = req.body;
+    const { name, email, phone, address, remainVideo, cnic, lat, lon, noOfStudents } = req.body;
     const existingSchool = await School.findOne({
       $or: [
         { email },
@@ -41,7 +41,7 @@ const addSchoolBySuperAdmin = async (req, res) => {
     const otpCode = otpService.generateOTP();
     const otpExpiry = otpService.calculateExpiry(10);
 
-    let cnicFront = null, cnicBack = null, nocDoc = null , logo = null;
+    let cnicFront = null, cnicBack = null, nocDoc = null, logo = null;
 
     if (req.files?.cnicFront?.[0]) {
       const file = req.files.cnicFront[0];
@@ -91,6 +91,7 @@ const addSchoolBySuperAdmin = async (req, res) => {
         cnic: cnic || null,
         images: { cnicFront, cnicBack, nocDoc, logo },
         location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
+        remainVideo: Number(remainVideo) || 4,
         noOfStudents: Number(noOfStudents) || 0,
       };
       pendingSchool.otp = {
@@ -120,6 +121,7 @@ const addSchoolBySuperAdmin = async (req, res) => {
           cnic: cnic || null,
           images: { cnicFront, cnicBack, nocDoc, logo },
           location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
+          remainVideo: Number(remainVideo) || 4,
           noOfStudents: Number(noOfStudents) || 0,
         },
         otp: {
@@ -141,11 +143,6 @@ const addSchoolBySuperAdmin = async (req, res) => {
       note: "OTP is valid for 10 minutes"
     });
   } catch (err) {
-
-    try {
-    } catch (cleanupError) {
-      console.error("Error cleaning up files:", cleanupError);
-    }
 
     return res.status(500).json({
       message: "Server error while adding school",
@@ -348,7 +345,16 @@ const editSchoolBySuperAdmin = async (req, res) => {
     if (updates.phone !== undefined) school.phone = updates.phone || null;
     if (updates.address !== undefined) school.address = updates.address || null;
     if (updates.cnic !== undefined) school.cnic = updates.cnic || null;
-    if (updates.noOfStudents !== undefined) school.noOfStudents = Number(updates.noOfStudents) || 0;
+    if (updates.remainVideo !== undefined) {
+      const additionalVideos = Number(updates.remainVideo);
+      if (!isNaN(additionalVideos) && additionalVideos > 0) {
+        school.remainVideo += additionalVideos;
+      } else if (additionalVideos < 0) {
+        return res.status(400).json({
+          message: "Cannot subtract videos. Use positive numbers only."
+        });
+      }
+    } if (updates.noOfStudents !== undefined) school.noOfStudents = Number(updates.noOfStudents) || 0;
 
     if (updates.lat !== undefined) school.location.lat = Number(updates.lat) || null;
     if (updates.lon !== undefined) school.location.lon = Number(updates.lon) || null;
@@ -411,10 +417,10 @@ const editSchoolBySuperAdmin = async (req, res) => {
         email: school.email,
         schoolId: school.schoolId,
         verified: school.verified,
+        remainVideo: school.remainVideo,
       },
     });
   } catch (err) {
-    console.error("Error updating school:", err);
     return res.status(500).json({
       message: "Server error while updating school",
       error: err.message,
@@ -500,7 +506,6 @@ const getAllSchools = async (req, res) => {
       schools: schoolData,
     });
   } catch (err) {
-    console.error("Error fetching schools:", err);
     return res.status(500).json({
       message: "Server error while fetching schools",
       error: err.message,
@@ -551,7 +556,6 @@ const getSchoolById = async (req, res) => {
       }
     });
   } catch (err) {
-    console.error("Error fetching school:", err);
     return res.status(500).json({
       message: "Server error while fetching school",
       error: err.message,
@@ -602,7 +606,6 @@ const updateSchoolLogo = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Error updating school logo:", err);
     return res.status(500).json({
       message: "Server error while updating school logo",
       error: err.message,

@@ -2,6 +2,8 @@ const mongoose = require("mongoose");
 const ClassSection = require("../models/ClassSection");
 const School = require("../models/School");
 const User = require("../models/User");
+const Student = require("../models/Student");
+const Staff = require("../models/Staff");
 
 
 
@@ -324,7 +326,7 @@ const getClassesBySchool = async (req, res) => {
             .limit(limit)
             .sort({ order: 1 });
 
-        const inchargeTeachers = await User.find({
+        const inchargeTeachers = await Staff.find({
             school: schoolId,
             role: 'teacher',
             isIncharge: true,
@@ -414,7 +416,7 @@ const assignSectionIncharge = async (req, res) => {
             return res.status(404).json({ message: "Section not found in this class" });
         }
 
-        const teacher = await User.findById(teacherId);
+        const teacher = await Staff.findById(teacherId);
         if (!teacher || teacher.role !== "teacher") {
             return res.status(400).json({ message: "Invalid teacher ID" });
         }
@@ -437,7 +439,7 @@ const assignSectionIncharge = async (req, res) => {
         }
 
         // Remove current incharge from this section if exists
-        await User.updateMany(
+        await Staff.updateMany(
             {
                 role: "teacher",
                 isIncharge: true,
@@ -477,7 +479,6 @@ const assignSectionIncharge = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("assignSectionIncharge error:", err);
         res.status(500).json({
             message: "Server error",
             error: err.message,
@@ -488,8 +489,9 @@ const assignSectionIncharge = async (req, res) => {
 const removeSectionIncharge = async (req, res) => {
     try {
         const { teacherId } = req.body;
+        console.log(teacherId);
 
-        const teacher = await User.findById(teacherId);
+        const teacher = await Staff.findById(teacherId);
 
         if (!teacher || teacher.role !== "teacher") {
             return res.status(404).json({
@@ -517,7 +519,6 @@ const removeSectionIncharge = async (req, res) => {
 
         return res.status(200).json({
             message: "Section incharge removed successfully",
-            teacherId: teacher._id,
         });
 
     } catch (err) {
@@ -580,7 +581,7 @@ const promoteStudentsToNextClass = async (req, res) => {
             });
         }
 
-        const existingStudents = await User.find({
+        const existingStudents = await Student.find({
             school: schoolId,
             "classInfo.id": toClassId,
             "sectionInfo.id": toSectionId,
@@ -596,7 +597,7 @@ const promoteStudentsToNextClass = async (req, res) => {
             });
         }
 
-        const studentsToPromote = await User.find({
+        const studentsToPromote = await Student.find({
             school: schoolId,
             "classInfo.id": fromClassId,
             "sectionInfo.id": fromSectionId,

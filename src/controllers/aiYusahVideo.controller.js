@@ -1,6 +1,6 @@
+const mongoose = require('mongoose');
 const AiYusahVideo = require("../models/AiYusahVideo");
-const User = require("../models/User");
-const { validateVideo, validateFilter } = require("../validators/aiYusahVideo.validation");
+const { validateVideo, validateFilter, validateMediaUrl, PLATFORMS } = require("../validators/aiYusahVideo.validation");
 
 const detectUserRole = (user) => {
   if (user.role === 'superadmin') return 'superadmin';
@@ -16,6 +16,10 @@ const detectUserRole = (user) => {
   return 'unknown';
 };
 
+const isValidObjectId = (id) => {
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
 const createAiVideo = async (req, res) => {
   try {
     const userRole = detectUserRole(req.user);
@@ -26,49 +30,39 @@ const createAiVideo = async (req, res) => {
       });
     }
 
-    const { title, description, youtubeLink, category, status = 'active' } = req.body;
+    const { title, description, mediaUrl, platform, category, status = 'active' } = req.body;
+    console.log("object", req.user._id)
 
     const video = new AiYusahVideo({
       title,
       description,
-      youtubeLink,
+      mediaUrl,
+      platform,
       category,
       createdBy: req.user._id,
       status
     });
 
     await video.save();
+    await video.populate('createdBy', 'name email');
 
     res.status(201).json({
       message: "Video uploaded successfully",
-      video: {
-        _id: video._id,
-        title: video.title,
-        description: video.description,
-        youtubeLink: video.youtubeLink,
-        youtubeId: video.youtubeId,
-        embedUrl: video.embedUrl,
-        category: video.category,
-        createdBy: {
-          _id: req.user._id,
-          name: req.user.name,
-          email: req.user.email
-        },
-        status: video.status,
-        createdAt: video.createdAt
-      }
     });
   } catch (err) {
-    console.error("Create AiYusah Video Error:", err);
     res.status(500).json({ message: err.message });
   }
 };
 
-// Superadmin Update Video
 const updateAiVideo = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, youtubeLink, category, status } = req.body;
+    
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ message: "Invalid video ID format" });
+    }
+    
+    const { title, description, mediaUrl, platform, category, status } = req.body;
     const userRole = detectUserRole(req.user);
 
     if (userRole !== 'superadmin') {
@@ -82,31 +76,16 @@ const updateAiVideo = async (req, res) => {
 
     if (title) video.title = title;
     if (description !== undefined) video.description = description;
+    if (mediaUrl) video.mediaUrl = mediaUrl;
+    if (platform) video.platform = platform;
     if (category) video.category = category;
     if (status) video.status = status;
 
-    if (youtubeLink) {
-      if (!youtubeLink.includes("youtube.com") && !youtubeLink.includes("youtu.be")) {
-        return res.status(400).json({ message: "Invalid YouTube link" });
-      }
-      video.youtubeLink = youtubeLink;
-    }
-
     await video.save();
+    await video.populate('createdBy', 'name email');
 
     res.status(200).json({
       message: "Video updated successfully",
-      video: {
-        _id: video._id,
-        title: video.title,
-        description: video.description,
-        youtubeLink: video.youtubeLink,
-        youtubeId: video.youtubeId,
-        embedUrl: video.embedUrl,
-        category: video.category,
-        status: video.status,
-        updatedAt: video.updatedAt
-      }
     });
 
   } catch (err) {
@@ -115,7 +94,6 @@ const updateAiVideo = async (req, res) => {
   }
 };
 
-// Get Videos for Superadmin
 const getVideosForSuperadmin = async (req, res) => {
   try {
     const userRole = detectUserRole(req.user);
@@ -126,7 +104,7 @@ const getVideosForSuperadmin = async (req, res) => {
       });
     }
 
-    let { page = 1, limit = 10, search, category, status } = req.query;
+    let { page = 1, limit = 10, search, category, platform, status } = req.query;
 
     page = Number(page);
     limit = Number(limit);
@@ -141,6 +119,7 @@ const getVideosForSuperadmin = async (req, res) => {
     }
     
     if (category) filter.category = category;
+    if (platform) filter.platform = platform;
     if (status) filter.status = status;
 
     const skip = (page - 1) * limit;
@@ -153,14 +132,12 @@ const getVideosForSuperadmin = async (req, res) => {
 
     const total = await AiYusahVideo.countDocuments(filter);
 
-    // Format response
     const formattedVideos = videos.map(video => ({
       _id: video._id,
       title: video.title,
       description: video.description,
-      youtubeLink: video.youtubeLink,
-      youtubeId: video.youtubeId,
-      embedUrl: video.embedUrl,
+      mediaUrl: video.mediaUrl,
+      platform: video.platform,
       category: video.category,
       createdBy: video.createdBy ? {
         _id: video.createdBy._id,
@@ -181,17 +158,14 @@ const getVideosForSuperadmin = async (req, res) => {
     });
 
   } catch (err) {
-    console.error("Get Superadmin Videos Error:", err);
     res.status(500).json({ message: err.message });
   }
 };
 
-// Get Videos for School/Teachers/Admins/Students
 const getVideosForAll = async (req, res) => {
   try {
     const userRole = detectUserRole(req.user);
     
-    // Check if user is authorized (school, teacher, admin_office, student)
     const allowedRoles = ['school', 'teacher', 'admin_office', 'student'];
     if (!allowedRoles.includes(userRole)) {
       return res.status(403).json({ 
@@ -199,11 +173,10 @@ const getVideosForAll = async (req, res) => {
       });
     }
 
-    let { page = 1, limit = 10, search, category } = req.query;
+    let { page = 1, limit = 10, search, category, platform } = req.query;
     page = Number(page);
     limit = Number(limit);
 
-    // Only show active videos to non-superadmin users
     const filter = { status: 'active' };
 
     if (search) {
@@ -219,6 +192,7 @@ const getVideosForAll = async (req, res) => {
     }
     
     if (category) filter.category = category;
+    if (platform) filter.platform = platform;
 
     const skip = (page - 1) * limit;
 
@@ -230,14 +204,12 @@ const getVideosForAll = async (req, res) => {
 
     const total = await AiYusahVideo.countDocuments(filter);
 
-    // Format response
     const formattedVideos = videos.map(video => ({
       _id: video._id,
       title: video.title,
       description: video.description,
-      youtubeLink: video.youtubeLink,
-      youtubeId: video.youtubeId,
-      embedUrl: video.embedUrl,
+      mediaUrl: video.mediaUrl,
+      platform: video.platform,
       category: video.category,
       createdBy: video.createdBy ? {
         _id: video.createdBy._id,
@@ -251,20 +223,29 @@ const getVideosForAll = async (req, res) => {
       page,
       totalPages: Math.ceil(total / limit),
       limit,
-      userRole,
       videos: formattedVideos,
     });
 
   } catch (err) {
-    console.error("Get Videos for All Error:", err);
     res.status(500).json({ message: err.message });
   }
 };
 
-// Get Single Video by ID
 const getVideoById = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    if (!isValidObjectId(id)) {
+      if (id === 'school' || id === 'admin' || id === 'feed' || id === 'student') {
+        return res.status(400).json({ 
+          message: `Invalid endpoint. Did you mean to access a different URL?` 
+        });
+      }
+      return res.status(400).json({ 
+        message: `Invalid video ID format: ${id}` 
+      });
+    }
+    
     const userRole = detectUserRole(req.user);
 
     const video = await AiYusahVideo.findById(id)
@@ -274,7 +255,6 @@ const getVideoById = async (req, res) => {
       return res.status(404).json({ message: "Video not found" });
     }
 
-    // Authorization check
     if (userRole !== 'superadmin' && video.status !== 'active') {
       return res.status(403).json({ 
         message: "Not authorized to view this video" 
@@ -285,9 +265,8 @@ const getVideoById = async (req, res) => {
       _id: video._id,
       title: video.title,
       description: video.description,
-      youtubeLink: video.youtubeLink,
-      youtubeId: video.youtubeId,
-      embedUrl: video.embedUrl,
+      mediaUrl: video.mediaUrl,
+      platform: video.platform,
       category: video.category,
       createdBy: video.createdBy ? {
         _id: video.createdBy._id,
@@ -299,33 +278,27 @@ const getVideoById = async (req, res) => {
       updatedAt: video.updatedAt
     };
 
-    // Add permissions
-    if (userRole === 'superadmin') {
-      response.permissions = {
-        canEdit: true,
-        canDelete: true,
-        canToggleStatus: true
-      };
-    } else {
-      response.permissions = {
-        canEdit: false,
-        canDelete: false,
-        canToggleStatus: false
-      };
-    }
-
     res.status(200).json({ video: response });
 
-  } catch (err) {
-    console.error("Get Video by ID Error:", err);
+  } catch (err) {    
+    if (err.name === 'CastError' && err.kind === 'ObjectId') {
+      return res.status(400).json({ 
+        message: `Invalid video ID format: ${err.value}` 
+      });
+    }
+    
     res.status(500).json({ message: err.message });
   }
 };
 
-// Delete Video (Superadmin only)
 const deleteAiVideo = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ message: "Invalid video ID format" });
+    }
+    
     const userRole = detectUserRole(req.user);
 
     if (userRole !== 'superadmin') {
@@ -347,20 +320,24 @@ const deleteAiVideo = async (req, res) => {
       deletedVideo: {
         _id: video._id,
         title: video.title,
+        platform: video.platform,
         category: video.category
       }
     });
 
   } catch (err) {
-    console.error("Delete AiYusah Video Error:", err);
     res.status(500).json({ message: err.message });
   }
 };
 
-// Toggle video status (Superadmin only)
 const toggleVideoStatus = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    if (!isValidObjectId(id)) {
+      return res.status(400).json({ message: "Invalid video ID format" });
+    }
+    
     const { status } = req.body;
     const userRole = detectUserRole(req.user);
 
@@ -390,6 +367,7 @@ const toggleVideoStatus = async (req, res) => {
       video: {
         _id: video._id,
         title: video.title,
+        platform: video.platform,
         status: video.status,
         updatedAt: video.updatedAt
       }

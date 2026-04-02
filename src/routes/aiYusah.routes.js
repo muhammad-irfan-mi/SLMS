@@ -1,70 +1,25 @@
-const router = require("express").Router();
-const { 
-  createAiVideo, 
-  updateAiVideo, 
-  deleteAiVideo, 
-  getVideosForSuperadmin, 
-  getVideosForAll, 
+const express = require('express');
+const router = express.Router();
+const { protect, isSuperAdmin } = require('../middlewares/auth');
+const {
+  createAiVideo,
+  updateAiVideo,
+  getVideosForSuperadmin,
+  getVideosForAll,
   getVideoById,
+  deleteAiVideo,
   toggleVideoStatus
-} = require("../controllers/aiYusahVideo.controller");
-const { validateVideo, validateFilter } = require("../validators/aiYusahVideo.validation");
-const { protect, isSuperAdmin } = require("../middlewares/auth");
+} = require('../controllers/aiYusahVideo.controller');
+const { validateVideo, validateFilter, validateMediaUrl } = require('../validators/aiYusahVideo.validation');
 
-const attachUserRole = (req, res, next) => {
-  if (!req.user.role && req.user.schoolId) {
-    req.user.role = 'school';
-  }
-  else if (!req.user.role && req.user.verified !== undefined && req.user.email) {
-    req.user.role = 'school';
-  }
-  next();
-};
+router.get('/admin', protect, isSuperAdmin, validateFilter, getVideosForSuperadmin);
+router.post('/', protect, isSuperAdmin, validateVideo, validateMediaUrl, createAiVideo);
 
-router.post("/",
-  protect,
-  isSuperAdmin,
-  validateVideo,
-  createAiVideo
-);
+router.get('/', protect, validateFilter, getVideosForAll);
 
-router.put("/:id",
-  protect,
-  isSuperAdmin,
-  validateVideo,
-  updateAiVideo
-);
-
-router.delete("/:id",
-  protect,
-  isSuperAdmin,
-  deleteAiVideo
-);
-
-router.patch("/:id/status",
-  protect,
-  isSuperAdmin,
-  toggleVideoStatus
-);
-
-router.get("/admin",
-  protect,
-  isSuperAdmin,
-  validateFilter,
-  getVideosForSuperadmin
-);
-
-router.get("/",
-  protect,
-  attachUserRole,
-  validateFilter,
-  getVideosForAll
-);
-
-router.get("/:id",
-  protect,
-  attachUserRole,
-  getVideoById
-);
+router.get('/:id', protect, getVideoById);
+router.put('/:id', protect, isSuperAdmin, validateVideo, validateMediaUrl, updateAiVideo);
+router.delete('/:id', protect, isSuperAdmin, deleteAiVideo);
+router.patch('/:id/toggle-status', protect, isSuperAdmin, toggleVideoStatus);
 
 module.exports = router;

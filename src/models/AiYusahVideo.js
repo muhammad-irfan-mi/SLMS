@@ -2,41 +2,39 @@ const mongoose = require("mongoose");
 
 const AiYusahVideoSchema = new mongoose.Schema(
   {
-    title: { 
-      type: String, 
+    title: {
+      type: String,
       required: true,
       trim: true,
       maxlength: 200
     },
-    
-    description: { 
+
+    description: {
       type: String,
       trim: true,
       maxlength: 1000
     },
-    
-    youtubeLink: { 
-      type: String, 
+
+    mediaUrl: {
+      type: String,
+      required: true
+    },
+    platform: {
+      type: String,
+      enum: ['youtube', 'instagram', 'tiktok', 'facebook', 'twitter', 'linkedin'],
       required: true,
-      validate: {
-        validator: function(v) {
-          return /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/.test(v);
-        },
-        message: props => `${props.value} is not a valid YouTube URL!`
-      }
+      index: true
     },
 
     category: {
       type: String,
       enum: [
-        "Behavioural Activities",
-        "English Learning",
-        "Health & Food",
-        "Islamic Studies",
-        "Capacity Building",
-        "Sports",
-        "Education",
-        "AI Poems"
+        "behavioural activities",
+        "islamic studies",
+        "capacity building",
+        "cartoons",
+        "animals education",
+        "yushay stars"
       ],
       required: true,
       index: true
@@ -57,7 +55,7 @@ const AiYusahVideoSchema = new mongoose.Schema(
     }
 
   },
-  { 
+  {
     timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true }
@@ -70,9 +68,9 @@ AiYusahVideoSchema.index({ status: 1, createdAt: -1 });
 AiYusahVideoSchema.index({ title: 'text', description: 'text' });
 
 // Virtual for YouTube video ID
-AiYusahVideoSchema.virtual('youtubeId').get(function() {
+AiYusahVideoSchema.virtual('youtubeId').get(function () {
   if (!this.youtubeLink) return null;
-  
+
   // Extract YouTube video ID from various URL formats
   const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
   const match = this.youtubeLink.match(regex);
@@ -80,7 +78,7 @@ AiYusahVideoSchema.virtual('youtubeId').get(function() {
 });
 
 // Virtual for embed URL
-AiYusahVideoSchema.virtual('embedUrl').get(function() {
+AiYusahVideoSchema.virtual('embedUrl').get(function () {
   const videoId = this.youtubeId;
   return videoId ? `https://www.youtube.com/embed/${videoId}` : null;
 });

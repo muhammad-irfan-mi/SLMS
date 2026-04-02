@@ -1,5 +1,42 @@
 const Joi = require('joi');
 
+const PLATFORMS = {
+  YOUTUBE: 'youtube',
+  INSTAGRAM: 'instagram',
+  TIKTOK: 'tiktok',
+  FACEBOOK: 'facebook',
+  TWITTER: 'twitter',
+  LINKEDIN: 'linkedin'
+};
+
+// URL validation for different platforms
+const urlValidators = {
+  youtube: (url) => {
+    const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/;
+    return youtubeRegex.test(url);
+  },
+  instagram: (url) => {
+    const instagramRegex = /^(https?:\/\/)?(www\.)?instagram\.com\/(p|reel|tv)\/.+$/;
+    return instagramRegex.test(url);
+  },
+  tiktok: (url) => {
+    const tiktokRegex = /^(https?:\/\/)?(www\.)?tiktok\.com\/@[\w.-]+\/video\/\d+$/;
+    return tiktokRegex.test(url);
+  },
+  facebook: (url) => {
+    const facebookRegex = /^(https?:\/\/)?(www\.)?facebook\.com\/(watch\?v=\d+|reel\/\d+|\w+\/videos\/\d+)$/;
+    return facebookRegex.test(url);
+  },
+  twitter: (url) => {
+    const twitterRegex = /^(https?:\/\/)?(www\.)?twitter\.com\/\w+\/status\/\d+$/;
+    return twitterRegex.test(url);
+  },
+  linkedin: (url) => {
+    const linkedinRegex = /^(https?:\/\/)?(www\.)?linkedin\.com\/feed\/update\/urn:li:activity:\d+$/;
+    return linkedinRegex.test(url);
+  }
+};
+
 // Video creation/update validation
 const videoSchema = Joi.object({
   title: Joi.string()
@@ -20,41 +57,57 @@ const videoSchema = Joi.object({
       'string.max': 'Description cannot exceed 1000 characters'
     }),
 
-  youtubeLink: Joi.string()
+  mediaUrl: Joi.string()
     .required()
-    .custom((value, helpers) => {
-      // Validate YouTube URL
-      const youtubeRegex = /^(https?:\/\/)?(www\.)?(youtube\.com|youtu\.?be)\/.+$/;
-      if (!youtubeRegex.test(value)) {
-        return helpers.message('Invalid YouTube URL. Must be a valid YouTube link');
-      }
-      return value;
-    })
     .messages({
-      'string.empty': 'YouTube link is required',
+      'string.empty': 'Media URL is required',
+    }),
+
+  platform: Joi.string()
+    .valid(...Object.values(PLATFORMS))
+    .required()
+    .messages({
+      'any.only': `Platform must be one of: ${Object.values(PLATFORMS).join(', ')}`,
+      'string.empty': 'Platform is required'
     }),
 
   category: Joi.string()
     .valid(
-      "Behavioural Activities",
-      "English Learning",
-      "Health & Food",
-      "Islamic Studies",
-      "Capacity Building",
-      "Sports",
-      "Education",
-      "AI Poems"
+      "behavioural activities",
+      "islamic studies",
+      "capacity building",
+      "cartoons",
+      "animals education",
+      "yushay stars"
     )
     .required()
     .messages({
       'any.only': 'Category must be one of the valid categories',
       'string.empty': 'Category is required'
     }),
-    
+
   status: Joi.string()
     .valid('active', 'inactive')
     .optional()
 });
+
+// Custom validation to ensure URL matches platform
+const validateMediaUrl = (req, res, next) => {
+  const { mediaUrl, platform } = req.body;
+
+  if (mediaUrl && platform) {
+    const validator = urlValidators[platform];
+    if (validator && !validator(mediaUrl)) {
+      return res.status(400).json({
+        message: `Invalid ${platform} URL format. Please provide a valid ${platform} video URL.`,
+        platform,
+        url: mediaUrl
+      });
+    }
+  }
+
+  next();
+};
 
 // Filter validation for queries
 const filterSchema = Joi.object({
@@ -63,57 +116,59 @@ const filterSchema = Joi.object({
   search: Joi.string().max(100).optional(),
   category: Joi.string()
     .valid(
-      "Behavioural Activities",
-      "English Learning",
-      "Health & Food",
-      "Islamic Studies",
-      "Capacity Building",
-      "Sports",
-      "Education",
-      "AI Poems",
-      null
+      "behavioural activities",
+      "islamic studies",
+      "capacity building",
+      "cartoons",
+      "animals education",
+      "yushay stars"
     )
+    .optional(),
+  platform: Joi.string()
+    .valid(...Object.values(PLATFORMS))
     .optional(),
   status: Joi.string().valid('active', 'inactive').optional()
 });
 
 const validateVideo = (req, res, next) => {
   const { error } = videoSchema.validate(req.body, { abortEarly: false });
-  
+
   if (error) {
     const errors = error.details.map(detail => ({
       field: detail.path.join('.'),
       message: detail.message
     }));
-    
+
     return res.status(400).json({
       message: 'Validation failed',
       errors
     });
   }
-  
+
   next();
 };
 
 const validateFilter = (req, res, next) => {
   const { error } = filterSchema.validate(req.query, { abortEarly: false });
-  
+
   if (error) {
     const errors = error.details.map(detail => ({
       field: detail.path.join('.'),
       message: detail.message
     }));
-    
+
     return res.status(400).json({
       message: 'Filter validation failed',
       errors
     });
   }
-  
+
   next();
 };
 
 module.exports = {
+  PLATFORMS,
   validateVideo,
-  validateFilter
+  validateFilter,
+  validateMediaUrl
 };

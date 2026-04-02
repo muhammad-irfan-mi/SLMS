@@ -76,14 +76,26 @@ const createMedia = async (req, res) => {
 
     const schoolId = getSchoolId(user, userType);
     if (!schoolId) {
-      console.log('School ID not found for user:', user);
       return res.status(400).json({
         success: false,
         message: 'School ID not found'
       });
     }
 
-    console.log('School ID:', schoolId);
+    const school = await School.findById(schoolId);
+    if (!school) {
+      return res.status(404).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    if (school.remainVideo <= 0) {
+      return res.status(403).json({
+        success: false,
+        message: 'You have no remaining video uploads. Please contact admin to add more.'
+      });
+    }
 
     const file = req.file;
 
@@ -108,13 +120,15 @@ const createMedia = async (req, res) => {
       eventDate: formatDate(eventDate),
     });
 
+    school.remainVideo -= 1;
+    await school.save();
+
     return res.status(201).json({
       success: true,
       message: 'Media uploaded successfully',
       data: newMedia
     });
   } catch (err) {
-    console.error('createMedia error:', err);
     return res.status(500).json({
       success: false,
       message: 'Server error',
@@ -358,93 +372,6 @@ const getOwnUploads = async (req, res) => {
     });
   }
 };
-
-// const getBySchool = async (req, res) => {
-//   try {
-//     const user = req.user;
-//     const userType = detectUserType(user);
-
-//     if (!['school', 'admin_office'].includes(userType)) {
-//       return res.status(403).json({ 
-//         success: false,
-//         message: 'Not authorized' 
-//       });
-//     }
-
-//     const { schoolId: paramSchoolId } = req.params;
-//     const { page = 1, limit = 20, type, q, createdBy } = req.query;
-//     const skip = (page - 1) * limit;
-
-//     let authorizedSchoolId = getSchoolId(user, userType);
-
-//     if (paramSchoolId && String(paramSchoolId) !== String(authorizedSchoolId)) {
-//       return res.status(403).json({ 
-//         success: false,
-//         message: 'You can only view media from your school' 
-//       });
-//     }
-
-//     const filter = { school: authorizedSchoolId };
-
-//     if (type) filter.type = type;
-//     if (createdBy) filter.createdBy = createdBy;
-
-//     if (q) {
-//       filter.$or = [
-//         { title: new RegExp(q, 'i') },
-//         { description: new RegExp(q, 'i') },
-//         { tags: new RegExp(q, 'i') }
-//       ];
-//     }
-
-//     const total = await SchoolMedia.countDocuments(filter);
-//     const media = await SchoolMedia.find(filter)
-//       .populate('createdBy', 'name email role')
-//       .populate('school', 'name')
-//       .sort({ createdAt: -1 })
-//       .skip(skip)
-//       .limit(parseInt(limit, 10))
-//       .lean();
-
-//     const formattedMedia = media.map(item => ({
-//       _id: item._id,
-//       title: item.title,
-//       description: item.description,
-//       type: item.type,
-//       visibility: item.visibility,
-//       fileUrl: item.fileUrl,
-//       tags: item.tags,
-//       eventDate: item.eventDate,
-//       school: item.school ? {
-//         _id: item.school._id,
-//         name: item.school.name
-//       } : null,
-//       createdAt: item.createdAt,
-//       updatedAt: item.updatedAt
-//     }));
-
-//     return res.status(200).json({
-//       success: true,
-//       data: {
-//         total,
-//         page: Number(page),
-//         totalPages: Math.ceil(total / limit),
-//         limit: Number(limit),
-//         school: authorizedSchoolId,
-//         media: formattedMedia
-//       }
-//     });
-//   } catch (err) {
-//     console.error('getBySchool error:', err);
-//     return res.status(500).json({ 
-//       success: false,
-//       message: 'Server error', 
-//       error: process.env.NODE_ENV === 'development' ? err.message : undefined
-//     });
-//   }
-// };
-
-// GET FEED for teachers and students
 
 const getFeed = async (req, res) => {
   try {
