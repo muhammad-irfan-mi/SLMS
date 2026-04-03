@@ -795,11 +795,12 @@ const resetPassword = async (req, res, Model, userType) => {
 // Toggle user status
 const toggleUserStatus = async (req, res, Model) => {
     try {
-        const { userId } = req.params;
+        const { id } = req.params;
         const schoolId = req.user.school;
+        console.log("object", id, schoolId, req.params)
 
         const user = await Model.findOne({
-            _id: userId,
+            _id: id,
             school: schoolId
         });
 
@@ -836,7 +837,6 @@ const toggleUserStatus = async (req, res, Model) => {
         });
 
     } catch (err) {
-        console.error("Toggle user status error:", err);
         return res.status(500).json({
             success: false,
             message: "Server error",
