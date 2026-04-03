@@ -825,7 +825,7 @@ const toggleUserStatus = async (req, res, Model) => {
 
         return res.status(200).json({
             success: true,
-            message: `User ${newStatus ? 'activated' : 'deactivated'} successfully`,
+            message: `User ${newStatus ? 'activated' : 'deleted'} successfully`,
             user: {
                 id: user._id,
                 name: user.name,
