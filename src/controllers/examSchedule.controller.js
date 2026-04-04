@@ -465,7 +465,8 @@ const getSchedule = async (req, res) => {
         select: "name code isActive"
       })
       .populate("classId", "class sections")
-      .populate("teacherId", "name email")
+      // .populate("teacherId", "name email")
+      .populate({ path: "teacherId", select: "name email role", model: "Staff" })
       .sort({ [sortBy]: sortDirection, startTime: 1 })
       .skip(skip)
       .limit(Number(limit))
@@ -711,7 +712,8 @@ const getScheduleByStudent = async (req, res) => {
         select: "name code isActive"
       })
       .populate("classId", "class sections")
-      .populate("teacherId", "name email role")
+      // .populate("teacherId", "name email role")
+      .populate({ path: "teacherId", select: "name email role", model: "Staff" })
       .sort({ examDate: 1, startTime: 1 })
       .lean();
 
@@ -1202,7 +1204,8 @@ const deleteSchedule = async (req, res) => {
 
     const schedule = await ExamSchedule.findById(id)
       .populate("subjectId", "name")
-      .populate("teacherId", "name")
+      // .populate("teacherId", "name")
+      .populate({ path: "teacherId", select: "name", model: "Staff" })
       .populate("classId", "class sections");
 
     if (!schedule) {
