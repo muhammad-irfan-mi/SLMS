@@ -96,7 +96,7 @@ const resolveUploader = async (uploadedById, uploadedByModel) => {
     if (!uploadedById) return null;
 
     try {
-        if (uploadedByModel === 'User') {
+        if (uploadedByModel === 'Staff') {
             const user = await Staff.findById(uploadedById)
                 .select("name email role")
                 .lean();
@@ -257,7 +257,7 @@ const checkSyllabusUpdatePermission = async (syllabus, userId, userRole, schoolI
     if (userRole === 'teacher') {
 
         if (syllabus.uploadedBy && syllabus.uploadedBy.toString() === userId.toString() &&
-            syllabus.uploadedByModel === 'User') {
+            syllabus.uploadedByModel === 'Staff') {
             return { canUpdate: true };
         }
 
@@ -326,7 +326,7 @@ const createSyllabus = async (req, res) => {
             uploadedByModel = 'School';
         } else {
             uploadedById = userId;
-            uploadedByModel = 'User';
+            uploadedByModel = 'Staff';
         }
 
         const today = new Date();
@@ -513,7 +513,7 @@ const getSyllabus = async (req, res) => {
                 filter.subjectId = { $in: teacherSubjects };
             } else {
                 filter.uploadedBy = userId;
-                filter.uploadedByModel = 'User';
+                filter.uploadedByModel = 'Staff';
             }
 
         } else if (userRole === 'admin_office') {
@@ -526,7 +526,7 @@ const getSyllabus = async (req, res) => {
             }
         } else {
             filter.uploadedBy = userId;
-            filter.uploadedByModel = 'User';
+            filter.uploadedByModel = 'Staff';
         }
 
         const [total, syllabus] = await Promise.all([
@@ -700,7 +700,7 @@ const updateSyllabus = async (req, res) => {
 
         if (userRole === 'teacher') {
             if (
-                syllabus.uploadedByModel !== 'User' ||
+                syllabus.uploadedByModel !== 'Staff' ||
                 syllabus.uploadedBy.toString() !== userId.toString()
             ) {
                 return res.status(403).json({
@@ -874,7 +874,7 @@ const deleteSyllabus = async (req, res) => {
 
         if (userRole === 'teacher') {
             if (
-                syllabus.uploadedByModel !== 'User' ||
+                syllabus.uploadedByModel !== 'Staff' ||
                 syllabus.uploadedBy.toString() !== userId.toString()
             ) {
                 return res.status(403).json({
