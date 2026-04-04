@@ -13,7 +13,6 @@ const studentValidation = {
         classId: commonValidations.classId,
         sectionId: commonValidations.sectionId,
         rollNo: commonValidations.rollNo,
-        parentEmail: commonValidations.emailOptional,
         isFixed: Joi.boolean()
             .default(false)
             .optional(),
@@ -42,7 +41,6 @@ const studentValidation = {
         classId: commonValidations.classIdOptional,
         sectionId: commonValidations.sectionIdOptional,
         rollNo: commonValidations.rollNo,
-        parentEmail: commonValidations.emailOptional,
         isFixed: Joi.boolean().optional(),
         discount: Joi.number()
             .min(0)
