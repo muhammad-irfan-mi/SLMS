@@ -324,6 +324,12 @@ const createSyllabus = async (req, res) => {
         if (userRole === 'school') {
             uploadedById = schoolId;
             uploadedByModel = 'School';
+        } else if (userRole === 'admin_office') {
+            uploadedById = userId;
+            uploadedByModel = 'Staff';
+        } else if (userRole === 'teacher') {
+            uploadedById = userId;
+            uploadedByModel = 'Staff';
         } else {
             uploadedById = userId;
             uploadedByModel = 'Staff';
@@ -430,7 +436,42 @@ const createSyllabus = async (req, res) => {
 
         const classSectionInfo = await getClassSectionInfo(classId, sectionId, schoolId);
 
-        const uploader = await resolveUploader(uploadedById, uploadedByModel);
+        // const uploader = await resolveUploader(uploadedById, uploadedByModel);
+        let uploader = null;
+
+        if (uploadedByModel === 'School') {
+            const school = await School.findById(uploadedById).select('name email');
+            if (school) {
+                uploader = {
+                    id: school._id,
+                    name: school.name,
+                    email: school.email,
+                    type: 'School'
+                };
+            }
+        } else if (uploadedByModel === 'Staff') {
+            const staff = await Staff.findById(uploadedById).select('name email role');
+            if (staff) {
+                uploader = {
+                    id: staff._id,
+                    name: staff.name,
+                    email: staff.email,
+                    role: staff.role,
+                    type: 'Staff'
+                };
+            }
+        } else {
+            const user = await User.findById(uploadedById).select('name email role');
+            if (user) {
+                uploader = {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    role: user.role,
+                    type: 'User'
+                };
+            }
+        }
 
         res.status(201).json({
             message: "Syllabus created successfully",
