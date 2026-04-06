@@ -140,7 +140,7 @@ const createDocumentRequest = async (req, res) => {
             dueDate
         } = req.body;
 
-        let requestedByModel = 'User';
+        let requestedByModel = 'Staff';
         let requestedById = user._id;
         let requesterSchoolId = getSchoolId(user);
 
@@ -208,7 +208,7 @@ const createDocumentRequest = async (req, res) => {
             documentType,
             dueDate: dueDate ? new Date(dueDate) : null,
             status: 'pending',
-            school: schoolId // Make sure school is saved with the document request
+            school: schoolId 
         });
 
        
@@ -218,7 +218,6 @@ const createDocumentRequest = async (req, res) => {
             targetType: 'student'
         });
 
-        console.log('Notification result:', notification ? 'Success' : 'Failed');
 
         const populatedRequest = await DocumentRequest.findById(documentRequest._id)
             .populate({
@@ -310,7 +309,8 @@ const getDocumentRequests = async (req, res) => {
             .populate({
                 path: 'studentId',
                 select: 'name email rollNo school classInfo sectionInfo images.recentPic',
-                match: { role: 'student' }
+                model: "Student",
+                // match: { role: 'student' }
             })
             .populate({
                 path: 'requesterInfo',
@@ -754,7 +754,7 @@ const uploadDocumentForRequest = async (req, res) => {
 
         if (documentRequest.requestedByModel === 'School') {
             uploadedFor = 'school';
-        } else if (documentRequest.requestedByModel === 'User') {
+        } else if (documentRequest.requestedByModel === 'Staff') {
             const requester = await Staff.findById(documentRequest.requestedBy);
             if (requester) {
 
@@ -775,7 +775,7 @@ const uploadDocumentForRequest = async (req, res) => {
             if (student && student.school) {
                 schoolId = student.school;
             } else {
-                if (documentRequest.requestedByModel === 'User') {
+                if (documentRequest.requestedByModel === 'Staff') {
                     const requester = await Staff.findById(documentRequest.requestedBy).select('school');
                     if (requester && requester.school) {
                         schoolId = requester.school;
@@ -1000,7 +1000,7 @@ const deleteDocument = async (req, res) => {
         const { requestedByModel, requestedBy } = documentRequest;
 
         const isSchoolRequest = requestedByModel === "School";
-        const isTeacherRequest = requestedByModel === "User";
+        const isTeacherRequest = requestedByModel === "Staff";
 
         let hasPermission = false;
 
@@ -1216,7 +1216,7 @@ const getDocuments = async (req, res) => {
             filter.$or = [
                 { uploadedFor: 'admin_office' },
                 { requestedBy: user._id },
-                { requestedByModel: 'User', uploadedFor: 'admin_office' }
+                { requestedByModel: 'Staff', uploadedFor: 'admin_office' }
             ];
 
             if (teacher === "true") {
@@ -1380,7 +1380,7 @@ const getDocumentsForRequest = async (req, res) => {
                 hasPermission = true;
             }
         }
-        else if (documentRequest.requestedByModel === 'User') {
+        else if (documentRequest.requestedByModel === 'Staff') {
             const requesterUser = await Staff.findById(documentRequest.requestedBy);
             if (requesterUser) {
                 if (requesterUser.role === 'teacher') {

@@ -4,7 +4,7 @@ const { Schema } = mongoose;
 const submissionSchema = new Schema({
   studentId: {
     type: Schema.Types.ObjectId,
-    ref: "User",
+    ref: "Student",
     required: true
   },
   submittedAt: {
@@ -79,7 +79,7 @@ const projectSchema = new Schema({
   },
   assignedBy: {
     type: Schema.Types.ObjectId,
-    ref: "User",
+    ref: "Staff",
     required: true
   },
   assignedAt: {
@@ -98,7 +98,7 @@ const projectSchema = new Schema({
   },
   studentIds: [{
     type: Schema.Types.ObjectId,
-    ref: "User"
+    ref: "Student"
   }],
   deadline: {
     type: Date,

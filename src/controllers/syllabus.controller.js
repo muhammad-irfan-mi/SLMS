@@ -210,11 +210,12 @@ const checkTeacherSubjectAccess = async (teacherId, subjectId, classId, sectionI
 
 // Helper: Get teacher's assigned subjects
 const getTeacherAssignedSubjects = async (teacherId, schoolId) => {
+    console.log("object", teacherId, schoolId)
     const schedules = await Schedule.find({
         school: schoolId,
-        "schedule.teacher": teacherId,
-        status: "active"
-    }).distinct("schedule.subject");
+        teacherId: teacherId,
+        isActive: true
+    }).distinct("subjectId");
 
     return schedules;
 };
@@ -652,7 +653,7 @@ const getSyllabusBySection = async (req, res) => {
                     page: 1,
                     limit,
                     totalPages: 0,
-                    syllabi: []
+                    syllabus: []
                 });
             }
         }

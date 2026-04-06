@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const Staff = require("./Staff");
 
 const DocumentRequestSchema = new mongoose.Schema(
   {
@@ -9,7 +10,7 @@ const DocumentRequestSchema = new mongoose.Schema(
     },
     requestedByModel: {
       type: String,
-      enum: ["User", "School"],
+      enum: ["User", "School","Staff"],
       required: true
     },
     studentId: {
@@ -90,7 +91,7 @@ const StudentDocumentSchema = new mongoose.Schema(
   {
     studentId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "Student",
       required: true,
     },
     classId: {
@@ -128,7 +129,7 @@ const StudentDocumentSchema = new mongoose.Schema(
     },
     requestedByModel: {
       type: String,
-      enum: ["User", "School"],
+      enum: ["User", "School", "Staff"],
       default: null
     },
     requestType: {
