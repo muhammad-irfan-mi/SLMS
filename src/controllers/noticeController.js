@@ -371,6 +371,133 @@ const getNotices = async (req, res) => {
 };
 
 // Get notices for admins
+// const getAdminNotices = async (req, res) => {
+//   try {
+//     const user = req.user;
+//     const schoolId = user.school || user.schoolId || (user.schoolInfo && user.schoolInfo.id);
+
+//     if (!schoolId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "School ID not found"
+//       });
+//     }
+
+
+//     const {
+//       category,
+//       activeOnly,
+//       startDate,
+//       endDate,
+//       search,
+//       page = 1,
+//       limit = 10,
+//       sortBy = 'createdAt',
+//       sortOrder = 'desc'
+//     } = req.query;
+
+//     const now = new Date();
+//     const filter = {
+//       school: new mongoose.Types.ObjectId(schoolId),
+//       target: "admin"
+//     };
+
+
+//     if (search) {
+//       filter.$or = [
+//         { title: { $regex: search, $options: 'i' } },
+//         { message: { $regex: search, $options: 'i' } }
+//       ];
+//     }
+
+//     if (category) {
+//       filter.category = category;
+//     }
+
+//     if (startDate || endDate) {
+//       filter.createdAt = {};
+//       if (startDate) {
+//         filter.createdAt.$gte = new Date(startDate);
+//       }
+//       if (endDate) {
+//         const endDateObj = new Date(endDate);
+//         endDateObj.setHours(23, 59, 59, 999);
+//         filter.createdAt.$lte = endDateObj;
+//       }
+//     }
+
+//     if (user.role === 'admin_office' || user.role === 'superadmin' || user.role === 'school') {
+//       filter.$or = [
+//         { target: "admin" },
+//       ];
+//     }
+
+//     const skip = (Number(page) - 1) * Number(limit);
+//     const sortDirection = sortOrder === "asc" ? 1 : -1;
+
+
+//     const [total, notices] = await Promise.all([
+//       Notice.countDocuments(filter),
+//       Notice.find(filter)
+//         .populate("createdBy", "name email role images.recentPic")
+//         .populate("classId", "class")
+//         .populate("targetTeacherIds", "name email role")
+//         .populate("targetStudentIds", "name email rollNo")
+//         .populate("targetAdminIds", "name email role")
+//         .populate({
+//           path: 'readBy.user',
+//           select: 'name email role',
+//         })
+//         .sort({
+//           pinned: -1,
+//           createdAt: sortDirection
+//         })
+//         .skip(skip)
+//         .limit(Number(limit))
+//         .lean()
+//     ]);
+
+//     const formattedNotices = notices.map(notice => {
+//       const hasRead = notice.readBy?.some(read =>
+//         String(read.user?._id) === String(user._id)
+//       );
+
+//       return {
+//         _id: notice._id,
+//         school: notice.school,
+//         title: notice.title,
+//         message: notice.message,
+//         createdBy: notice.createdBy,
+//         target: notice.target,
+//         attachments: notice.attachments || [],
+//         hasRead: hasRead || false,
+//         readCount: notice.readBy?.length || 0,
+//         createdAt: notice.createdAt,
+//         updatedAt: notice.updatedAt
+//       };
+//     });
+
+//     const totalPages = Math.ceil(total / Number(limit));
+
+//     return res.status(200).json({
+//       success: true,
+//       total,
+//       page: Number(page),
+//       limit: Number(limit),
+//       totalPages,
+//       notices: formattedNotices
+//     });
+
+//   } catch (err) {
+//     console.error("Error in getAdminNotices:", err);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//       error: process.env.NODE_ENV === 'development' ? err.message : undefined
+//     });
+//   }
+// };
+
 const getAdminNotices = async (req, res) => {
   try {
     const user = req.user;
@@ -383,25 +510,20 @@ const getAdminNotices = async (req, res) => {
       });
     }
 
-
     const {
       category,
-      activeOnly,
       startDate,
       endDate,
       search,
       page = 1,
       limit = 10,
-      sortBy = 'createdAt',
       sortOrder = 'desc'
     } = req.query;
 
-    const now = new Date();
     const filter = {
       school: new mongoose.Types.ObjectId(schoolId),
       target: "admin"
     };
-
 
     if (search) {
       filter.$or = [
@@ -426,54 +548,164 @@ const getAdminNotices = async (req, res) => {
       }
     }
 
-    if (user.role === 'admin_office' || user.role === 'superadmin' || user.role === 'school') {
-      filter.$or = [
-        { target: "admin" },
-      ];
-    }
-
     const skip = (Number(page) - 1) * Number(limit);
     const sortDirection = sortOrder === "asc" ? 1 : -1;
 
+    // First get notices without populate to avoid model issues
+    const notices = await Notice.find(filter)
+      .sort({ pinned: -1, createdAt: sortDirection })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
 
-    const [total, notices] = await Promise.all([
-      Notice.countDocuments(filter),
-      Notice.find(filter)
-        .populate("createdBy", "name email role images.recentPic")
-        .populate("classId", "class")
-        .populate("targetTeacherIds", "name email role")
-        .populate("targetStudentIds", "name email rollNo")
-        .populate("targetAdminIds", "name email role")
-        .populate({
-          path: 'readBy.user',
-          select: 'name email role',
-        })
-        .sort({
-          pinned: -1,
-          createdAt: sortDirection
-        })
-        .skip(skip)
-        .limit(Number(limit))
-        .lean()
+    const total = await Notice.countDocuments(filter);
+
+    // Collect all createdBy IDs and determine their types
+    const createdByStaffIds = [];
+    const createdByStudentIds = [];
+
+    // Also collect other referenced IDs
+    const teacherIds = [];
+    const studentIds = [];
+    const adminIds = [];
+    const classIds = [];
+
+    for (const notice of notices) {
+      // Handle createdBy - check if it's a staff or student based on requestedByModel or other fields
+      if (notice.createdBy) {
+        if (notice.requestedByModel === 'Staff') {
+          createdByStaffIds.push(notice.createdBy);
+        } else if (notice.requestedByModel === 'Student') {
+          createdByStudentIds.push(notice.createdBy);
+        } else {
+          // If requestedByModel not set, try both or check based on context
+          createdByStaffIds.push(notice.createdBy);
+          createdByStudentIds.push(notice.createdBy);
+        }
+      }
+
+      // Collect other IDs
+      if (notice.targetTeacherIds) teacherIds.push(...notice.targetTeacherIds);
+      if (notice.targetStudentIds) studentIds.push(...notice.targetStudentIds);
+      if (notice.targetAdminIds) adminIds.push(...notice.targetAdminIds);
+      if (notice.classId) classIds.push(notice.classId);
+    }
+
+    // Fetch all referenced data in parallel
+    const [
+      createdByStaff,
+      createdByStudents,
+      teachers,
+      students,
+      admins,
+      classes
+    ] = await Promise.all([
+      createdByStaffIds.length > 0 ? Staff.find({ _id: { $in: [...new Set(createdByStaffIds.map(id => id.toString()))] } }).select('name email role images.recentPic').lean() : [],
+      createdByStudentIds.length > 0 ? Student.find({ _id: { $in: [...new Set(createdByStudentIds.map(id => id.toString()))] } }).select('name email role images.recentPic').lean() : [],
+      teacherIds.length > 0 ? Staff.find({ _id: { $in: [...new Set(teacherIds.map(id => id.toString()))] } }).select('name email role').lean() : [],
+      studentIds.length > 0 ? Student.find({ _id: { $in: [...new Set(studentIds.map(id => id.toString()))] } }).select('name email rollNo').lean() : [],
+      adminIds.length > 0 ? Staff.find({ _id: { $in: [...new Set(adminIds.map(id => id.toString()))] } }).select('name email role').lean() : [],
+      classIds.length > 0 ? ClassSection.find({ _id: { $in: [...new Set(classIds.map(id => id.toString()))] } }).select('class').lean() : []
     ]);
 
+    // Create maps for quick lookup
+    const createdByStaffMap = new Map(createdByStaff.map(c => [c._id.toString(), { ...c, model: 'Staff' }]));
+    const createdByStudentMap = new Map(createdByStudents.map(c => [c._id.toString(), { ...c, model: 'Student' }]));
+    const teacherMap = new Map(teachers.map(t => [t._id.toString(), t]));
+    const studentMap = new Map(students.map(s => [s._id.toString(), s]));
+    const adminMap = new Map(admins.map(a => [a._id.toString(), a]));
+    const classMap = new Map(classes.map(c => [c._id.toString(), c]));
+
+    // Helper to get createdBy info
+    const getCreatedByInfo = (notice) => {
+      if (!notice.createdBy) return null;
+
+      const createdById = notice.createdBy.toString();
+
+      // First check based on requestedByModel
+      if (notice.requestedByModel === 'Staff') {
+        const staff = createdByStaffMap.get(createdById);
+        if (staff) {
+          return {
+            _id: staff._id,
+            name: staff.name,
+            email: staff.email,
+            role: staff.role,
+            recentPic: staff.images?.recentPic || null,
+            model: 'Staff'
+          };
+        }
+      } else if (notice.requestedByModel === 'Student') {
+        const student = createdByStudentMap.get(createdById);
+        if (student) {
+          return {
+            _id: student._id,
+            name: student.name,
+            email: student.email,
+            role: student.role,
+            recentPic: student.images?.recentPic || null,
+            model: 'Student'
+          };
+        }
+      }
+
+      // If requestedByModel not set or not found, try both
+      const staff = createdByStaffMap.get(createdById);
+      if (staff) {
+        return {
+          _id: staff._id,
+          name: staff.name,
+          email: staff.email,
+          role: staff.role,
+          recentPic: staff.images?.recentPic || null,
+          model: 'Staff'
+        };
+      }
+
+      const student = createdByStudentMap.get(createdById);
+      if (student) {
+        return {
+          _id: student._id,
+          name: student.name,
+          email: student.email,
+          role: student.role,
+          recentPic: student.images?.recentPic || null,
+          model: 'Student'
+        };
+      }
+
+      return null;
+    };
+
+    // Check if user has read the notice
+    const userHasRead = (notice) => {
+      if (!notice.readBy || notice.readBy.length === 0) return false;
+      return notice.readBy.some(read => String(read.user) === String(user._id));
+    };
+
     const formattedNotices = notices.map(notice => {
-      const hasRead = notice.readBy?.some(read =>
-        String(read.user?._id) === String(user._id)
-      );
+      const createdByInfo = getCreatedByInfo(notice);
+      const classInfo = classMap.get(notice.classId?.toString());
 
       return {
         _id: notice._id,
         school: notice.school,
         title: notice.title,
         message: notice.message,
-        createdBy: notice.createdBy,
+        createdBy: createdByInfo,
+        requestedByModel: notice.requestedByModel,
         target: notice.target,
         attachments: notice.attachments || [],
-        hasRead: hasRead || false,
+        hasRead: userHasRead(notice),
         readCount: notice.readBy?.length || 0,
         createdAt: notice.createdAt,
-        updatedAt: notice.updatedAt
+        updatedAt: notice.updatedAt,
+        pinned: notice.pinned,
+        category: notice.category,
+        startDate: notice.startDate,
+        endDate: notice.endDate,
+        classId: notice.classId,
+        sectionId: notice.sectionId
       };
     });
 
@@ -497,6 +729,7 @@ const getAdminNotices = async (req, res) => {
     });
   }
 };
+
 
 const getNoticesForStudent = async (req, res) => {
   try {
@@ -596,7 +829,7 @@ const getNoticesForStudent = async (req, res) => {
     const skip = (Number(page) - 1) * Number(limit);
 
     const query = Notice.find(filter)
-      .select('-targetTeacherIds -targetStudentIds') 
+      .select('-targetTeacherIds -targetStudentIds')
       .sort({ pinned: -1, createdAt: -1 })
       .skip(skip)
       .limit(Number(limit));
@@ -639,7 +872,7 @@ const getNoticesForStudent = async (req, res) => {
 
         if (notice.createdBy) {
           try {
-            let creatorDoc = await User.findById(notice.createdBy)
+            let creatorDoc = await Staff.findById(notice.createdBy)
               .select('name email role schoolId username images.recentPic')
               .lean();
 
@@ -694,7 +927,7 @@ const getNoticesForStudent = async (req, res) => {
             image: null
           };
         }
-        
+
         if (notice.target === "selected_students" || notice.target === "custom") {
           noticeObj.isTargetedToMe = true;
         } else {
