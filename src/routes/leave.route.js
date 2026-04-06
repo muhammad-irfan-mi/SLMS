@@ -125,7 +125,7 @@ router.put("/teacher/cancel/:id",
 );
 
 // Admin actions for teacher leaves
-router.put("/admin/approve/:id",
+router.post("/admin/approve/:id",
     protect,
     isAdminOffice,
     validate(cancelLeaveSchema, "params"),

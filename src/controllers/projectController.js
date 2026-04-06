@@ -526,6 +526,7 @@ const getProjects = async (req, res) => {
             _id: { $in: project.studentIds }
           }).select('name email rollNo').lean();
         }
+        console.log("project",project)
 
         return {
           _id: project._id,
