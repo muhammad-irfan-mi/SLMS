@@ -6,7 +6,6 @@ const noticeSchema = new Schema({
   requestedByModel: {
     type: String,
     enum: ['Student', 'School', 'Staff'],
-    default: 'Staff'
   },
   title: { type: String, required: true },
   message: { type: String, required: true },

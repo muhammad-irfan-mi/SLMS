@@ -108,16 +108,8 @@ const createNotification = async (params) => {
         let finalTargetTeachers = [];
         let finalTargetStudents = [];
 
-        console.log('Initial arrays:', {
-            targetAdmins: targetAdmins.length,
-            targetTeachers: targetTeachers.length,
-            targetStudents: targetStudents.length,
-            targetUsers: targetUsers.length
-        });
-
         // If explicit target is set, use the corresponding array
         if (explicitTarget) {
-            console.log('Using explicit target:', explicitTarget);
 
             switch (explicitTarget) {
                 case NOTIFICATION_TARGETS.ADMIN:
