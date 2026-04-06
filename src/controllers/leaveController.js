@@ -246,7 +246,8 @@ const applyLeave = async (req, res) => {
         await sendStudentLeaveNotification({
             leave: createdLeave,
             actor: req.user,
-            action: 'create'
+            action: 'create',
+            requestedByModel: "Student",
         });
 
         return res.status(201).json({
@@ -1212,7 +1213,8 @@ const applyTeacherLeave = async (req, res) => {
         await sendTeacherLeaveNotification({
             leave: createdLeave,
             actor: req.user,
-            action: 'create'
+            action: 'create',
+            requestedByModel: 'Staff'
         });
 
         res.status(201).json({

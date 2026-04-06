@@ -784,7 +784,7 @@ const sendDocumentUploadNotification = async ({ studentDocument, actor }) => {
     }
 };
 
-const sendStudentLeaveNotification = async ({ leave, actor, action = 'create' }) => {
+const sendStudentLeaveNotification = async ({ leave, actor, action = 'create', requestedByModel }) => {
     try {
         if (leave.userType === 'teacher') {
             return sendTeacherLeaveNotification({ leave, actor, action });
@@ -798,6 +798,7 @@ const sendStudentLeaveNotification = async ({ leave, actor, action = 'create' })
         if (action === 'create' || action === 'update' || action === 'cancel') {
             return createNotification({
                 type: NOTIFICATION_TYPES.LEAVE,
+                requestedByModel,
                 actor,
                 school: leave.school,
                 targetAdmins: adminUsers.map(u => u._id),
@@ -844,7 +845,7 @@ const sendStudentLeaveNotification = async ({ leave, actor, action = 'create' })
 
 
 //  Send notification for teacher leave application
-const sendTeacherLeaveNotification = async ({ leave, actor, action = 'create' }) => {
+const sendTeacherLeaveNotification = async ({ leave, actor, action = 'create', requestedByModel }) => {
     try {
         const adminUsers = await User.find({
             school: leave.school,
@@ -854,6 +855,7 @@ const sendTeacherLeaveNotification = async ({ leave, actor, action = 'create' })
         if (action === 'create' || action === 'update' || action === 'cancel') {
             return createNotification({
                 type: NOTIFICATION_TYPES.LEAVE,
+                requestedByModel,
                 actor,
                 school: leave.school,
                 targetAdmins: adminUsers.map(u => u._id),
