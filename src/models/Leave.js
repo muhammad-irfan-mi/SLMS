@@ -4,12 +4,12 @@ const leaveSchema = new mongoose.Schema(
   {
     school: { type: mongoose.Schema.Types.ObjectId, ref: "School", required: true },
 
-    studentId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    studentId: { type: mongoose.Schema.Types.ObjectId, ref: "Student" },
     studentName: String,
     classId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection" },
     sectionId: { type: mongoose.Schema.Types.ObjectId },
 
-    teacherId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    teacherId: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
     teacherName: String,
 
     userType: { type: String, enum: ["student", "teacher"], default: "student" },
@@ -26,7 +26,7 @@ const leaveSchema = new mongoose.Schema(
       enum: ["pending", "approved", "rejected", "cancelled"],
       default: "pending",
     },
-    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
     reviewedAt: Date,
     remark: String,
   },
