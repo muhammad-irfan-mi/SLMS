@@ -153,11 +153,29 @@ const deleteSalarySlip = async (req, res) => {
 };
 
 // TEACHER: Get all my slips
+// const getTeacherSlips = async (req, res) => {
+//     try {
+//         const teacherId = req.user._id;
+
+//         const slips = await SalarySlip.find({ teacherId })
+//             .sort({ createdAt: -1 })
+//             .lean();
+
+//         return res.status(200).json({
+//             total: slips.length,
+//             slips,
+//         });
+//     } catch (err) {
+//         return res.status(500).json({ message: err.message });
+//     }
+// };
+
 const getTeacherSlips = async (req, res) => {
     try {
         const teacherId = req.user._id;
 
         const slips = await SalarySlip.find({ teacherId })
+            .populate('teacherId', 'name email salary joiningDate') // Add population to get teacher details
             .sort({ createdAt: -1 })
             .lean();
 
@@ -166,9 +184,80 @@ const getTeacherSlips = async (req, res) => {
             slips,
         });
     } catch (err) {
+        console.error("Error in getTeacherSlips:", err);
         return res.status(500).json({ message: err.message });
     }
 };
+
+// const getTeachersSalaryStatus = async (req, res) => {
+//     try {
+//         const schoolId = req.user.school;
+
+//         const now = new Date();
+//         const currentMonth = now.getMonth();
+//         const currentYear = now.getFullYear();
+
+//         const slipsToDelete = await SalarySlip.find({
+//             school: schoolId,
+//             createdAt: {
+//                 $lt: new Date(currentYear, currentMonth, 1)
+//             }
+//         });
+
+//         if (slipsToDelete.length > 0) {
+//             for (let slip of slipsToDelete) {
+//                 if (slip.image) await deleteFileFromS3(slip.image);
+//                 await SalarySlip.deleteOne({ _id: slip._id });
+//             }
+//             console.log(`Deleted ${slipsToDelete.length} slips from previous months`);
+//         }
+
+//         const monthSlips = await SalarySlip.find({
+//             school: schoolId,
+//             createdAt: {
+//                 $gte: new Date(currentYear, currentMonth, 1),
+//                 $lt: new Date(currentYear, currentMonth + 1, 1)
+//             }
+//         });
+
+//         const slipMap = {};
+//         monthSlips.forEach((s) => {
+//             slipMap[s.teacherId.toString()] = s;
+//         });
+
+//         const testteachers = await Staff.find({
+//             school: schoolId,
+//             role: "teacher",
+//         })
+//         console.log("Teachers in school:", testteachers);
+//         const teachers = await Staff.find({
+//             school: schoolId,
+//             role: "teacher",
+//         }).select("_id name email salary joiningDate").lean();
+
+
+//         const result = teachers.map((t) => {
+//             const slip = slipMap[t._id.toString()];
+//             console.log(`Teacher: ${t.joiningDate}, Slip Status: ${slip ? slip.status : "pending"}`);
+//             return {
+//                 teacherId: t._id,
+//                 name: t.name,
+//                 email: t.email,
+//                 salary: t.salary,
+//                 joinindDate: t.joiningDate,
+//                 status: slip ? slip.status : "pending",
+//                 slip,
+//             };
+//         });
+
+//         return res.status(200).json({
+//             total: result.length,
+//             teachers: result,
+//         });
+//     } catch (err) {
+//         return res.status(500).json({ message: err.message });
+//     }
+// };
 
 const getTeachersSalaryStatus = async (req, res) => {
     try {
@@ -209,6 +298,7 @@ const getTeachersSalaryStatus = async (req, res) => {
         const teachers = await Staff.find({
             school: schoolId,
             role: "teacher",
+            isActive: true
         }).select("_id name email salary joiningDate").lean();
 
         const result = teachers.map((t) => {
@@ -218,9 +308,9 @@ const getTeachersSalaryStatus = async (req, res) => {
                 name: t.name,
                 email: t.email,
                 salary: t.salary,
-                joinindDate: t.joiningDate,
+                joiningDate: t.joiningDate,  // Fixed: changed from 'joinindDate' to 'joiningDate'
                 status: slip ? slip.status : "pending",
-                slip,
+                slip: slip || null
             };
         });
 
@@ -229,6 +319,7 @@ const getTeachersSalaryStatus = async (req, res) => {
             teachers: result,
         });
     } catch (err) {
+        console.error("Error in getTeachersSalaryStatus:", err);
         return res.status(500).json({ message: err.message });
     }
 };
