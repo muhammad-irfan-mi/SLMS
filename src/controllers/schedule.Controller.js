@@ -245,7 +245,7 @@ const getSchedule = async (req, res) => {
         select: "name code",
         match: { isActive: true }
       })
-      .populate("teacherId", "name email")
+      .populate({ path: "teacherId", select: "name email", model: "Staff" })
       .populate("classId", "class sections")
       .skip((page - 1) * limit)
       .limit(limit)
@@ -305,7 +305,7 @@ const getScheduleBySection = async (req, res) => {
         select: "name code",
         match: { isActive: true }
       })
-      .populate("teacherId", "name email")
+      .populate({ path: "teacherId", select: "name email", model: "Staff" })
       .populate("classId", "class sections")
       .skip((page - 1) * limit)
       .limit(limit)
@@ -363,7 +363,7 @@ const getScheduleByTeacher = async (req, res) => {
         select: "name code",
         match: { isActive: true }
       })
-      .populate("teacherId", "name email")
+      .populate({ path: "teacherId", select: "name email", model: "Staff" })
       .populate("classId", "class sections")
       .skip((page - 1) * limit)
       .limit(limit)
@@ -439,7 +439,7 @@ const getScheduleByStudent = async (req, res) => {
         select: "name code",
         match: { isActive: true }
       })
-      .populate("teacherId", "name email")
+      .populate({ path: "teacherId", select: "name email", model: "Staff" })
       .populate("classId", "class sections")
       .skip((page - 1) * limit)
       .limit(limit)
