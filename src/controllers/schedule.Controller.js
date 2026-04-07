@@ -239,7 +239,6 @@ const getSchedule = async (req, res) => {
     const total = await Schedule.countDocuments(filter);
 
     const schedules = await Schedule.find(filter)
-      // .populate("subjectId", "name code")
       .populate({
         path: "subjectId",
         select: "name code",
