@@ -299,10 +299,10 @@ const createSyllabus = async (req, res) => {
             return res.status(400).json({ message: classSectionCheck.message });
         }
 
-        const subjectCheck = await validateSubjectAssignment(subjectId, classId, schoolId);
-        if (!subjectCheck.valid) {
-            return res.status(400).json({ message: subjectCheck.message });
-        }
+        // const subjectCheck = await validateSubjectAssignment(subjectId, classId, schoolId);
+        // if (!subjectCheck.valid) {
+        //     return res.status(400).json({ message: subjectCheck.message });
+        // }
 
         if (userRole === 'teacher') {
             const teacherAccess = await checkTeacherSubjectAccess(
@@ -766,28 +766,28 @@ const updateSyllabus = async (req, res) => {
             }
         }
 
-        if (updateData.subjectId) {
-            const subjectCheck = await validateSubjectAssignment(subjectId, classId, schoolId);
-            if (!subjectCheck.valid) {
-                return res.status(400).json({ message: subjectCheck.message });
-            }
+        // if (updateData.subjectId) {
+        //     const subjectCheck = await validateSubjectAssignment(subjectId, classId, schoolId);
+        //     if (!subjectCheck.valid) {
+        //         return res.status(400).json({ message: subjectCheck.message });
+        //     }
 
-            // if (userRole === 'teacher') {
-            //     const teacherAccess = await checkTeacherSubjectAccess(
-            //         userId,
-            //         subjectId,
-            //         classId,
-            //         sectionId,
-            //         schoolId
-            //     );
+        //     // if (userRole === 'teacher') {
+        //     //     const teacherAccess = await checkTeacherSubjectAccess(
+        //     //         userId,
+        //     //         subjectId,
+        //     //         classId,
+        //     //         sectionId,
+        //     //         schoolId
+        //     //     );
 
-            //     if (!teacherAccess.hasAccess) {
-            //         return res.status(403).json({
-            //             message: "You are not assigned to teach the new subject"
-            //         });
-            //     }
-            // }
-        }
+        //     //     if (!teacherAccess.hasAccess) {
+        //     //         return res.status(403).json({
+        //     //             message: "You are not assigned to teach the new subject"
+        //     //         });
+        //     //     }
+        //     // }
+        // }
 
         let formattedExpireDate = updateData.expireDate;
 
