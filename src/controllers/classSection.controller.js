@@ -139,6 +139,165 @@ const addMultipleClassesWithSections = async (req, res) => {
     }
 };
 
+// const updateAllClassesAndSections = async (req, res) => {
+//     try {
+//         const { schoolId, classes } = req.body;
+
+//         if (req.user.school.toString() !== schoolId) {
+//             return res.status(403).json({
+//                 message: "Unauthorized access to this school"
+//             });
+//         }
+
+//         const school = await School.findById(schoolId);
+//         if (!school) return res.status(404).json({ message: "School not found" });
+
+//         const existingClasses = await ClassSection.find({ school: schoolId });
+//         const results = [];
+
+//         const incomingClassNames = classes.map(c => c.className.toLowerCase());
+//         const existingClassMap = new Map();
+//         existingClasses.forEach(cls => {
+//             existingClassMap.set(cls.class.toLowerCase(), cls);
+//         });
+
+//         for (const oldClass of existingClasses) {
+//             if (!incomingClassNames.includes(oldClass.class.toLowerCase())) {
+//                 results.push({
+//                     className: oldClass.class,
+//                     fee: oldClass.fee,
+//                     order: oldClass.order,
+//                     status: "Not Modified",
+//                     reason: "Class not in update request",
+//                     action: "Kept in system"
+//                 });
+//             }
+//         }
+//         const newClassesToCreate = [];
+//         const updateClasses = [];
+
+//         for (const c of classes) {
+//             const existingClass = existingClassMap.get(c.className.toLowerCase());
+
+//             if (!existingClass) {
+//                 const orderConflict = existingClasses.find(cls => cls.order === c.order);
+//                 if (orderConflict) {
+//                     results.push({
+//                         className: c.className,
+//                         fee: c.fee,
+//                         order: c.order,
+//                         status: "Cannot Create",
+//                         reason: `Order ${c.order} is already used by class: ${orderConflict.class}`,
+//                         existingClass: orderConflict.class,
+//                         existingOrder: orderConflict.order
+//                     });
+//                     continue;
+//                 }
+
+//                 // Also check for order conflicts with other new classes being created in this request
+//                 const orderConflictWithNew = newClassesToCreate.find(
+//                     newClass => newClass.order === c.order
+//                 );
+//                 if (orderConflictWithNew) {
+//                     results.push({
+//                         className: c.className,
+//                         fee: c.fee,
+//                         order: c.order,
+//                         status: "Cannot Create",
+//                         reason: `Duplicate order ${c.order} found in request with class: ${orderConflictWithNew.className}`
+//                     });
+//                     continue;
+//                 }
+
+//                 newClassesToCreate.push(c);
+//             } else {
+//                 updateClasses.push({ ...c, existingClass });
+//             }
+//         }
+
+//       for (const c of newClassesToCreate) {
+//             try {
+//                 const sections = c.sections ? [...new Set(c.sections.map(s => s.trim()))] : [];
+
+//                 const newClass = await ClassSection.create({
+//                     school: schoolId,
+//                     class: c.className,
+//                     fee: c.fee !== undefined ? c.fee : null,
+//                     order: c.order,
+//                     sections: sections.map(name => ({ name })),
+//                 });
+
+//                 results.push({
+//                     className: c.className,
+//                     status: "Created",
+//                     id: newClass._id,
+//                     fee: newClass.fee,
+//                     order: newClass.order,
+//                     sections: newClass.sections.map(s => s.name)
+//                 });
+//             } catch (err) {
+//                 if (err.code === 11000) {
+//                     results.push({
+//                         className: c.className,
+//                         status: "Failed",
+//                         reason: "Duplicate class name or order detected",
+//                         error: err.message
+//                     });
+//                 } else {
+//                     throw err;
+//                 }
+//             }
+//         }
+
+//         for (const c of updateClasses) {
+//             const existingClass = c.existingClass;
+//             const fee = c.fee !== undefined ? c.fee : null;
+//             const sections = c.sections ? [...new Set(c.sections.map(s => s.trim()))] : [];
+
+//             const existingSectionNames = existingClass.sections.map(s => s.name);
+//             const newSectionsFromPayload = sections;
+
+//             const allSections = [...new Set([...existingSectionNames, ...newSectionsFromPayload])];
+//             const sectionsAdded = newSectionsFromPayload.filter(s => !existingSectionNames.includes(s));
+
+//             const updateData = {
+//                 sections: allSections.map(name => ({ name })),
+//                 updatedAt: new Date()
+//             };
+
+//             if (fee !== undefined && fee !== null) {
+//                 updateData.fee = fee;
+//             }
+
+//             await ClassSection.findByIdAndUpdate(existingClass._id, updateData);
+
+//             results.push({
+//                 className: c.className,
+//                 status: "Updated",
+//                 fee: fee !== undefined && fee !== null ? fee : existingClass.fee,
+//                 previousFee: existingClass.fee,
+//                 existingSectionCount: existingSectionNames.length,
+//                 newSectionsAdded: sectionsAdded,
+//                 totalSections: allSections.length,
+//                 allSections: allSections,
+//                 order: existingClass.order 
+//             });
+//         }
+
+//         res.status(200).json({
+//             message: "Classes and sections updated successfully",
+//             summary: results,
+//         });
+
+//     } catch (err) {
+//         console.error("Error updating classes and sections:", err);
+//         res.status(500).json({
+//             message: "Server error",
+//             error: err.message
+//         });
+//     }
+// };
+
 const updateAllClassesAndSections = async (req, res) => {
     try {
         const { schoolId, classes } = req.body;
@@ -150,61 +309,42 @@ const updateAllClassesAndSections = async (req, res) => {
         }
 
         const school = await School.findById(schoolId);
-        if (!school) return res.status(404).json({ message: "School not found" });
+        if (!school) {
+            return res.status(404).json({ message: "School not found" });
+        }
 
         const existingClasses = await ClassSection.find({ school: schoolId });
         const results = [];
 
-        const incomingClassNames = classes.map(c => c.className.toLowerCase());
         const existingClassMap = new Map();
         existingClasses.forEach(cls => {
             existingClassMap.set(cls.class.toLowerCase(), cls);
         });
 
-        for (const oldClass of existingClasses) {
-            if (!incomingClassNames.includes(oldClass.class.toLowerCase())) {
-                results.push({
-                    className: oldClass.class,
-                    fee: oldClass.fee,
-                    order: oldClass.order,
-                    status: "Not Modified",
-                    reason: "Class not in update request",
-                    action: "Kept in system"
-                });
-            }
-        }
         const newClassesToCreate = [];
         const updateClasses = [];
 
         for (const c of classes) {
-            const existingClass = existingClassMap.get(c.className.toLowerCase());
+            const className = c.className.trim().toLowerCase();
+            const existingClass = existingClassMap.get(className);
 
             if (!existingClass) {
                 const orderConflict = existingClasses.find(cls => cls.order === c.order);
                 if (orderConflict) {
                     results.push({
                         className: c.className,
-                        fee: c.fee,
-                        order: c.order,
                         status: "Cannot Create",
-                        reason: `Order ${c.order} is already used by class: ${orderConflict.class}`,
-                        existingClass: orderConflict.class,
-                        existingOrder: orderConflict.order
+                        reason: `Order ${c.order} already used by ${orderConflict.class}`
                     });
                     continue;
                 }
 
-                // Also check for order conflicts with other new classes being created in this request
-                const orderConflictWithNew = newClassesToCreate.find(
-                    newClass => newClass.order === c.order
-                );
-                if (orderConflictWithNew) {
+                const duplicateOrder = newClassesToCreate.find(nc => nc.order === c.order);
+                if (duplicateOrder) {
                     results.push({
                         className: c.className,
-                        fee: c.fee,
-                        order: c.order,
                         status: "Cannot Create",
-                        reason: `Duplicate order ${c.order} found in request with class: ${orderConflictWithNew.className}`
+                        reason: `Duplicate order ${c.order} in request`
                     });
                     continue;
                 }
@@ -214,84 +354,118 @@ const updateAllClassesAndSections = async (req, res) => {
                 updateClasses.push({ ...c, existingClass });
             }
         }
-        
-      for (const c of newClassesToCreate) {
+
+        for (const c of newClassesToCreate) {
             try {
-                const sections = c.sections ? [...new Set(c.sections.map(s => s.trim()))] : [];
-                
+                const uniqueSections = c.sections
+                    ? [...new Set(c.sections.map(s => s.trim()))]
+                    : [];
+
                 const newClass = await ClassSection.create({
                     school: schoolId,
                     class: c.className,
-                    fee: c.fee !== undefined ? c.fee : null,
+                    fee: c.fee ?? null,
                     order: c.order,
-                    sections: sections.map(name => ({ name })),
+                    sections: uniqueSections.map(name => ({ name }))
                 });
 
                 results.push({
-                    className: c.className,
+                    className: newClass.class,
                     status: "Created",
                     id: newClass._id,
-                    fee: newClass.fee,
-                    order: newClass.order,
-                    sections: newClass.sections.map(s => s.name)
+                    sections: newClass.sections.map(s => ({
+                        id: s._id,
+                        name: s.name
+                    }))
                 });
+
             } catch (err) {
-                if (err.code === 11000) {
-                    results.push({
-                        className: c.className,
-                        status: "Failed",
-                        reason: "Duplicate class name or order detected",
-                        error: err.message
-                    });
-                } else {
-                    throw err;
-                }
+                results.push({
+                    className: c.className,
+                    status: "Failed",
+                    error: err.message
+                });
             }
         }
 
         for (const c of updateClasses) {
             const existingClass = c.existingClass;
-            const fee = c.fee !== undefined ? c.fee : null;
-            const sections = c.sections ? [...new Set(c.sections.map(s => s.trim()))] : [];
-            
-            const existingSectionNames = existingClass.sections.map(s => s.name);
-            const newSectionsFromPayload = sections;
-            
-            const allSections = [...new Set([...existingSectionNames, ...newSectionsFromPayload])];
-            const sectionsAdded = newSectionsFromPayload.filter(s => !existingSectionNames.includes(s));
-            
+
             const updateData = {
-                sections: allSections.map(name => ({ name })),
                 updatedAt: new Date()
             };
-            
-            if (fee !== undefined && fee !== null) {
-                updateData.fee = fee;
+
+            if (c.fee !== undefined) {
+                updateData.fee = c.fee;
             }
-            
-            await ClassSection.findByIdAndUpdate(existingClass._id, updateData);
-            
+
+            if (c.order !== undefined && c.order !== existingClass.order) {
+                const orderConflict = existingClasses.find(
+                    cls =>
+                        cls.order === c.order &&
+                        cls._id.toString() !== existingClass._id.toString()
+                );
+
+                if (orderConflict) {
+                    results.push({
+                        className: c.className,
+                        status: "Order Not Updated",
+                        reason: `Order ${c.order} already used by ${orderConflict.class}`
+                    });
+                } else {
+                    updateData.order = c.order;
+                }
+            }
+
+            let sectionsAdded = [];
+
+            if (c.sections && Array.isArray(c.sections)) {
+                const existingSections = existingClass.sections;
+                const existingNames = existingSections.map(s => s.name);
+
+                const incomingSections = [
+                    ...new Set(c.sections.map(s => s.trim()))
+                ];
+
+                const newSections = incomingSections.filter(
+                    name => !existingNames.includes(name)
+                );
+
+                sectionsAdded = newSections;
+
+                if (newSections.length > 0) {
+                    updateData.sections = [
+                        ...existingSections,
+                        ...newSections.map(name => ({ name }))
+                    ];
+                }
+            }
+
+            const updatedClass = await ClassSection.findByIdAndUpdate(
+                existingClass._id,
+                updateData,
+                { new: true }
+            );
+
             results.push({
-                className: c.className,
+                className: updatedClass.class,
                 status: "Updated",
-                fee: fee !== undefined && fee !== null ? fee : existingClass.fee,
-                previousFee: existingClass.fee,
-                existingSectionCount: existingSectionNames.length,
-                newSectionsAdded: sectionsAdded,
-                totalSections: allSections.length,
-                allSections: allSections,
-                order: existingClass.order 
+                fee: updatedClass.fee,
+                order: updatedClass.order,
+                sectionsAdded,
+                totalSections: updatedClass.sections.length
             });
         }
 
-        res.status(200).json({
-            message: "Classes and sections updated successfully",
-            summary: results,
+
+        return res.status(200).json({
+            message: "Classes & sections updated safely",
+            summary: results
         });
 
     } catch (err) {
-        console.error("Error updating classes and sections:", err);
-        res.status(500).json({
+        console.error("Error updating classes:", err);
+        return res.status(500).json({
             message: "Server error",
             error: err.message
         });
