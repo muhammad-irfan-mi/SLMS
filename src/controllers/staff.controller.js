@@ -4,7 +4,41 @@ const common = require("./common.controller");
 const { sendProfileUpdateNotification, sendEmailChangeNotification } = require("../utils/notificationService");
 const Staff = require("../models/Staff");
 
-// Get class and section info
+// Helper function to get class and section names
+const getClassAndSectionNames = async (classId, sectionId, schoolId) => {
+    if (!classId) return { classInfo: null, sectionInfo: null };
+
+    const classDoc = await ClassSection.findOne({
+        _id: classId,
+        school: schoolId
+    }).lean();
+
+    if (!classDoc) {
+        return { classInfo: null, sectionInfo: null };
+    }
+
+    const classInfo = {
+        id: classDoc._id,
+        name: classDoc.class
+    };
+
+    let sectionInfo = null;
+    if (sectionId && classDoc.sections?.length) {
+        const sectionObj = classDoc.sections.find(
+            (sec) => sec._id.toString() === sectionId.toString()
+        );
+        if (sectionObj) {
+            sectionInfo = {
+                id: sectionObj._id,
+                name: sectionObj.name
+            };
+        }
+    }
+
+    return { classInfo, sectionInfo };
+};
+
+// Get class and section info for staff
 const getClassAndSection = async (classId, sectionId, schoolId) => {
     if (!classId) return { classInfo: null, sectionInfo: null };
 
@@ -349,16 +383,32 @@ const getAllStaff = async (req, res) => {
                 .select("-password -otp -forgotPasswordOTP -tokenVersion")
                 .skip(skip)
                 .limit(parseInt(limit))
-                .sort({ role: 1, name: 1 }),
+                .sort({ role: 1, name: 1 })
+                .lean(),
             Staff.countDocuments(filter)
         ]);
+
+        // Fetch class and section names for each staff
+        const staffWithNames = await Promise.all(staff.map(async (staffMember) => {
+            const { classInfo, sectionInfo } = await getClassAndSectionNames(
+                staffMember.classInfo?.id,
+                staffMember.sectionInfo?.id,
+                schoolId
+            );
+            
+            return {
+                ...staffMember,
+                classInfo,
+                sectionInfo
+            };
+        }));
 
         return res.status(200).json({
             total,
             page: parseInt(page),
             limit: parseInt(limit),
             totalPages: Math.ceil(total / parseInt(limit)),
-            staff
+            staff: staffWithNames
         });
 
     } catch (err) {
@@ -377,7 +427,8 @@ const getStaffById = async (req, res) => {
 
         const staff = await Staff.findById(id)
             .select("-password -otp -forgotPasswordOTP")
-            .populate('school', 'name logo');
+            .populate('school', 'name logo')
+            .lean();
 
         if (!staff || !["teacher", "admin_office"].includes(staff.role)) {
             return res.status(404).json({ message: "Staff not found" });
@@ -387,7 +438,20 @@ const getStaffById = async (req, res) => {
             return res.status(403).json({ message: "Unauthorized" });
         }
 
-        return res.status(200).json({ staff });
+        // Fetch class and section names
+        const { classInfo, sectionInfo } = await getClassAndSectionNames(
+            staff.classInfo?.id,
+            staff.sectionInfo?.id,
+            schoolId
+        );
+
+        const formattedStaff = {
+            ...staff,
+            classInfo,
+            sectionInfo
+        };
+
+        return res.status(200).json({ staff: formattedStaff });
 
     } catch (err) {
         console.error("Error fetching staff:", err);

@@ -580,6 +580,48 @@ const getAllStudents = async (req, res) => {
 };
 
 // Get student by ID
+// const getStudentById = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+//         const schoolId = req.user.school;
+
+//         const student = await Student.findById(id)
+//             .select("-password -otp -forgotPasswordOTP")
+//             .populate('school', 'name logo');
+
+//         if (!student || student.role !== "student") {
+//             return res.status(404).json({ message: "Student not found" });
+//         }
+
+//         if (student.school?._id.toString() !== schoolId.toString()) {
+//             return res.status(403).json({ message: "Unauthorized" });
+//         }
+
+//         // Get siblings
+//         const siblings = await Student.find({
+//             $or: [
+//                 { siblingGroupId: student.siblingGroupId },
+//                 { email: student.email, school: schoolId, _id: { $ne: id } }
+//             ]
+//         })
+//             .select("name username classInfo sectionInfo rollNo email discount")
+//             .limit(10);
+
+//         return res.status(200).json({
+//             student,
+//             siblings,
+//             siblingCount: siblings.length
+//         });
+
+//     } catch (err) {
+//         console.error("Error fetching student:", err);
+//         return res.status(500).json({
+//             message: err.message || "Server error while fetching student"
+//         });
+//     }
+// };
+
+// Get student by ID
 const getStudentById = async (req, res) => {
     try {
         const { id } = req.params;
@@ -587,7 +629,8 @@ const getStudentById = async (req, res) => {
 
         const student = await Student.findById(id)
             .select("-password -otp -forgotPasswordOTP")
-            .populate('school', 'name logo');
+            .populate('school', 'name logo')
+            .lean();
 
         if (!student || student.role !== "student") {
             return res.status(404).json({ message: "Student not found" });
@@ -597,20 +640,93 @@ const getStudentById = async (req, res) => {
             return res.status(403).json({ message: "Unauthorized" });
         }
 
-        // Get siblings
+        // Get class and section names
+        let classInfoWithName = student.classInfo;
+        let sectionInfoWithName = student.sectionInfo;
+
+        if (student.classInfo?.id) {
+            const classDoc = await ClassSection.findOne({
+                _id: student.classInfo.id,
+                school: schoolId
+            }).lean();
+
+            if (classDoc) {
+                classInfoWithName = {
+                    id: classDoc._id,
+                    name: classDoc.class
+                };
+
+                if (student.sectionInfo?.id) {
+                    const section = classDoc.sections?.find(
+                        sec => sec._id.toString() === student.sectionInfo.id.toString()
+                    );
+                    if (section) {
+                        sectionInfoWithName = {
+                            id: section._id,
+                            name: section.name
+                        };
+                    }
+                }
+            }
+        }
+
+        // Get siblings with their class/section names
         const siblings = await Student.find({
             $or: [
                 { siblingGroupId: student.siblingGroupId },
                 { email: student.email, school: schoolId, _id: { $ne: id } }
             ]
         })
-            .select("name username classInfo sectionInfo rollNo email discount")
-            .limit(10);
+            .select("name username classInfo sectionInfo rollNo email discount isFixed")
+            .lean();
+
+        // const enrichedSiblings = await Promise.all(siblings.map(async (sibling) => {
+        //     let siblingClassInfo = sibling.classInfo;
+        //     let siblingSectionInfo = sibling.sectionInfo;
+
+        //     if (sibling.classInfo?.id) {
+        //         const classDoc = await ClassSection.findOne({
+        //             _id: sibling.classInfo.id,
+        //             school: schoolId
+        //         }).lean();
+
+        //         if (classDoc) {
+        //             siblingClassInfo = {
+        //                 id: classDoc._id,
+        //                 name: classDoc.class
+        //             };
+
+        //             if (sibling.sectionInfo?.id) {
+        //                 const section = classDoc.sections?.find(
+        //                     sec => sec._id.toString() === sibling.sectionInfo.id.toString()
+        //                 );
+        //                 if (section) {
+        //                     siblingSectionInfo = {
+        //                         id: section._id,
+        //                         name: section.name
+        //                     };
+        //                 }
+        //             }
+        //         }
+        //     }
+
+        //     return {
+        //         ...sibling,
+        //         classInfo: siblingClassInfo,
+        //         sectionInfo: siblingSectionInfo
+        //     };
+        // }));
+
+        const studentResponse = {
+            ...student,
+            classInfo: classInfoWithName,
+            sectionInfo: sectionInfoWithName
+        };
 
         return res.status(200).json({
-            student,
-            siblings,
-            siblingCount: siblings.length
+            student: studentResponse,
+            // siblings: enrichedSiblings,
+            // siblingCount: enrichedSiblings.length
         });
 
     } catch (err) {
