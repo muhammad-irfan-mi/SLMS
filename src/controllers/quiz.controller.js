@@ -437,8 +437,9 @@ const getGroups = async (req, res) => {
 
     if (status) filter.status = status;
     if (classId) filter.classIds = classId;
-    if (sectionId) filter.sectionIds = sectionId;
-
+    if (sectionId) {
+      filter.sectionIds = { $in: [sectionId] };
+    }
     if (search) {
       filter.$or = [
         { title: { $regex: search, $options: 'i' } },
