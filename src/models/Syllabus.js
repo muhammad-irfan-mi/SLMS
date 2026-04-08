@@ -49,7 +49,7 @@ const syllabusSchema = new Schema(
     uploadedByModel: {
       type: String,
       required: true,
-      enum: ['User', 'School']
+      enum: ['User', 'School', "Staff"]
     },
 
     publishDate: {

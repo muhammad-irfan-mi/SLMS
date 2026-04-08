@@ -286,220 +286,6 @@ const checkSyllabusUpdatePermission = async (syllabus, userId, userRole, schoolI
 };
 
 // Create syllabus with teacher schedule validation
-// const createSyllabus = async (req, res) => {
-//     try {
-//         const schoolId = req.user.school;
-//         const userId = req.user._id;
-//         const userRole = req.user.role || 'school';
-
-//         const { classId, sectionId, subjectId, title, description, detail, expireDate, status } = req.body;
-
-//         const classSectionCheck = await validateClassSection(classId, sectionId, schoolId);
-//         if (!classSectionCheck.valid) {
-//             return res.status(400).json({ message: classSectionCheck.message });
-//         }
-
-//         // const subjectCheck = await validateSubjectAssignment(subjectId, classId, schoolId);
-//         // if (!subjectCheck.valid) {
-//         //     return res.status(400).json({ message: subjectCheck.message });
-//         // }
-
-//         if (userRole === 'teacher') {
-//             const teacherAccess = await checkTeacherSubjectAccess(
-//                 userId,
-//                 subjectId,
-//                 classId,
-//                 sectionId,
-//                 schoolId
-//             );
-
-//             if (!teacherAccess.hasAccess) {
-//                 return res.status(403).json({
-//                     message: teacherAccess.message
-//                 });
-//             }
-//         }
-
-//         let uploadedById, uploadedByModel;
-//         if (userRole === 'school') {
-//             uploadedById = schoolId;
-//             uploadedByModel = 'School';
-//         } else if (userRole === 'admin_office') {
-//             uploadedById = userId;
-//             uploadedByModel = 'Staff';
-//         } else if (userRole === 'teacher') {
-//             uploadedById = userId;
-//             uploadedByModel = 'Staff';
-//         } else {
-//             uploadedById = userId;
-//             uploadedByModel = 'Staff';
-//         }
-
-//         const today = new Date();
-//         const formattedPublishDate = formatDate(today);
-//         let formattedExpireDate = null;
-
-//         try {
-//             if (expireDate) formattedExpireDate = formatDate(expireDate);
-//         } catch (error) {
-//             return res.status(400).json({ message: error.message });
-//         }
-
-//         if (formattedExpireDate && formattedExpireDate <= formattedPublishDate) {
-//             return res.status(400).json({
-//                 message: `Expire date must be after publish date (${formattedPublishDate})`
-//             });
-//         }
-
-//         const existingActiveSyllabus = await Syllabus.findOne({
-//             school: schoolId,
-//             classId,
-//             sectionId,
-//             subjectId,
-//             $or: [
-//                 {
-//                     expireDate: { $gte: formattedPublishDate }
-//                 },
-//                 {
-//                     expireDate: null
-//                 },
-//                 {
-//                     publishDate: { $lte: formattedPublishDate },
-//                     expireDate: { $gte: formattedPublishDate }
-//                 }
-//             ]
-//         }).select('title publishDate expireDate status').lean();
-
-//         if (existingActiveSyllabus) {
-//             let message = '';
-
-//             if (existingActiveSyllabus.expireDate) {
-//                 message = `Cannot create syllabus. Current date (${formattedPublishDate}) is before the expiry date (${existingActiveSyllabus.expireDate}) of existing syllabus "${existingActiveSyllabus.title}"`;
-//             } else {
-//                 message = `Cannot create new syllabus for this subject.`;
-//             }
-
-//             return res.status(409).json({
-//                 message,
-//                 existingSyllabus: {
-//                     _id: existingActiveSyllabus._id,
-//                     title: existingActiveSyllabus.title,
-//                     publishDate: existingActiveSyllabus.publishDate,
-//                     expireDate: existingActiveSyllabus.expireDate,
-//                     status: existingActiveSyllabus.status
-//                 }
-//             });
-//         }
-
-//         const futureSyllabus = await Syllabus.findOne({
-//             school: schoolId,
-//             classId,
-//             sectionId,
-//             subjectId,
-//             publishDate: { $gt: formattedPublishDate }
-//         }).select('title publishDate expireDate status').lean();
-
-//         if (futureSyllabus) {
-//             const message = `Cannot create syllabus. There's already a future syllabus "${futureSyllabus.title}" scheduled for ${futureSyllabus.publishDate}`;
-
-//             return res.status(409).json({
-//                 message,
-//                 existingSyllabus: {
-//                     _id: futureSyllabus._id,
-//                     title: futureSyllabus.title,
-//                     publishDate: futureSyllabus.publishDate,
-//                     expireDate: futureSyllabus.expireDate,
-//                     status: futureSyllabus.status
-//                 }
-//             });
-//         }
-
-//         // Create syllabus
-//         const syllabus = await Syllabus.create({
-//             school: schoolId,
-//             classId,
-//             sectionId,
-//             subjectId,
-//             title,
-//             description,
-//             detail,
-//             uploadedBy: uploadedById,
-//             uploadedByModel: uploadedByModel,
-//             publishDate: formattedPublishDate,
-//             expireDate: formattedExpireDate,
-//             status: status || "draft",
-//         });
-
-//         const subject = await Subject.findById(subjectId)
-//             .select("name code")
-//             .lean();
-
-//         const classSectionInfo = await getClassSectionInfo(classId, sectionId, schoolId);
-
-//         // const uploader = await resolveUploader(uploadedById, uploadedByModel);
-//         let uploader = null;
-
-//         if (uploadedByModel === 'School') {
-//             const school = await School.findById(uploadedById).select('name email');
-//             if (school) {
-//                 uploader = {
-//                     id: school._id,
-//                     name: school.name,
-//                     email: school.email,
-//                     type: 'School'
-//                 };
-//             }
-//         } else if (uploadedByModel === 'Staff') {
-//             const staff = await Staff.findById(uploadedById).select('name email role');
-//             if (staff) {
-//                 uploader = {
-//                     id: staff._id,
-//                     name: staff.name,
-//                     email: staff.email,
-//                     role: staff.role,
-//                     type: 'Staff'
-//                 };
-//             }
-//         } else {
-//             const user = await User.findById(uploadedById).select('name email role');
-//             if (user) {
-//                 uploader = {
-//                     id: user._id,
-//                     name: user.name,
-//                     email: user.email,
-//                     role: user.role,
-//                     type: 'User'
-//                 };
-//             }
-//         }
-
-//         res.status(201).json({
-//             message: "Syllabus created successfully",
-//             syllabus: {
-//                 _id: syllabus._id,
-//                 title: syllabus.title,
-//                 description: syllabus.description,
-//                 detail: syllabus.detail,
-//                 subject: {
-//                     _id: subjectId,
-//                     name: subject?.name || "Unknown",
-//                     code: subject?.code
-//                 },
-//                 class: classSectionInfo.class,
-//                 section: classSectionInfo.section,
-//                 uploader,
-//                 publishDate: syllabus.publishDate,
-//                 expireDate: syllabus.expireDate,
-//                 status: syllabus.status,
-//                 createdAt: syllabus.createdAt
-//             }
-//         });
-
-//     } catch (err) {
-//         res.status(500).json({ message: "Server error" });
-//     }
-// };
-
 const createSyllabus = async (req, res) => {
     try {
         const schoolId = req.user.school;
@@ -508,37 +294,16 @@ const createSyllabus = async (req, res) => {
 
         const { classId, sectionId, subjectId, title, description, detail, expireDate, status } = req.body;
 
-        // Validate class and section exist
-        const classDoc = await ClassSection.findOne({
-            _id: classId,
-            school: schoolId
-        }).lean();
-
-        if (!classDoc) {
-            return res.status(400).json({ message: "Class not found in your school" });
+        const classSectionCheck = await validateClassSection(classId, sectionId, schoolId);
+        if (!classSectionCheck.valid) {
+            return res.status(400).json({ message: classSectionCheck.message });
         }
 
-        // Validate section exists in the class
-        if (sectionId) {
-            const sectionExists = classDoc.sections?.some(
-                sec => sec._id.toString() === sectionId.toString()
-            );
-            if (!sectionExists) {
-                return res.status(400).json({ message: "Section not found in this class" });
-            }
-        }
+        // const subjectCheck = await validateSubjectAssignment(subjectId, classId, schoolId);
+        // if (!subjectCheck.valid) {
+        //     return res.status(400).json({ message: subjectCheck.message });
+        // }
 
-        // Validate subject exists
-        const subject = await Subject.findOne({
-            _id: subjectId,
-            school: schoolId
-        }).lean();
-
-        if (!subject) {
-            return res.status(400).json({ message: "Subject not found in your school" });
-        }
-
-        // Check teacher access if role is teacher
         if (userRole === 'teacher') {
             const teacherAccess = await checkTeacherSubjectAccess(
                 userId,
@@ -555,7 +320,6 @@ const createSyllabus = async (req, res) => {
             }
         }
 
-        // Determine uploader info
         let uploadedById, uploadedByModel;
         if (userRole === 'school') {
             uploadedById = schoolId;
@@ -575,11 +339,10 @@ const createSyllabus = async (req, res) => {
         const formattedPublishDate = formatDate(today);
         let formattedExpireDate = null;
 
-        if (expireDate) {
-            formattedExpireDate = formatDate(expireDate);
-            if (!formattedExpireDate) {
-                return res.status(400).json({ message: "Invalid expire date format" });
-            }
+        try {
+            if (expireDate) formattedExpireDate = formatDate(expireDate);
+        } catch (error) {
+            return res.status(400).json({ message: error.message });
         }
 
         if (formattedExpireDate && formattedExpireDate <= formattedPublishDate) {
@@ -588,28 +351,65 @@ const createSyllabus = async (req, res) => {
             });
         }
 
-        // Check for existing active syllabus
         const existingActiveSyllabus = await Syllabus.findOne({
             school: schoolId,
             classId,
             sectionId,
             subjectId,
-            status: { $ne: 'archived' },
             $or: [
-                { expireDate: { $gte: formattedPublishDate } },
-                { expireDate: null }
+                {
+                    expireDate: { $gte: formattedPublishDate }
+                },
+                {
+                    expireDate: null
+                },
+                {
+                    publishDate: { $lte: formattedPublishDate },
+                    expireDate: { $gte: formattedPublishDate }
+                }
             ]
         }).select('title publishDate expireDate status').lean();
 
         if (existingActiveSyllabus) {
+            let message = '';
+
+            if (existingActiveSyllabus.expireDate) {
+                message = `Cannot create syllabus. Current date (${formattedPublishDate}) is before the expiry date (${existingActiveSyllabus.expireDate}) of existing syllabus "${existingActiveSyllabus.title}"`;
+            } else {
+                message = `Cannot create new syllabus for this subject.`;
+            }
+
             return res.status(409).json({
-                message: `Cannot create syllabus. An active syllabus "${existingActiveSyllabus.title}" already exists for this subject.`,
+                message,
                 existingSyllabus: {
                     _id: existingActiveSyllabus._id,
                     title: existingActiveSyllabus.title,
                     publishDate: existingActiveSyllabus.publishDate,
                     expireDate: existingActiveSyllabus.expireDate,
                     status: existingActiveSyllabus.status
+                }
+            });
+        }
+
+        const futureSyllabus = await Syllabus.findOne({
+            school: schoolId,
+            classId,
+            sectionId,
+            subjectId,
+            publishDate: { $gt: formattedPublishDate }
+        }).select('title publishDate expireDate status').lean();
+
+        if (futureSyllabus) {
+            const message = `Cannot create syllabus. There's already a future syllabus "${futureSyllabus.title}" scheduled for ${futureSyllabus.publishDate}`;
+
+            return res.status(409).json({
+                message,
+                existingSyllabus: {
+                    _id: futureSyllabus._id,
+                    title: futureSyllabus.title,
+                    publishDate: futureSyllabus.publishDate,
+                    expireDate: futureSyllabus.expireDate,
+                    status: futureSyllabus.status
                 }
             });
         }
@@ -621,8 +421,8 @@ const createSyllabus = async (req, res) => {
             sectionId,
             subjectId,
             title,
-            description: description || '',
-            detail: detail || '',
+            description,
+            detail,
             uploadedBy: uploadedById,
             uploadedByModel: uploadedByModel,
             publishDate: formattedPublishDate,
@@ -630,29 +430,17 @@ const createSyllabus = async (req, res) => {
             status: status || "draft",
         });
 
-        // Get class and section names
-        const classInfo = {
-            _id: classDoc._id,
-            name: classDoc.class
-        };
+        const subject = await Subject.findById(subjectId)
+            .select("name code")
+            .lean();
 
-        let sectionInfo = null;
-        if (sectionId) {
-            const section = classDoc.sections?.find(
-                sec => sec._id.toString() === sectionId.toString()
-            );
-            if (section) {
-                sectionInfo = {
-                    _id: section._id,
-                    name: section.name
-                };
-            }
-        }
+        const classSectionInfo = await getClassSectionInfo(classId, sectionId, schoolId);
 
-        // Get uploader info
+        // const uploader = await resolveUploader(uploadedById, uploadedByModel);
         let uploader = null;
+
         if (uploadedByModel === 'School') {
-            const school = await School.findById(uploadedById).select('name email').lean();
+            const school = await School.findById(uploadedById).select('name email');
             if (school) {
                 uploader = {
                     id: school._id,
@@ -662,7 +450,7 @@ const createSyllabus = async (req, res) => {
                 };
             }
         } else if (uploadedByModel === 'Staff') {
-            const staff = await Staff.findById(uploadedById).select('name email role').lean();
+            const staff = await Staff.findById(uploadedById).select('name email role');
             if (staff) {
                 uploader = {
                     id: staff._id,
@@ -670,6 +458,17 @@ const createSyllabus = async (req, res) => {
                     email: staff.email,
                     role: staff.role,
                     type: 'Staff'
+                };
+            }
+        } else {
+            const user = await User.findById(uploadedById).select('name email role');
+            if (user) {
+                uploader = {
+                    id: user._id,
+                    name: user.name,
+                    email: user.email,
+                    role: user.role,
+                    type: 'User'
                 };
             }
         }
@@ -682,12 +481,12 @@ const createSyllabus = async (req, res) => {
                 description: syllabus.description,
                 detail: syllabus.detail,
                 subject: {
-                    _id: subject._id,
-                    name: subject.name,
-                    code: subject.code
+                    _id: subjectId,
+                    name: subject?.name || "Unknown",
+                    code: subject?.code
                 },
-                class: classInfo,
-                section: sectionInfo,
+                class: classSectionInfo.class,
+                section: classSectionInfo.section,
                 uploader,
                 publishDate: syllabus.publishDate,
                 expireDate: syllabus.expireDate,
@@ -697,13 +496,214 @@ const createSyllabus = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Create syllabus error:", err);
-        res.status(500).json({ 
-            message: "Server error",
-            error: process.env.NODE_ENV === 'development' ? err.message : undefined
-        });
+        res.status(500).json({ message: "Server error" });
     }
 };
+
+// const createSyllabus = async (req, res) => {
+//     try {
+//         const schoolId = req.user.school;
+//         const userId = req.user._id;
+//         const userRole = req.user.role || 'school';
+
+//         const { classId, sectionId, subjectId, title, description, detail, expireDate, status } = req.body;
+
+//         // Validate class and section exist
+//         const classDoc = await ClassSection.findOne({
+//             _id: classId,
+//             school: schoolId
+//         }).lean();
+
+//         if (!classDoc) {
+//             return res.status(400).json({ message: "Class not found in your school" });
+//         }
+
+//         // Validate section exists in the class
+//         if (sectionId) {
+//             const sectionExists = classDoc.sections?.some(
+//                 sec => sec._id.toString() === sectionId.toString()
+//             );
+//             if (!sectionExists) {
+//                 return res.status(400).json({ message: "Section not found in this class" });
+//             }
+//         }
+
+//         // Validate subject exists
+//         const subject = await Subject.findOne({
+//             _id: subjectId,
+//             school: schoolId
+//         }).lean();
+
+//         if (!subject) {
+//             return res.status(400).json({ message: "Subject not found in your school" });
+//         }
+
+//         // Check teacher access if role is teacher
+//         if (userRole === 'teacher') {
+//             const teacherAccess = await checkTeacherSubjectAccess(
+//                 userId,
+//                 subjectId,
+//                 classId,
+//                 sectionId,
+//                 schoolId
+//             );
+
+//             if (!teacherAccess.hasAccess) {
+//                 return res.status(403).json({
+//                     message: teacherAccess.message
+//                 });
+//             }
+//         }
+
+//         // Determine uploader info
+//         let uploadedById, uploadedByModel;
+//         if (userRole === 'school') {
+//             uploadedById = schoolId;
+//             uploadedByModel = 'School';
+//         } else if (userRole === 'admin_office') {
+//             uploadedById = userId;
+//             uploadedByModel = 'Staff';
+//         } else if (userRole === 'teacher') {
+//             uploadedById = userId;
+//             uploadedByModel = 'Staff';
+//         } else {
+//             uploadedById = userId;
+//             uploadedByModel = 'Staff';
+//         }
+
+//         const today = new Date();
+//         const formattedPublishDate = formatDate(today);
+//         let formattedExpireDate = null;
+
+//         if (expireDate) {
+//             formattedExpireDate = formatDate(expireDate);
+//             if (!formattedExpireDate) {
+//                 return res.status(400).json({ message: "Invalid expire date format" });
+//             }
+//         }
+
+//         if (formattedExpireDate && formattedExpireDate <= formattedPublishDate) {
+//             return res.status(400).json({
+//                 message: `Expire date must be after publish date (${formattedPublishDate})`
+//             });
+//         }
+
+//         // Check for existing active syllabus
+//         const existingActiveSyllabus = await Syllabus.findOne({
+//             school: schoolId,
+//             classId,
+//             sectionId,
+//             subjectId,
+//             status: { $ne: 'archived' },
+//             $or: [
+//                 { expireDate: { $gte: formattedPublishDate } },
+//                 { expireDate: null }
+//             ]
+//         }).select('title publishDate expireDate status').lean();
+
+//         if (existingActiveSyllabus) {
+//             return res.status(409).json({
+//                 message: `Cannot create syllabus. An active syllabus "${existingActiveSyllabus.title}" already exists for this subject.`,
+//                 existingSyllabus: {
+//                     _id: existingActiveSyllabus._id,
+//                     title: existingActiveSyllabus.title,
+//                     publishDate: existingActiveSyllabus.publishDate,
+//                     expireDate: existingActiveSyllabus.expireDate,
+//                     status: existingActiveSyllabus.status
+//                 }
+//             });
+//         }
+
+//         // Create syllabus
+//         const syllabus = await Syllabus.create({
+//             school: schoolId,
+//             classId,
+//             sectionId,
+//             subjectId,
+//             title,
+//             description: description || '',
+//             detail: detail || '',
+//             uploadedBy: uploadedById,
+//             uploadedByModel: uploadedByModel,
+//             publishDate: formattedPublishDate,
+//             expireDate: formattedExpireDate,
+//             status: status || "draft",
+//         });
+
+//         // Get class and section names
+//         const classInfo = {
+//             _id: classDoc._id,
+//             name: classDoc.class
+//         };
+
+//         let sectionInfo = null;
+//         if (sectionId) {
+//             const section = classDoc.sections?.find(
+//                 sec => sec._id.toString() === sectionId.toString()
+//             );
+//             if (section) {
+//                 sectionInfo = {
+//                     _id: section._id,
+//                     name: section.name
+//                 };
+//             }
+//         }
+
+//         // Get uploader info
+//         let uploader = null;
+//         if (uploadedByModel === 'School') {
+//             const school = await School.findById(uploadedById).select('name email').lean();
+//             if (school) {
+//                 uploader = {
+//                     id: school._id,
+//                     name: school.name,
+//                     email: school.email,
+//                     type: 'School'
+//                 };
+//             }
+//         } else if (uploadedByModel === 'Staff') {
+//             const staff = await Staff.findById(uploadedById).select('name email role').lean();
+//             if (staff) {
+//                 uploader = {
+//                     id: staff._id,
+//                     name: staff.name,
+//                     email: staff.email,
+//                     role: staff.role,
+//                     type: 'Staff'
+//                 };
+//             }
+//         }
+
+//         res.status(201).json({
+//             message: "Syllabus created successfully",
+//             syllabus: {
+//                 _id: syllabus._id,
+//                 title: syllabus.title,
+//                 description: syllabus.description,
+//                 detail: syllabus.detail,
+//                 subject: {
+//                     _id: subject._id,
+//                     name: subject.name,
+//                     code: subject.code
+//                 },
+//                 class: classInfo,
+//                 section: sectionInfo,
+//                 uploader,
+//                 publishDate: syllabus.publishDate,
+//                 expireDate: syllabus.expireDate,
+//                 status: syllabus.status,
+//                 createdAt: syllabus.createdAt
+//             }
+//         });
+
+//     } catch (err) {
+//         console.error("Create syllabus error:", err);
+//         res.status(500).json({ 
+//             message: "Server error",
+//             error: process.env.NODE_ENV === 'development' ? err.message : undefined
+//         });
+//     }
+// };
 
 // Get syllabus with filters 
 const getSyllabus = async (req, res) => {
