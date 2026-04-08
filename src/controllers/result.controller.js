@@ -342,7 +342,8 @@ const getResults = async (req, res) => {
         const results = await Result.find(filter)
             .populate({
                 path: 'studentId',
-                select: 'name email rollNo'
+                select: 'name email rollNo',
+                model: "Student"
             })
             .skip(skip)
             .limit(Number(limit))
