@@ -135,7 +135,6 @@ const resolveUploader = async (uploadedById, uploadedByModel) => {
 const validateSubjectAssignment = async (subjectId, classId, schoolId) => {
     const subject = await Subject.findOne({
         _id: subjectId,
-        classId: classId,
         school: schoolId,
         isActive: true
     }).lean();
