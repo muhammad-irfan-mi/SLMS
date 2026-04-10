@@ -64,75 +64,26 @@ const createEvent = async (req, res) => {
 };
 
 // UPDATE EVENT
-// const updateEvent = async (req, res) => {
-//     try {
-//         const { id } = req.params;
-
-//         const event = await Event.findById(id);
-//         if (!event) {
-//             return res.status(404).json({ message: "Event not found" });
-//         }
-
-//         const updatedData = req.body;
-
-//         if (req.files?.length > 0) {
-//             const newImages = await uploadMultipleImages(req.files);
-//             updatedData.images = [...event.images, ...newImages];
-//         }
-
-//         const updatedEvent = await Event.findByIdAndUpdate(
-//             id,
-//             { $set: updatedData },
-//             { new: true }
-//         );
-
-//         res.status(200).json({
-//             message: "Event updated successfully",
-//             event: updatedEvent
-//         });
-
-//     } catch (err) {
-//         console.error("Update Event Error:", err);
-//         res.status(500).json({ message: "Server error", error: err.message });
-//     }
-// };
 const updateEvent = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // 🔍 Find event
         const event = await Event.findById(id);
         if (!event) {
             return res.status(404).json({ message: "Event not found" });
         }
 
-        const updatedData = { ...req.body };
+        const updatedData = req.body;
 
-        // 🖼️ Handle image update
         if (req.files?.length > 0) {
-
-            // ✅ STEP 1: Upload new images FIRST
             const newImages = await uploadMultipleImages(req.files);
-
-            // ✅ STEP 2: Delete old images AFTER successful upload
-            if (event.images?.length > 0) {
-                try {
-                    await deleteMultipleImages(event.images);
-                } catch (deleteErr) {
-                    console.error("Old image delete failed:", deleteErr);
-                    // ⚠️ Do NOT stop process if delete fails
-                }
-            }
-
-            // ✅ STEP 3: Replace images (NOT append)
-            updatedData.images = newImages;
+            updatedData.images = [...event.images, ...newImages];
         }
 
-        // 🔄 Update event
         const updatedEvent = await Event.findByIdAndUpdate(
             id,
             { $set: updatedData },
-            { new: true, runValidators: true }
+            { new: true }
         );
 
         res.status(200).json({
@@ -142,15 +93,65 @@ const updateEvent = async (req, res) => {
 
     } catch (err) {
         console.error("Update Event Error:", err);
-
-        res.status(500).json({
-            message: "Server error",
-            error: err.message
-        });
+        res.status(500).json({ message: "Server error", error: err.message });
     }
 };
+// const updateEvent = async (req, res) => {
+//     try {
+//         const { id } = req.params;
+
+//         // 🔍 Find event
+//         const event = await Event.findById(id);
+//         if (!event) {
+//             return res.status(404).json({ message: "Event not found" });
+//         }
+
+//         const updatedData = { ...req.body };
+
+//         // 🖼️ Handle image update
+//         if (req.files?.length > 0) {
+
+//             // ✅ STEP 1: Upload new images FIRST
+//             const newImages = await uploadMultipleImages(req.files);
+
+//             // ✅ STEP 2: Delete old images AFTER successful upload
+//             if (event.images?.length > 0) {
+//                 try {
+//                     await deleteMultipleImages(event.images);
+//                 } catch (deleteErr) {
+//                     console.error("Old image delete failed:", deleteErr);
+//                     // ⚠️ Do NOT stop process if delete fails
+//                 }
+//             }
+
+//             // ✅ STEP 3: Replace images (NOT append)
+//             updatedData.images = newImages;
+//         }
+
+//         // 🔄 Update event
+//         const updatedEvent = await Event.findByIdAndUpdate(
+//             id,
+//             { $set: updatedData },
+//             { new: true, runValidators: true }
+//         );
+
+//         res.status(200).json({
+//             message: "Event updated successfully",
+//             event: updatedEvent
+//         });
+
+//     } catch (err) {
+//         console.error("Update Event Error:", err);
+
+//         res.status(500).json({
+//             message: "Server error",
+//             error: err.message
+//         });
+//     }
+// };
  
 // GET EVENTS 
+
 const getEvents = async (req, res) => {
     try {
         const { page = 1, limit = 10, status } = req.query;
