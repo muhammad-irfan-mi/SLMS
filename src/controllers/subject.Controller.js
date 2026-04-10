@@ -87,6 +87,21 @@ const addSubject = async (req, res) => {
       }
     }
 
+    const isValidCode = code ? code.trim().toUpperCase() : null;
+    if (isValidCode) {
+      const codeExists = await Subject.findOne({
+        school: schoolId,
+        code: isValidCode,
+        isActive: true
+      });
+
+      if (codeExists) {
+        return res.status(400).json({
+          message: "Subject code already exists in this school"
+        });
+      }
+    }
+
     const existing = await Subject.findOne({
       school: schoolId,
       name: { $regex: new RegExp(`^${name}$`, "i") },
@@ -103,7 +118,7 @@ const addSubject = async (req, res) => {
 
     const subject = await Subject.create({
       name,
-      code,
+      code: isValidCode,
       description,
       school: schoolId,
       classId: classId,
@@ -416,6 +431,27 @@ const updateSubject = async (req, res) => {
           message: "Subject with this name already exists in this class and section",
         });
       }
+    }
+
+    if (updateData.code) {
+      const isValidCode = updateData.code.trim().toUpperCase();
+
+      if (isValidCode !== subject.code) {
+        const codeExists = await Subject.findOne({
+          school: schoolId,
+          code: isValidCode,
+          _id: { $ne: id },
+          isActive: true
+        });
+
+        if (codeExists) {
+          return res.status(400).json({
+            message: "Subject code already exists in this school"
+          });
+        }
+      }
+
+      updateData.code = isValidCode;
     }
 
     const updatedSubject = await Subject.findByIdAndUpdate(

@@ -15,4 +15,9 @@ const SubjectSchema = new Schema(
   { timestamps: true }
 );
 
+SubjectSchema.index(
+  { school: 1, code: 1 },
+  { unique: true, partialFilterExpression: { isActive: true, code: { $exists: true, $ne: null } } }
+);
+
 module.exports = mongoose.model("Subject", SubjectSchema);
