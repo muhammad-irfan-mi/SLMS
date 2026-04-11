@@ -408,6 +408,127 @@ const deleteQuizGroup = async (req, res) => {
 };
 
 // GET quiz groups with filters
+// const getGroups = async (req, res) => {
+//   try {
+//     const user = req.user;
+//     const userRole = detectUserRole(user);
+
+//     const {
+//       page = 1,
+//       limit = 10,
+//       status,
+//       classId,
+//       sectionId,
+//       search
+//     } = req.query;
+
+//     let schoolId;
+//     if (userRole === 'school') {
+//       schoolId = user._id || user.id;
+//     } else if (['admin_office', 'teacher', 'student'].includes(userRole)) {
+//       schoolId = user.school;
+//     } else {
+//       return res.status(403).json({
+//         message: "Not authorized"
+//       });
+//     }
+
+//     const filter = { school: schoolId };
+
+//     if (status) filter.status = status;
+//     if (classId) filter.classIds = classId;
+//     if (sectionId) {
+//       filter.sectionIds = { $in: [sectionId] };
+//     }
+//     if (search) {
+//       filter.$or = [
+//         { title: { $regex: search, $options: 'i' } },
+//         { description: { $regex: search, $options: 'i' } }
+//       ];
+//     }
+
+//     const skip = (page - 1) * limit;
+
+//     const [total, groups] = await Promise.all([
+//       QuizGroup.countDocuments(filter),
+//       QuizGroup.find(filter)
+//         .sort({ createdAt: -1 })
+//         .skip(skip)
+//         .limit(Number(limit))
+//         .lean()
+//     ]);
+
+//     const allClassIds = [
+//       ...new Set(groups.flatMap(g => g.classIds || []))
+//     ];
+
+//     const classes = await ClassSection.find({
+//       _id: { $in: allClassIds },
+//       school: schoolId
+//     }).lean();
+
+//     const classMap = new Map();
+//     classes.forEach(cls => {
+//       classMap.set(cls._id.toString(), cls);
+//     });
+
+//     const enrichedGroups = groups.map(group => {
+//       let classInfo = null;
+//       let sectionInfo = null;
+
+//       (group.classIds || []).forEach(cid => {
+//         const cls = classMap.get(cid.toString());
+//         if (!cls) return;
+
+//         classInfo = {
+//           id: cls._id,
+//           name: cls.className || cls.class
+//         };
+
+//         (group.sectionIds || []).forEach(secId => {
+//           const sec = (cls.sections || []).find(
+//             s => s._id.toString() === secId.toString()
+//           );
+
+//           if (sec) {
+//             sectionInfo = {
+//               id: sec._id,
+//               name: sec.name,
+//             };
+//           }
+//         });
+//       });
+//       return {
+//         _id: group._id,
+//         title: group.title,
+//         description: group.description,
+//         status: group.status,
+//         classInfo,
+//         sectionInfo,
+//         totalQuestions: group.questions.length,
+//         startTime: group.startTime,
+//         endTime: group.endTime,
+//         createdAt: group.createdAt,
+//         createdBy: group.createdBy
+//       };
+//     });
+
+//     return res.status(200).json({
+//       total,
+//       page: Number(page),
+//       totalPages: Math.ceil(total / limit),
+//       limit: Number(limit),
+//       groups: enrichedGroups
+//     });
+//   } catch (err) {
+//     console.error("getGroups error:", err);
+//     return res.status(500).json({
+//       message: "Server error",
+//       error: err.message
+//     });
+//   }
+// };
+
 const getGroups = async (req, res) => {
   try {
     const user = req.user;
@@ -437,9 +558,21 @@ const getGroups = async (req, res) => {
 
     if (status) filter.status = status;
     if (classId) filter.classIds = classId;
-    if (sectionId) {
+
+    // Handle section filtering based on user role
+    if (userRole === 'student') {
+      // For students, only show quizzes for their specific section
+      const student = await Student.findById(user._id).lean();
+      const studentSectionId = student.sectionInfo?.id;
+
+      if (studentSectionId) {
+        filter.sectionIds = { $in: [studentSectionId] };
+      }
+    } else if (sectionId) {
+      // For admin/teacher, filter by requested sectionId
       filter.sectionIds = { $in: [sectionId] };
     }
+
     if (search) {
       filter.$or = [
         { title: { $regex: search, $options: 'i' } },
@@ -458,6 +591,7 @@ const getGroups = async (req, res) => {
         .lean()
     ]);
 
+    // Get all unique class IDs from groups
     const allClassIds = [
       ...new Set(groups.flatMap(g => g.classIds || []))
     ];
@@ -474,38 +608,57 @@ const getGroups = async (req, res) => {
 
     const enrichedGroups = groups.map(group => {
       let classInfo = null;
-      let sectionInfo = null;
+      let sectionInfos = []; // Array to hold all sections
+      let filteredSectionInfo = null; // For single section when student
 
-      (group.classIds || []).forEach(cid => {
-        const cls = classMap.get(cid.toString());
-        if (!cls) return;
+      // Get class info
+      if (group.classIds && group.classIds.length > 0) {
+        const cls = classMap.get(group.classIds[0].toString());
+        if (cls) {
+          classInfo = {
+            id: cls._id,
+            name: cls.className || cls.class
+          };
 
-        classInfo = {
-          id: cls._id,
-          name: cls.className || cls.class
-        };
+          // Get all sections for this class
+          const allSections = (cls.sections || []).map(sec => ({
+            id: sec._id,
+            name: sec.name
+          }));
 
-        (group.sectionIds || []).forEach(secId => {
-          const sec = (cls.sections || []).find(
-            s => s._id.toString() === secId.toString()
-          );
-
-          if (sec) {
-            sectionInfo = {
-              id: sec._id,
-              name: sec.name,
-            };
+          // Filter sections based on group's sectionIds
+          if (group.sectionIds && group.sectionIds.length > 0) {
+            const groupSectionIds = group.sectionIds.map(id => id.toString());
+            sectionInfos = allSections.filter(sec =>
+              groupSectionIds.includes(sec.id.toString())
+            );
           }
-        });
-      });
+
+          // For student role, find their specific section
+          if (userRole === 'student') {
+            const student = req.user;
+            const studentSectionId = student.sectionInfo?.id;
+            if (studentSectionId) {
+              const matchedSection = sectionInfos.find(
+                sec => sec.id.toString() === studentSectionId.toString()
+              );
+              if (matchedSection) {
+                filteredSectionInfo = matchedSection;
+              }
+            }
+          }
+        }
+      }
+
       return {
         _id: group._id,
         title: group.title,
         description: group.description,
         status: group.status,
         classInfo,
-        sectionInfo,
-        totalQuestions: group.questions.length,
+        sectionInfos: userRole === 'student' ? undefined : sectionInfos, // All sections for admin/teacher
+        sectionInfo: userRole === 'student' ? filteredSectionInfo : null, // Single section for student
+        totalQuestions: group.questions?.length || 0,
         startTime: group.startTime,
         endTime: group.endTime,
         createdAt: group.createdAt,
@@ -529,11 +682,146 @@ const getGroups = async (req, res) => {
   }
 };
 
+
+// const getGroupById = async (req, res) => {
+//   try {
+//     const user = req.user;
+//     const userRole = detectUserRole(user);
+//     const { id } = req.params;
+
+//     const group = await QuizGroup.findById(id).lean();
+//     if (!group) {
+//       return res.status(404).json({ message: "Quiz not found" });
+//     }
+
+//     if (group.status !== 'published') {
+//       return res.status(403).json({
+//         message: "This quiz is not available"
+//       });
+//     }
+
+//     const now = new Date();
+//     if (group.startTime && now < new Date(group.startTime)) {
+//       return res.status(403).json({
+//         message: "Quiz has not started yet"
+//       });
+//     }
+
+//     if (group.endTime && now > new Date(group.endTime)) {
+//       return res.status(403).json({
+//         message: "Quiz has ended"
+//       });
+//     }
+
+//     if (userRole === 'student') {
+//       const student = await Student.findById(user._id);
+//       const isEligible = await validateStudentClassSection(
+//         student,
+//         group.classIds,
+//         group.sectionIds
+//       );
+
+//       if (!isEligible) {
+//         return res.status(403).json({
+//           message: "You are not eligible to attempt this quiz"
+//         });
+//       }
+
+//       const existingSubmission = await QuizSubmission.findOne({
+//         groupId: id,
+//         studentId: user._id
+//       });
+
+//       if (existingSubmission) {
+//         return res.status(400).json({
+//           message: "You have already submitted this quiz",
+//           submissionId: existingSubmission._id
+//         });
+//       }
+//     }
+
+//     let classInfo = null;
+//     let sectionInfo = null;
+
+//     if (group.classIds && group.classIds.length > 0) {
+//       const classes = await ClassSection.find({
+//         _id: { $in: group.classIds },
+//         school: group.school
+//       }).lean();
+
+//       const cls = classes[0]; // quiz belongs to ONE class
+
+//       if (cls) {
+//         classInfo = {
+//           id: cls._id,
+//           name: cls.className || cls.class
+//         };
+
+//         if (group.sectionIds && group.sectionIds.length > 0) {
+//           const sectionIdStrings = group.sectionIds.map(id => id.toString());
+
+//           const sec = (cls.sections || []).find(
+//             s => sectionIdStrings.includes(s._id.toString())
+//           );
+
+//           if (sec) {
+//             sectionInfo = {
+//               id: sec._id,
+//               name: sec.name,
+//             };
+//           }
+//         }
+//       }
+//     }
+
+
+//     const safeQuestions = group.questions
+//       .sort((a, b) => (a.order || 0) - (b.order || 0))
+//       .map(q => {
+//         const { correctOptionIndex, correctAnswer, ...safeQuestion } = q;
+//         return safeQuestion;
+//       });
+
+//     const response = {
+//       _id: group._id,
+//       title: group.title,
+//       description: group.description,
+//       classInfo,
+//       sectionInfo,
+//       questions: safeQuestions,
+//       totalQuestions: safeQuestions.length,
+//       totalMarks: group.questions.reduce((sum, q) => sum + (q.marks || 1), 0),
+//       startTime: group.startTime,
+//       endTime: group.endTime,
+//       timeRemaining: group.endTime ?
+//         Math.max(0, new Date(group.endTime).getTime() - now.getTime()) : null,
+//       instructions: "Answer all questions. Each question has specified marks."
+//     };
+
+//     if (userRole === 'student') {
+//       response.canSubmit = true;
+//       response.timeLimit = group.endTime ?
+//         Math.floor((new Date(group.endTime).getTime() - now.getTime()) / 60000) + ' minutes' :
+//         'No time limit';
+//     }
+
+//     return res.status(200).json({ quiz: response });
+//   } catch (err) {
+//     console.error("getGroupById error:", err);
+//     return res.status(500).json({
+//       message: "Server error",
+//       error: err.message
+//     });
+//   }
+// };
+
+
 const getGroupById = async (req, res) => {
   try {
     const user = req.user;
     const userRole = detectUserRole(user);
     const { id } = req.params;
+    const { sectionId } = req.query; 
 
     const group = await QuizGroup.findById(id).lean();
     if (!group) {
@@ -559,35 +847,9 @@ const getGroupById = async (req, res) => {
       });
     }
 
-    if (userRole === 'student') {
-      const student = await Student.findById(user._id);
-      const isEligible = await validateStudentClassSection(
-        student,
-        group.classIds,
-        group.sectionIds
-      );
-
-      if (!isEligible) {
-        return res.status(403).json({
-          message: "You are not eligible to attempt this quiz"
-        });
-      }
-
-      const existingSubmission = await QuizSubmission.findOne({
-        groupId: id,
-        studentId: user._id
-      });
-
-      if (existingSubmission) {
-        return res.status(400).json({
-          message: "You have already submitted this quiz",
-          submissionId: existingSubmission._id
-        });
-      }
-    }
-
     let classInfo = null;
-    let sectionInfo = null;
+    let sectionInfos = [];
+    let filteredSectionInfo = null;
 
     if (group.classIds && group.classIds.length > 0) {
       const classes = await ClassSection.find({
@@ -603,24 +865,61 @@ const getGroupById = async (req, res) => {
           name: cls.className || cls.class
         };
 
+        const allSections = (cls.sections || []).map(sec => ({
+          id: sec._id,
+          name: sec.name
+        }));
+
+        // Filter sections based on group's sectionIds
         if (group.sectionIds && group.sectionIds.length > 0) {
-          const sectionIdStrings = group.sectionIds.map(id => id.toString());
-
-          const sec = (cls.sections || []).find(
-            s => sectionIdStrings.includes(s._id.toString())
+          const groupSectionIds = group.sectionIds.map(id => id.toString());
+          sectionInfos = allSections.filter(sec => 
+            groupSectionIds.includes(sec.id.toString())
           );
+        }
 
-          if (sec) {
-            sectionInfo = {
-              id: sec._id,
-              name: sec.name,
-            };
+        if (userRole === 'student') {
+          const student = await Student.findById(user._id).lean();
+          const studentSectionId = student.sectionInfo?.id;
+
+          if (studentSectionId) {
+            const matchedSection = sectionInfos.find(
+              sec => sec.id.toString() === studentSectionId.toString()
+            );
+            if (matchedSection) {
+              filteredSectionInfo = matchedSection;
+            }
+          }
+          
+          if (!filteredSectionInfo) {
+            return res.status(403).json({
+              message: "You are not eligible to attempt this quiz"
+            });
+          }
+
+          const existingSubmission = await QuizSubmission.findOne({
+            groupId: id,
+            studentId: user._id
+          });
+
+          if (existingSubmission) {
+            return res.status(400).json({
+              message: "You have already submitted this quiz",
+              submissionId: existingSubmission._id
+            });
+          }
+        } else if (sectionId) {
+          const matchedSection = sectionInfos.find(
+            sec => sec.id.toString() === sectionId.toString()
+          );
+          if (matchedSection) {
+            filteredSectionInfo = matchedSection;
           }
         }
       }
     }
 
-
+    // Prepare safe questions (without answers)
     const safeQuestions = group.questions
       .sort((a, b) => (a.order || 0) - (b.order || 0))
       .map(q => {
@@ -633,7 +932,8 @@ const getGroupById = async (req, res) => {
       title: group.title,
       description: group.description,
       classInfo,
-      sectionInfo,
+      sectionInfos: userRole === 'student' ? undefined : sectionInfos, 
+      sectionInfo: filteredSectionInfo, 
       questions: safeQuestions,
       totalQuestions: safeQuestions.length,
       totalMarks: group.questions.reduce((sum, q) => sum + (q.marks || 1), 0),
@@ -660,6 +960,7 @@ const getGroupById = async (req, res) => {
     });
   }
 };
+
 
 const submitQuiz = async (req, res) => {
   try {
