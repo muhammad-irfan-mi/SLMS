@@ -121,254 +121,254 @@ const createNotice = async (req, res) => {
 };
 
 // Get notices for teachers
-const getNotices = async (req, res) => {
-  try {
-    const user = req.user;
+// const getNotices = async (req, res) => {
+//   try {
+//     const user = req.user;
 
-    const schoolId = user.school || user.schoolId || (user.schoolInfo && user.schoolInfo.id);
+//     const schoolId = user.school || user.schoolId || (user.schoolInfo && user.schoolInfo.id);
 
-    if (!schoolId) {
-      return res.status(400).json({
-        success: false,
-        message: "School information not found"
-      });
-    }
+//     if (!schoolId) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "School information not found"
+//       });
+//     }
 
-    const userId = user._id || user.id;
-    const userRole = user.role || 'school';
-    const {
-      classId,
-      sectionId,
-      category,
-      activeOnly,
-      target,
-      startDate,
-      endDate,
-      search,
-      page = 1,
-      limit = 10,
-      sortBy = 'createdAt',
-      sortOrder = 'desc'
-    } = req.query;
+//     const userId = user._id || user.id;
+//     const userRole = user.role || 'school';
+//     const {
+//       classId,
+//       sectionId,
+//       category,
+//       activeOnly,
+//       target,
+//       startDate,
+//       endDate,
+//       search,
+//       page = 1,
+//       limit = 10,
+//       sortBy = 'createdAt',
+//       sortOrder = 'desc'
+//     } = req.query;
 
-    const teacherClassId = user.classId || (user.classInfo && user.classInfo.id);
-    const teacherSectionId = user.sectionId || (user.sectionInfo && user.sectionInfo.id);
-    const teacherId = user._id || user.id;
+//     const teacherClassId = user.classId || (user.classInfo && user.classInfo.id);
+//     const teacherSectionId = user.sectionId || (user.sectionInfo && user.sectionInfo.id);
+//     const teacherId = user._id || user.id;
 
-    const now = new Date();
-    const filter = { school: schoolId };
+//     const now = new Date();
+//     const filter = { school: schoolId };
 
-    if (classId) filter.classId = classId;
-    if (sectionId) filter.sectionId = sectionId;
-    if (category) filter.category = category;
-    if (target) filter.target = target;
+//     if (classId) filter.classId = classId;
+//     if (sectionId) filter.sectionId = sectionId;
+//     if (category) filter.category = category;
+//     if (target) filter.target = target;
 
-    if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) {
-        filter.createdAt.$gte = new Date(startDate);
-      }
-      if (endDate) {
-        const endDateObj = new Date(endDate);
-        endDateObj.setHours(23, 59, 59, 999);
-        filter.createdAt.$lte = endDateObj;
-      }
-    }
+//     if (startDate || endDate) {
+//       filter.createdAt = {};
+//       if (startDate) {
+//         filter.createdAt.$gte = new Date(startDate);
+//       }
+//       if (endDate) {
+//         const endDateObj = new Date(endDate);
+//         endDateObj.setHours(23, 59, 59, 999);
+//         filter.createdAt.$lte = endDateObj;
+//       }
+//     }
 
-    if (search) {
-      filter.$or = [
-        { title: { $regex: search, $options: "i" } },
-        { message: { $regex: search, $options: "i" } }
-      ];
-    }
+//     if (search) {
+//       filter.$or = [
+//         { title: { $regex: search, $options: "i" } },
+//         { message: { $regex: search, $options: "i" } }
+//       ];
+//     }
 
-    if (activeOnly === "true") {
-      filter.$and = (filter.$and || []).concat([
-        {
-          $or: [
-            { startDate: { $exists: false } },
-            { startDate: { $lte: now } }
-          ]
-        },
-        {
-          $or: [
-            { endDate: { $exists: false } },
-            { endDate: { $gte: now } }
-          ]
-        }
-      ]);
-    }
+//     if (activeOnly === "true") {
+//       filter.$and = (filter.$and || []).concat([
+//         {
+//           $or: [
+//             { startDate: { $exists: false } },
+//             { startDate: { $lte: now } }
+//           ]
+//         },
+//         {
+//           $or: [
+//             { endDate: { $exists: false } },
+//             { endDate: { $gte: now } }
+//           ]
+//         }
+//       ]);
+//     }
 
-    if (!user.role) {
-      console.log("School login - showing all notices for school");
-    }
-    else if (userRole === "teacher") {
+//     if (!user.role) {
+//       console.log("School login - showing all notices for school");
+//     }
+//     else if (userRole === "teacher") {
 
-      const teacherFilters = [
-        { target: "all" },
-        { target: "all_teachers" },
-        // { target: "custom" },
-        { target: "selected_teachers", targetTeacherIds: teacherId }
-      ];
+//       const teacherFilters = [
+//         { target: "all" },
+//         { target: "all_teachers" },
+//         // { target: "custom" },
+//         { target: "selected_teachers", targetTeacherIds: teacherId }
+//       ];
 
-      if (teacherClassId) {
-        teacherFilters.push({ target: "class", classId: teacherClassId });
-      }
+//       if (teacherClassId) {
+//         teacherFilters.push({ target: "class", classId: teacherClassId });
+//       }
 
-      if (teacherClassId && teacherSectionId) {
-        teacherFilters.push({
-          target: "section",
-          classId: teacherClassId,
-          sectionId: teacherSectionId
-        });
-      }
+//       if (teacherClassId && teacherSectionId) {
+//         teacherFilters.push({
+//           target: "section",
+//           classId: teacherClassId,
+//           sectionId: teacherSectionId
+//         });
+//       }
 
-      const validFilters = teacherFilters.filter(filterItem => {
-        if (filterItem.target === "class" && !filterItem.classId) return false;
-        if (filterItem.target === "section" && (!filterItem.classId || !filterItem.sectionId)) return false;
-        return true;
-      });
+//       const validFilters = teacherFilters.filter(filterItem => {
+//         if (filterItem.target === "class" && !filterItem.classId) return false;
+//         if (filterItem.target === "section" && (!filterItem.classId || !filterItem.sectionId)) return false;
+//         return true;
+//       });
 
 
-      filter.$and = [
-        { school: schoolId },
-        { $or: validFilters }
-      ];
+//       filter.$and = [
+//         { school: schoolId },
+//         { $or: validFilters }
+//       ];
 
-    }
-    else if (["admin_office", "school", "superadmin"].includes(user.role)) {
-      console.log("Admin login with role:", user.role);
-    }
-    else {
-      return res.status(403).json({
-        success: false,
-        message: "Access denied. Teacher, Admin, or School role required."
-      });
-    }
+//     }
+//     else if (["admin_office", "school", "superadmin"].includes(user.role)) {
+//       console.log("Admin login with role:", user.role);
+//     }
+//     else {
+//       return res.status(403).json({
+//         success: false,
+//         message: "Access denied. Teacher, Admin, or School role required."
+//       });
+//     }
 
-    const skip = (Number(page) - 1) * Number(limit);
-    const sortDirection = sortOrder === "asc" ? 1 : -1;
+//     const skip = (Number(page) - 1) * Number(limit);
+//     const sortDirection = sortOrder === "asc" ? 1 : -1;
 
-    const query = Notice.find(filter)
-      .populate("classId", "class")
-      .populate("targetTeacherIds", "name email role")
-      .populate("targetStudentIds", "name email rollNo")
-      .populate("readBy.user", "name email role")
-      .sort({ pinned: -1, [sortBy]: sortDirection })
-      .skip(skip)
-      .limit(Number(limit));
+//     const query = Notice.find(filter)
+//       .populate("classId", "class")
+//       .populate("targetTeacherIds", "name email role")
+//       .populate("targetStudentIds", "name email rollNo")
+//       .populate("readBy.user", "name email role")
+//       .sort({ pinned: -1, [sortBy]: sortDirection })
+//       .skip(skip)
+//       .limit(Number(limit));
 
-    const [total, notices] = await Promise.all([
-      Notice.countDocuments(filter),
-      query.lean()
-    ]);
+//     const [total, notices] = await Promise.all([
+//       Notice.countDocuments(filter),
+//       query.lean()
+//     ]);
 
-    const processedNotices = await Promise.all(
-      notices.map(async (notice) => {
-        const noticeObj = { ...notice };
+//     const processedNotices = await Promise.all(
+//       notices.map(async (notice) => {
+//         const noticeObj = { ...notice };
 
-        if (userRole === "teacher" || userRole === "student") {
-          const hasRead = notice.readBy && notice.readBy.some(read =>
-            read.user && read.user._id && read.user._id.toString() === userId.toString()
-          );
+//         if (userRole === "teacher" || userRole === "student") {
+//           const hasRead = notice.readBy && notice.readBy.some(read =>
+//             read.user && read.user._id && read.user._id.toString() === userId.toString()
+//           );
 
-          noticeObj.isRead = hasRead;
+//           noticeObj.isRead = hasRead;
 
-          if (hasRead) {
-            const readRecord = notice.readBy && notice.readBy.find(read =>
-              read.user && read.user._id && read.user._id.toString() === userId.toString()
-            );
-            noticeObj.readAt = readRecord ? readRecord.readAt : null;
-          }
+//           if (hasRead) {
+//             const readRecord = notice.readBy && notice.readBy.find(read =>
+//               read.user && read.user._id && read.user._id.toString() === userId.toString()
+//             );
+//             noticeObj.readAt = readRecord ? readRecord.readAt : null;
+//           }
 
-          noticeObj.readCount = notice.readBy ? notice.readBy.length : 0;
-        }
+//           noticeObj.readCount = notice.readBy ? notice.readBy.length : 0;
+//         }
 
-        if (userRole === "teacher") {
-          delete noticeObj.targetTeacherIds;
-          delete noticeObj.targetStudentIds;
+//         if (userRole === "teacher") {
+//           delete noticeObj.targetTeacherIds;
+//           delete noticeObj.targetStudentIds;
 
-          delete noticeObj.readBy;
+//           delete noticeObj.readBy;
 
-          if (notice.target === "selected_teachers" || notice.target === "selected_students") {
-            if (notice.target === "selected_teachers" && Array.isArray(notice.targetTeacherIds)) {
-              noticeObj.isTargetedToMe = notice.targetTeacherIds.some(id =>
-                id.toString() === userId.toString()
-              );
-            } else if (notice.target === "selected_students") {
-              noticeObj.isTargetedToMe = false;
-            }
-          } else {
-            noticeObj.isTargetedToMe = true;
-          }
-        }
+//           if (notice.target === "selected_teachers" || notice.target === "selected_students") {
+//             if (notice.target === "selected_teachers" && Array.isArray(notice.targetTeacherIds)) {
+//               noticeObj.isTargetedToMe = notice.targetTeacherIds.some(id =>
+//                 id.toString() === userId.toString()
+//               );
+//             } else if (notice.target === "selected_students") {
+//               noticeObj.isTargetedToMe = false;
+//             }
+//           } else {
+//             noticeObj.isTargetedToMe = true;
+//           }
+//         }
 
-        if (["admin_office", "school", "superadmin"].includes(userRole)) {
-          delete noticeObj.readBy;
-          delete noticeObj.isRead;
-          delete noticeObj.readAt;
-          delete noticeObj.readCount;
-        }
+//         if (["admin_office", "school", "superadmin"].includes(userRole)) {
+//           delete noticeObj.readBy;
+//           delete noticeObj.isRead;
+//           delete noticeObj.readAt;
+//           delete noticeObj.readCount;
+//         }
 
-        if (notice.createdBy) {
-          try {
-            const userDoc = await User.findById(notice.createdBy)
-              .select('name email role schoolId username images.recentPic');
+//         if (notice.createdBy) {
+//           try {
+//             const userDoc = await User.findById(notice.createdBy)
+//               .select('name email role schoolId username images.recentPic');
 
-            if (userDoc) {
-              noticeObj.createdBy = {
-                _id: userDoc._id,
-                name: userDoc.name,
-                email: userDoc.email,
-                role: userDoc.role,
-                username: userDoc.username,
-                image: userDoc.images && userDoc.images.recentPic ? userDoc.images.recentPic : null,
-              };
-            } else {
-              const schoolDoc = await School.findById(notice.createdBy)
-                .select('name email schoolId');
+//             if (userDoc) {
+//               noticeObj.createdBy = {
+//                 _id: userDoc._id,
+//                 name: userDoc.name,
+//                 email: userDoc.email,
+//                 role: userDoc.role,
+//                 username: userDoc.username,
+//                 image: userDoc.images && userDoc.images.recentPic ? userDoc.images.recentPic : null,
+//               };
+//             } else {
+//               const schoolDoc = await School.findById(notice.createdBy)
+//                 .select('name email schoolId');
 
-              if (schoolDoc) {
-                noticeObj.createdBy = {
-                  _id: schoolDoc._id,
-                  name: schoolDoc.name,
-                  email: schoolDoc.email,
-                  role: 'school',
-                  schoolId: schoolDoc.schoolId
-                };
-              } else {
-                noticeObj.createdBy = notice.createdBy;
-              }
-            }
-          } catch (err) {
-            console.error("Error populating createdBy:", err);
-            noticeObj.createdBy = notice.createdBy;
-          }
-        }
+//               if (schoolDoc) {
+//                 noticeObj.createdBy = {
+//                   _id: schoolDoc._id,
+//                   name: schoolDoc.name,
+//                   email: schoolDoc.email,
+//                   role: 'school',
+//                   schoolId: schoolDoc.schoolId
+//                 };
+//               } else {
+//                 noticeObj.createdBy = notice.createdBy;
+//               }
+//             }
+//           } catch (err) {
+//             console.error("Error populating createdBy:", err);
+//             noticeObj.createdBy = notice.createdBy;
+//           }
+//         }
 
-        return noticeObj;
-      })
-    );
+//         return noticeObj;
+//       })
+//     );
 
-    const totalPages = Math.ceil(total / Number(limit));
+//     const totalPages = Math.ceil(total / Number(limit));
 
-    return res.status(200).json({
-      total,
-      page: Number(page),
-      limit: Number(limit),
-      totalPages,
-      data: processedNotices,
-    });
+//     return res.status(200).json({
+//       total,
+//       page: Number(page),
+//       limit: Number(limit),
+//       totalPages,
+//       data: processedNotices,
+//     });
 
-  } catch (err) {
-    console.error("getNotices error:", err);
-    return res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: process.env.NODE_ENV === 'development' ? err.message : undefined
-    });
-  }
-};
+//   } catch (err) {
+//     console.error("getNotices error:", err);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Internal server error",
+//       error: process.env.NODE_ENV === 'development' ? err.message : undefined
+//     });
+//   }
+// };
 
 // Get notices for admins
 // const getAdminNotices = async (req, res) => {
@@ -497,6 +497,378 @@ const getNotices = async (req, res) => {
 //     });
 //   }
 // };
+
+
+const getNotices = async (req, res) => {
+  try {
+    const user = req.user;
+
+    const schoolId = user.school || user.schoolId || (user.schoolInfo && user.schoolInfo.id);
+
+    if (!schoolId) {
+      return res.status(400).json({
+        success: false,
+        message: "School information not found"
+      });
+    }
+
+    const userId = user._id || user.id;
+    const userRole = user.role || 'school';
+    const {
+      classId,
+      sectionId,
+      category,
+      activeOnly,
+      target,
+      startDate,
+      endDate,
+      search,
+      page = 1,
+      limit = 10,
+      sortBy = 'createdAt',
+      sortOrder = 'desc'
+    } = req.query;
+
+    const teacherClassId = user.classId || (user.classInfo && user.classInfo.id);
+    const teacherSectionId = user.sectionId || (user.sectionInfo && user.sectionInfo.id);
+    const teacherId = user._id || user.id;
+
+    const now = new Date();
+    const filter = { school: schoolId };
+
+    if (classId) filter.classId = classId;
+    if (sectionId) filter.sectionId = sectionId;
+    if (category) filter.category = category;
+    if (target) filter.target = target;
+
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) {
+        filter.createdAt.$gte = new Date(startDate);
+      }
+      if (endDate) {
+        const endDateObj = new Date(endDate);
+        endDateObj.setHours(23, 59, 59, 999);
+        filter.createdAt.$lte = endDateObj;
+      }
+    }
+
+    if (search) {
+      filter.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { message: { $regex: search, $options: "i" } }
+      ];
+    }
+
+    if (activeOnly === "true") {
+      filter.$and = (filter.$and || []).concat([
+        {
+          $or: [
+            { startDate: { $exists: false } },
+            { startDate: { $lte: now } }
+          ]
+        },
+        {
+          $or: [
+            { endDate: { $exists: false } },
+            { endDate: { $gte: now } }
+          ]
+        }
+      ]);
+    }
+
+    if (!user.role) {
+      console.log("School login - showing all notices for school");
+    }
+    else if (userRole === "teacher") {
+
+      const teacherFilters = [
+        { target: "all" },
+        { target: "all_teachers" },
+        { target: "selected_teachers", targetTeacherIds: teacherId }
+      ];
+
+      if (teacherClassId) {
+        teacherFilters.push({ target: "class", classId: teacherClassId });
+      }
+
+      if (teacherClassId && teacherSectionId) {
+        teacherFilters.push({
+          target: "section",
+          classId: teacherClassId,
+          sectionId: teacherSectionId
+        });
+      }
+
+      const validFilters = teacherFilters.filter(filterItem => {
+        if (filterItem.target === "class" && !filterItem.classId) return false;
+        if (filterItem.target === "section" && (!filterItem.classId || !filterItem.sectionId)) return false;
+        return true;
+      });
+
+
+      filter.$and = [
+        { school: schoolId },
+        { $or: validFilters }
+      ];
+
+    }
+    else if (["admin_office", "school", "superadmin"].includes(user.role)) {
+      console.log("Admin login with role:", user.role);
+    }
+    else {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Teacher, Admin, or School role required."
+      });
+    }
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const sortDirection = sortOrder === "asc" ? 1 : -1;
+
+    // First get notices without populate to collect all createdBy IDs
+    const notices = await Notice.find(filter)
+      .sort({ pinned: -1, [sortBy]: sortDirection })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+
+    const total = await Notice.countDocuments(filter);
+
+    // Collect all unique createdBy IDs and determine their types based on requestedByModel
+    const staffIds = [];
+    const studentIds = [];
+    const schoolIds = [];
+
+    notices.forEach(notice => {
+      if (notice.createdBy) {
+        if (notice.requestedByModel === 'Staff') {
+          staffIds.push(notice.createdBy);
+        } else if (notice.requestedByModel === 'Student') {
+          studentIds.push(notice.createdBy);
+        } else if (notice.requestedByModel === 'School') {
+          schoolIds.push(notice.createdBy);
+        } else {
+          // If no requestedByModel, try to find in all collections
+          staffIds.push(notice.createdBy);
+          studentIds.push(notice.createdBy);
+          schoolIds.push(notice.createdBy);
+        }
+      }
+    });
+
+    // Fetch all creators in parallel
+    const [staffUsers, studentUsers, schoolUsers] = await Promise.all([
+      staffIds.length > 0 ? Staff.find({ _id: { $in: [...new Set(staffIds.map(id => id.toString()))] } }).select('name email role images.recentPic').lean() : [],
+      studentIds.length > 0 ? Student.find({ _id: { $in: [...new Set(studentIds.map(id => id.toString()))] } }).select('name email role username images.recentPic classInfo sectionInfo').lean() : [],
+      schoolIds.length > 0 ? School.find({ _id: { $in: [...new Set(schoolIds.map(id => id.toString()))] } }).select('name email schoolId').lean() : []
+    ]);
+
+    // Create maps for quick lookup
+    const staffMap = new Map(staffUsers.map(s => [s._id.toString(), { ...s, model: 'Staff' }]));
+    const studentMap = new Map(studentUsers.map(s => [s._id.toString(), { ...s, model: 'Student' }]));
+    const schoolMap = new Map(schoolUsers.map(s => [s._id.toString(), { ...s, model: 'School' }]));
+
+    // Helper function to get creator info
+    const getCreatorInfo = (notice) => {
+      const createdById = notice.createdBy?.toString();
+      if (!createdById) return null;
+
+      // Check based on requestedByModel first
+      if (notice.requestedByModel === 'Staff') {
+        const staff = staffMap.get(createdById);
+        if (staff) {
+          return {
+            _id: staff._id,
+            name: staff.name,
+            email: staff.email,
+            role: staff.role,
+            image: staff.images?.recentPic || null,
+            model: 'Staff'
+          };
+        }
+      } else if (notice.requestedByModel === 'Student') {
+        const student = studentMap.get(createdById);
+        if (student) {
+          return {
+            _id: student._id,
+            name: student.name,
+            email: student.email,
+            role: student.role || 'student',
+            username: student.username,
+            image: student.images?.recentPic || null,
+            classInfo: student.classInfo,
+            sectionInfo: student.sectionInfo,
+            model: 'Student'
+          };
+        }
+      } else if (notice.requestedByModel === 'School') {
+        const school = schoolMap.get(createdById);
+        if (school) {
+          return {
+            _id: school._id,
+            name: school.name,
+            email: school.email,
+            role: 'school',
+            schoolId: school.schoolId,
+            model: 'School'
+          };
+        }
+      }
+
+      // Fallback: try all maps
+      const staff = staffMap.get(createdById);
+      if (staff) {
+        return {
+          _id: staff._id,
+          name: staff.name,
+          email: staff.email,
+          role: staff.role,
+          image: staff.images?.recentPic || null,
+          model: 'Staff'
+        };
+      }
+
+      const student = studentMap.get(createdById);
+      if (student) {
+        return {
+          _id: student._id,
+          name: student.name,
+          email: student.email,
+          role: student.role || 'student',
+          username: student.username,
+          image: student.images?.recentPic || null,
+          classInfo: student.classInfo,
+          sectionInfo: student.sectionInfo,
+          model: 'Student'
+        };
+      }
+
+      const school = schoolMap.get(createdById);
+      if (school) {
+        return {
+          _id: school._id,
+          name: school.name,
+          email: school.email,
+          role: 'school',
+          schoolId: school.schoolId,
+          model: 'School'
+        };
+      }
+
+      return null;
+    };
+
+    // Also fetch class and section info for class notices
+    const classIds = [...new Set(notices.map(n => n.classId).filter(Boolean))];
+    const classes = classIds.length > 0 ? await ClassSection.find({ _id: { $in: classIds } }).select('class sections').lean() : [];
+    const classMap = new Map(classes.map(c => [c._id.toString(), c]));
+
+    // Helper to get section name
+    const getSectionInfo = (classId, sectionId) => {
+      const classDoc = classMap.get(classId?.toString());
+      if (!classDoc || !sectionId) return null;
+      const section = classDoc.sections?.find(s => s._id.toString() === sectionId.toString());
+      return section ? { _id: section._id, name: section.name } : null;
+    };
+
+    const processedNotices = await Promise.all(
+      notices.map(async (notice) => {
+        const noticeObj = { ...notice };
+
+        // Get creator info
+        const creatorInfo = getCreatorInfo(notice);
+        noticeObj.createdBy = creatorInfo || notice.createdBy;
+
+        // Add class and section names if present
+        if (notice.classId) {
+          const classDoc = classMap.get(notice.classId.toString());
+          if (classDoc) {
+            noticeObj.classInfo = {
+              _id: classDoc._id,
+              name: classDoc.class
+            };
+            delete noticeObj.classId;
+          }
+        }
+
+        if (notice.sectionId) {
+          const sectionInfo = getSectionInfo(notice.classId, notice.sectionId);
+          if (sectionInfo) {
+            noticeObj.sectionInfo = sectionInfo;
+            delete noticeObj.sectionId;
+          }
+        }
+
+        // Handle read status for teacher/student
+        if (userRole === "teacher" || userRole === "student") {
+          const hasRead = notice.readBy && notice.readBy.some(read =>
+            read.user && read.user.toString() === userId.toString()
+          );
+
+          noticeObj.isRead = hasRead;
+
+          if (hasRead) {
+            const readRecord = notice.readBy && notice.readBy.find(read =>
+              read.user && read.user.toString() === userId.toString()
+            );
+            noticeObj.readAt = readRecord ? readRecord.readAt : null;
+          }
+
+          noticeObj.readCount = notice.readBy ? notice.readBy.length : 0;
+        }
+
+        // Clean up for teacher view
+        if (userRole === "teacher") {
+          delete noticeObj.targetTeacherIds;
+          delete noticeObj.targetStudentIds;
+          delete noticeObj.readBy;
+
+          if (notice.target === "selected_teachers" || notice.target === "selected_students") {
+            if (notice.target === "selected_teachers" && Array.isArray(notice.targetTeacherIds)) {
+              noticeObj.isTargetedToMe = notice.targetTeacherIds.some(id =>
+                id.toString() === userId.toString()
+              );
+            } else if (notice.target === "selected_students") {
+              noticeObj.isTargetedToMe = false;
+            }
+          } else {
+            noticeObj.isTargetedToMe = true;
+          }
+        }
+
+        // Clean up for admin
+        if (["admin_office", "school", "superadmin"].includes(userRole)) {
+          delete noticeObj.readBy;
+          delete noticeObj.isRead;
+          delete noticeObj.readAt;
+          delete noticeObj.readCount;
+        }
+
+        return noticeObj;
+      })
+    );
+
+    const totalPages = Math.ceil(total / Number(limit));
+
+    return res.status(200).json({
+      total,
+      page: Number(page),
+      limit: Number(limit),
+      totalPages,
+      data: processedNotices,
+    });
+
+  } catch (err) {
+    console.error("getNotices error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+};
+
 
 const getAdminNotices = async (req, res) => {
   try {
@@ -887,7 +1259,7 @@ const getNoticesForStudent = async (req, res) => {
               };
             } else {
               const schoolDoc = await School.findById(notice.createdBy)
-                .select('name email schoolId')
+                .select('name email schoolId images.logo')
                 .lean();
 
               if (schoolDoc) {
@@ -897,7 +1269,7 @@ const getNoticesForStudent = async (req, res) => {
                   email: schoolDoc.email,
                   role: "school",
                   schoolId: schoolDoc.schoolId,
-                  image: null
+                  image: schoolDoc.images?.logo || null
                 };
               } else {
                 noticeObj.createdBy = {

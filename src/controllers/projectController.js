@@ -114,7 +114,7 @@ const handleProjectUploads = async (files, existing = {}) => {
     for (const img of images) await deleteFileFromS3(img);
     images = [];
 
-    for (const file of files.images.slice(0, 2)) {
+    for (const file of files.images.slice(0, 5)) {
       const uploaded = await uploadFileToS3({
         fileBuffer: file.buffer,
         fileName: `${Date.now()}-${file.originalname}`,

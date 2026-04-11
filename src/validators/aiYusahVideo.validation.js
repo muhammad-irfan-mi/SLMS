@@ -73,12 +73,14 @@ const videoSchema = Joi.object({
 
   category: Joi.string()
     .valid(
-      "behavioural activities",
-      "islamic studies",
-      "capacity building",
-      "cartoons",
-      "animals education",
-      "yushay stars"
+      "Animal",
+      "Fun",
+      "Cartoons",
+      "Yushay Stars",
+      "AI Poems",
+      "English learning",
+      "Islamic Studies",
+      "Health and Food"
     )
     .required()
     .messages({
@@ -116,12 +118,14 @@ const filterSchema = Joi.object({
   search: Joi.string().max(100).optional(),
   category: Joi.string()
     .valid(
-      "behavioural activities",
-      "islamic studies",
-      "capacity building",
-      "cartoons",
-      "animals education",
-      "yushay stars"
+      "Animal",
+      "Fun",
+      "Cartoons",
+      "Yushay Stars",
+      "AI Poems",
+      "English learning",
+      "Islamic Studies",
+      "Health and Food"
     )
     .optional(),
   platform: Joi.string()

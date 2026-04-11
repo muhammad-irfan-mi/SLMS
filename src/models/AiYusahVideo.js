@@ -29,12 +29,14 @@ const AiYusahVideoSchema = new mongoose.Schema(
     category: {
       type: String,
       enum: [
-        "behavioural activities",
-        "islamic studies",
-        "capacity building",
-        "cartoons",
-        "animals education",
-        "yushay stars"
+        "Animal",
+        "Fun",
+        "Cartoons",
+        "Yushay Stars",
+        "AI Poems",
+        "English learning",
+        "Islamic Studies",
+        "Health and Food"
       ],
       required: true,
       index: true
