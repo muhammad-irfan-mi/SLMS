@@ -3,12 +3,12 @@ const mongoose = require("mongoose");
 const ReviewSchema = new mongoose.Schema({
     reviewerId: { 
         type: mongoose.Schema.Types.ObjectId, 
-        ref: "User", 
+        ref: "Staff", 
         required: true 
     },
     reviewerRole: { 
         type: String, 
-        enum: ["admin", "user"], 
+        enum: ["admin", "user", "staff", "student"], 
         required: true 
     },
     comment: { 
@@ -34,7 +34,7 @@ const ComplaintFeedbackSchema = new mongoose.Schema(
         },
         studentId: { 
             type: mongoose.Schema.Types.ObjectId, 
-            ref: "User", 
+            ref: "Student", 
             required: true 
         },
         classId: { 
@@ -69,7 +69,7 @@ const ComplaintFeedbackSchema = new mongoose.Schema(
         reviews: [ReviewSchema],
         createdBy: { 
             type: mongoose.Schema.Types.ObjectId, 
-            ref: "User",
+            ref: "Student",
             required: true 
         },
         autoDeleteAt: {

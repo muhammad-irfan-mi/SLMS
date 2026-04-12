@@ -5,8 +5,14 @@ const { upload } = require("../utils/multer");
 const { protect, isAdminOffice, allowedRoles } = require("../middlewares/auth");
 
 
-router.post("/", protect, isAdminOffice, upload.array("images", 20), createEvent);
-router.put("/:id", protect, isAdminOffice, upload.array("images", 20), updateEvent);
+router.post("/", protect, isAdminOffice, upload.fields([
+    { name: "bannerImage", maxCount: 1 },
+    { name: "images", maxCount: 20 }
+]), createEvent);
+router.put("/:id", protect, isAdminOffice, upload.fields([
+    { name: "bannerImage", maxCount: 1 },
+    { name: "images", maxCount: 20 }
+]), updateEvent);
 router.get("/", protect, allowedRoles, getEvents);
 router.get("/:id", protect, allowedRoles, getEventById);
 router.delete("/:id", protect, isAdminOffice, deleteEvent);

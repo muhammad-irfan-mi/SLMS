@@ -17,6 +17,7 @@ const eventSchema = new mongoose.Schema({
     images: [
         { type: String }
     ],
+    bannerImage: { type: String },
 
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 

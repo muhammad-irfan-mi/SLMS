@@ -265,7 +265,7 @@ const reviewComplaint = async (req, res) => {
             reviewedAt: new Date(),
             reviewerName: req.user.name || "School Admin",
             reviewerEmail: req.user.email || "",
-            reviewerType: userRole || "unknown" 
+            reviewerType: userRole || "unknown"
         };
 
         console.log("New review:", newReview);
@@ -332,7 +332,7 @@ const getComplain = async (req, res) => {
         const skip = (Number(page) - 1) * Number(limit);
 
         const query = ComplaintFeedback.find(filter)
-            .populate("studentId", "name email rollNo images.recentPic")
+            .populate({ path: "studentId", select: "name email rollNo images.recentPic", model: "Student" })
             .populate({
                 path: "classId",
                 select: "class sections"
@@ -595,7 +595,7 @@ const getComplainByStudent = async (req, res) => {
                             id: review._id,
                             comment: review.comment,
                             action: review.action,
-                            reviewerRole: review.reviewerRole,
+                            // reviewerRole: review.reviewerRole,
                             reviewedAt: review.reviewedAt,
                             reviewer: reviewerInfo
                         };

@@ -2,25 +2,43 @@ const Event = require("../models/Event");
 const { uploadFileToS3, deleteFileFromS3 } = require("../services/s3.service");
 
 // HELPERS 
+// HELPERS 
 async function uploadMultipleImages(files) {
-    const uploadedImages = [];
+    if (!files || files.length === 0) return [];
 
+    const uploadedImages = [];
     for (let file of files) {
         const uploaded = await uploadFileToS3({
             fileBuffer: file.buffer,
-            fileName: file.originalname,
+            fileName: `${Date.now()}-${file.originalname}`,
             mimeType: file.mimetype,
         });
-
         uploadedImages.push(uploaded);
     }
-
     return uploadedImages;
+}
+
+async function uploadSingleImage(file) {
+    if (!file) return null;
+
+    const uploaded = await uploadFileToS3({
+        fileBuffer: file.buffer,
+        fileName: `${Date.now()}-${file.originalname}`,
+        mimeType: file.mimetype,
+    });
+
+    return uploaded;
 }
 
 async function deleteMultipleImages(images = []) {
     for (let img of images) {
-        await deleteFileFromS3(img);
+        if (img) await deleteFileFromS3(img);
+    }
+}
+
+async function deleteSingleImage(imageUrl) {
+    if (imageUrl) {
+        await deleteFileFromS3(imageUrl);
     }
 }
 
@@ -36,10 +54,15 @@ const createEvent = async (req, res) => {
 
         const schoolId = req.user.school;
 
-        // Upload images to S3
+        let bannerImage = null;
+        if (req.files && req.files.bannerImage && req.files.bannerImage[0]) {
+            bannerImage = await uploadSingleImage(req.files.bannerImage[0]);
+        }
+
+        // Upload gallery images (from req.files.images)
         let images = [];
-        if (req.files?.length > 0) {
-            images = await uploadMultipleImages(req.files);
+        if (req.files && req.files.images && req.files.images.length > 0) {
+            images = await uploadMultipleImages(req.files.images);
         }
 
         const newEvent = await Event.create({
@@ -48,6 +71,7 @@ const createEvent = async (req, res) => {
             description,
             eventDate,
             status,
+            bannerImage,
             images,
             createdBy: req.user._id
         });
@@ -64,44 +88,10 @@ const createEvent = async (req, res) => {
 };
 
 // UPDATE EVENT
-// const updateEvent = async (req, res) => {
-//     try {
-//         const { id } = req.params;
-
-//         const event = await Event.findById(id);
-//         if (!event) {
-//             return res.status(404).json({ message: "Event not found" });
-//         }
-
-//         const updatedData = req.body;
-
-//         if (req.files?.length > 0) {
-//             const newImages = await uploadMultipleImages(req.files);
-//             updatedData.images = [...event.images, ...newImages];
-//         }
-
-//         const updatedEvent = await Event.findByIdAndUpdate(
-//             id,
-//             { $set: updatedData },
-//             { new: true }
-//         );
-
-//         res.status(200).json({
-//             message: "Event updated successfully",
-//             event: updatedEvent
-//         });
-
-//     } catch (err) {
-//         console.error("Update Event Error:", err);
-//         res.status(500).json({ message: "Server error", error: err.message });
-//     }
-// };
-
 const updateEvent = async (req, res) => {
     try {
         const { id } = req.params;
 
-        // 🔍 Find event
         const event = await Event.findById(id);
         if (!event) {
             return res.status(404).json({ message: "Event not found" });
@@ -109,31 +99,26 @@ const updateEvent = async (req, res) => {
 
         const updatedData = { ...req.body };
 
-        // 🖼️ Handle image update
-        if (req.files?.length > 0) {
-
-            // ✅ STEP 1: Upload new images FIRST
-            const newImages = await uploadMultipleImages(req.files);
-
-            // ✅ STEP 2: Delete old images AFTER successful upload
-            if (event.images?.length > 0) {
-                try {
-                    await deleteMultipleImages(event.images);
-                } catch (deleteErr) {
-                    console.error("Old image delete failed:", deleteErr);
-                    // ⚠️ Do NOT stop process if delete fails
-                }
-            }
-
-            // ✅ STEP 3: Replace images (NOT append)
-            updatedData.images = newImages;
+        if (updatedData.eventDate) {
+            updatedData.eventDate = new Date(updatedData.eventDate);
         }
 
-        // 🔄 Update event
+        if (req.files && req.files.bannerImage && req.files.bannerImage[0]) {
+            if (event.bannerImage) {
+                await deleteSingleImage(event.bannerImage);
+            }
+            updatedData.bannerImage = await uploadSingleImage(req.files.bannerImage[0]);
+        }
+
+        if (req.files && req.files.images && req.files.images.length > 0) {
+            const newImages = await uploadMultipleImages(req.files.images);
+            updatedData.images = [...event.images, ...newImages];
+        }
+
         const updatedEvent = await Event.findByIdAndUpdate(
             id,
             { $set: updatedData },
-            { new: true, runValidators: true }
+            { new: true }
         );
 
         res.status(200).json({
@@ -143,15 +128,9 @@ const updateEvent = async (req, res) => {
 
     } catch (err) {
         console.error("Update Event Error:", err);
-
-        res.status(500).json({
-            message: "Server error",
-            error: err.message
-        });
+        res.status(500).json({ message: "Server error", error: err.message });
     }
 };
- 
-// GET EVENTS 
 
 const getEvents = async (req, res) => {
     try {
