@@ -424,53 +424,65 @@ class EmailService {
         });
     }
 
-    async sendPasswordChangedNotification(email, userName, schoolId) {
-        const schoolName = await this.getSchoolName(schoolId);
+    async sendSchoolPasswordChangedNotification(email, schoolName) {
         return this.sendEmail({
             to: email,
-            subject: "Password Changed Successfully",
+            subject: "School Password Changed Successfully",
             html: this.generateTemplate({
                 title: "Password Updated",
-                message: `Hello ${userName}, your password has been changed successfully.`,
+                message: `Hello ${schoolName}, your school account password has been changed successfully. If you did not make this change, please contact support immediately.`,
                 schoolName
             }),
         });
     }
 
-    async sendStudentRegistrationEmail(
-        email,
-        otpCode,
-        name,
-        username,
-        schoolId
-    ) {
-        const schoolName = await this.getSchoolName(schoolId);
+    async sendPasswordChangedNotification(email, userName, schoolId) {
+    const schoolName = await this.getSchoolName(schoolId);
+    return this.sendEmail({
+        to: email,
+        subject: "Password Changed Successfully",
+        html: this.generateTemplate({
+            title: "Password Updated",
+            message: `Hello ${userName}, your password has been changed successfully.`,
+            schoolName
+        }),
+    });
+}
 
-        return this.sendEmail({
-            to: email,
-            subject: `Student Account Created - ${schoolName}`,
-            html: this.generateTemplate({
-                title: "Student Account Created",
-                message: `Hello ${name}, your student account has been created successfully.`,
-                otp: otpCode,
-                username,
-                schoolName,
-                role: "student"
-            }),
-        });
-    }
+    async sendStudentRegistrationEmail(
+    email,
+    otpCode,
+    name,
+    username,
+    schoolId
+) {
+    const schoolName = await this.getSchoolName(schoolId);
+
+    return this.sendEmail({
+        to: email,
+        subject: `Student Account Created - ${schoolName}`,
+        html: this.generateTemplate({
+            title: "Student Account Created",
+            message: `Hello ${name}, your student account has been created successfully.`,
+            otp: otpCode,
+            username,
+            schoolName,
+            role: "student"
+        }),
+    });
+}
 
     async sendWelcomeEmail(email, userName, role, username = null) {
-        return this.sendEmail({
-            to: email,
-            subject: "Welcome to School Management System",
-            html: this.generateTemplate({
-                title: "Welcome",
-                message: `Hello ${userName}, your role is ${role}.`,
-                username,
-            }),
-        });
-    }
+    return this.sendEmail({
+        to: email,
+        subject: "Welcome to School Management System",
+        html: this.generateTemplate({
+            title: "Welcome",
+            message: `Hello ${userName}, your role is ${role}.`,
+            username,
+        }),
+    });
+}
 }
 
 
