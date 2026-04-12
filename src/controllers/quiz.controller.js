@@ -408,127 +408,6 @@ const deleteQuizGroup = async (req, res) => {
 };
 
 // GET quiz groups with filters
-// const getGroups = async (req, res) => {
-//   try {
-//     const user = req.user;
-//     const userRole = detectUserRole(user);
-
-//     const {
-//       page = 1,
-//       limit = 10,
-//       status,
-//       classId,
-//       sectionId,
-//       search
-//     } = req.query;
-
-//     let schoolId;
-//     if (userRole === 'school') {
-//       schoolId = user._id || user.id;
-//     } else if (['admin_office', 'teacher', 'student'].includes(userRole)) {
-//       schoolId = user.school;
-//     } else {
-//       return res.status(403).json({
-//         message: "Not authorized"
-//       });
-//     }
-
-//     const filter = { school: schoolId };
-
-//     if (status) filter.status = status;
-//     if (classId) filter.classIds = classId;
-//     if (sectionId) {
-//       filter.sectionIds = { $in: [sectionId] };
-//     }
-//     if (search) {
-//       filter.$or = [
-//         { title: { $regex: search, $options: 'i' } },
-//         { description: { $regex: search, $options: 'i' } }
-//       ];
-//     }
-
-//     const skip = (page - 1) * limit;
-
-//     const [total, groups] = await Promise.all([
-//       QuizGroup.countDocuments(filter),
-//       QuizGroup.find(filter)
-//         .sort({ createdAt: -1 })
-//         .skip(skip)
-//         .limit(Number(limit))
-//         .lean()
-//     ]);
-
-//     const allClassIds = [
-//       ...new Set(groups.flatMap(g => g.classIds || []))
-//     ];
-
-//     const classes = await ClassSection.find({
-//       _id: { $in: allClassIds },
-//       school: schoolId
-//     }).lean();
-
-//     const classMap = new Map();
-//     classes.forEach(cls => {
-//       classMap.set(cls._id.toString(), cls);
-//     });
-
-//     const enrichedGroups = groups.map(group => {
-//       let classInfo = null;
-//       let sectionInfo = null;
-
-//       (group.classIds || []).forEach(cid => {
-//         const cls = classMap.get(cid.toString());
-//         if (!cls) return;
-
-//         classInfo = {
-//           id: cls._id,
-//           name: cls.className || cls.class
-//         };
-
-//         (group.sectionIds || []).forEach(secId => {
-//           const sec = (cls.sections || []).find(
-//             s => s._id.toString() === secId.toString()
-//           );
-
-//           if (sec) {
-//             sectionInfo = {
-//               id: sec._id,
-//               name: sec.name,
-//             };
-//           }
-//         });
-//       });
-//       return {
-//         _id: group._id,
-//         title: group.title,
-//         description: group.description,
-//         status: group.status,
-//         classInfo,
-//         sectionInfo,
-//         totalQuestions: group.questions.length,
-//         startTime: group.startTime,
-//         endTime: group.endTime,
-//         createdAt: group.createdAt,
-//         createdBy: group.createdBy
-//       };
-//     });
-
-//     return res.status(200).json({
-//       total,
-//       page: Number(page),
-//       totalPages: Math.ceil(total / limit),
-//       limit: Number(limit),
-//       groups: enrichedGroups
-//     });
-//   } catch (err) {
-//     console.error("getGroups error:", err);
-//     return res.status(500).json({
-//       message: "Server error",
-//       error: err.message
-//     });
-//   }
-// };
-
 const getGroups = async (req, res) => {
   try {
     const user = req.user;
@@ -682,146 +561,12 @@ const getGroups = async (req, res) => {
   }
 };
 
-
-// const getGroupById = async (req, res) => {
-//   try {
-//     const user = req.user;
-//     const userRole = detectUserRole(user);
-//     const { id } = req.params;
-
-//     const group = await QuizGroup.findById(id).lean();
-//     if (!group) {
-//       return res.status(404).json({ message: "Quiz not found" });
-//     }
-
-//     if (group.status !== 'published') {
-//       return res.status(403).json({
-//         message: "This quiz is not available"
-//       });
-//     }
-
-//     const now = new Date();
-//     if (group.startTime && now < new Date(group.startTime)) {
-//       return res.status(403).json({
-//         message: "Quiz has not started yet"
-//       });
-//     }
-
-//     if (group.endTime && now > new Date(group.endTime)) {
-//       return res.status(403).json({
-//         message: "Quiz has ended"
-//       });
-//     }
-
-//     if (userRole === 'student') {
-//       const student = await Student.findById(user._id);
-//       const isEligible = await validateStudentClassSection(
-//         student,
-//         group.classIds,
-//         group.sectionIds
-//       );
-
-//       if (!isEligible) {
-//         return res.status(403).json({
-//           message: "You are not eligible to attempt this quiz"
-//         });
-//       }
-
-//       const existingSubmission = await QuizSubmission.findOne({
-//         groupId: id,
-//         studentId: user._id
-//       });
-
-//       if (existingSubmission) {
-//         return res.status(400).json({
-//           message: "You have already submitted this quiz",
-//           submissionId: existingSubmission._id
-//         });
-//       }
-//     }
-
-//     let classInfo = null;
-//     let sectionInfo = null;
-
-//     if (group.classIds && group.classIds.length > 0) {
-//       const classes = await ClassSection.find({
-//         _id: { $in: group.classIds },
-//         school: group.school
-//       }).lean();
-
-//       const cls = classes[0]; // quiz belongs to ONE class
-
-//       if (cls) {
-//         classInfo = {
-//           id: cls._id,
-//           name: cls.className || cls.class
-//         };
-
-//         if (group.sectionIds && group.sectionIds.length > 0) {
-//           const sectionIdStrings = group.sectionIds.map(id => id.toString());
-
-//           const sec = (cls.sections || []).find(
-//             s => sectionIdStrings.includes(s._id.toString())
-//           );
-
-//           if (sec) {
-//             sectionInfo = {
-//               id: sec._id,
-//               name: sec.name,
-//             };
-//           }
-//         }
-//       }
-//     }
-
-
-//     const safeQuestions = group.questions
-//       .sort((a, b) => (a.order || 0) - (b.order || 0))
-//       .map(q => {
-//         const { correctOptionIndex, correctAnswer, ...safeQuestion } = q;
-//         return safeQuestion;
-//       });
-
-//     const response = {
-//       _id: group._id,
-//       title: group.title,
-//       description: group.description,
-//       classInfo,
-//       sectionInfo,
-//       questions: safeQuestions,
-//       totalQuestions: safeQuestions.length,
-//       totalMarks: group.questions.reduce((sum, q) => sum + (q.marks || 1), 0),
-//       startTime: group.startTime,
-//       endTime: group.endTime,
-//       timeRemaining: group.endTime ?
-//         Math.max(0, new Date(group.endTime).getTime() - now.getTime()) : null,
-//       instructions: "Answer all questions. Each question has specified marks."
-//     };
-
-//     if (userRole === 'student') {
-//       response.canSubmit = true;
-//       response.timeLimit = group.endTime ?
-//         Math.floor((new Date(group.endTime).getTime() - now.getTime()) / 60000) + ' minutes' :
-//         'No time limit';
-//     }
-
-//     return res.status(200).json({ quiz: response });
-//   } catch (err) {
-//     console.error("getGroupById error:", err);
-//     return res.status(500).json({
-//       message: "Server error",
-//       error: err.message
-//     });
-//   }
-// };
-
-
 const getGroupById = async (req, res) => {
   try {
     const user = req.user;
     const userRole = detectUserRole(user);
     const { id } = req.params;
-    const { sectionId } = req.query; 
+    const { sectionId } = req.query;
 
     const group = await QuizGroup.findById(id).lean();
     if (!group) {
@@ -873,7 +618,7 @@ const getGroupById = async (req, res) => {
         // Filter sections based on group's sectionIds
         if (group.sectionIds && group.sectionIds.length > 0) {
           const groupSectionIds = group.sectionIds.map(id => id.toString());
-          sectionInfos = allSections.filter(sec => 
+          sectionInfos = allSections.filter(sec =>
             groupSectionIds.includes(sec.id.toString())
           );
         }
@@ -890,7 +635,7 @@ const getGroupById = async (req, res) => {
               filteredSectionInfo = matchedSection;
             }
           }
-          
+
           if (!filteredSectionInfo) {
             return res.status(403).json({
               message: "You are not eligible to attempt this quiz"
@@ -932,8 +677,8 @@ const getGroupById = async (req, res) => {
       title: group.title,
       description: group.description,
       classInfo,
-      sectionInfos: userRole === 'student' ? undefined : sectionInfos, 
-      sectionInfo: filteredSectionInfo, 
+      sectionInfos: userRole === 'student' ? undefined : sectionInfos,
+      sectionInfo: filteredSectionInfo,
       questions: safeQuestions,
       totalQuestions: safeQuestions.length,
       totalMarks: group.questions.reduce((sum, q) => sum + (q.marks || 1), 0),
@@ -960,7 +705,6 @@ const getGroupById = async (req, res) => {
     });
   }
 };
-
 
 const submitQuiz = async (req, res) => {
   try {
@@ -1001,6 +745,10 @@ const submitQuiz = async (req, res) => {
     }
 
     const student = await Student.findById(user._id);
+    if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
     const isEligible = await validateStudentClassSection(
       student,
       group.classIds,
@@ -1117,6 +865,10 @@ const submitQuiz = async (req, res) => {
       };
     });
 
+    const populatedSubmission = await QuizSubmission.findById(submission._id)
+      .populate('studentId', 'name email rollNo classInfo sectionInfo')
+      .lean();
+
     return res.status(201).json({
       message: "Quiz submitted successfully",
       submissionId: submission._id,
@@ -1127,7 +879,8 @@ const submitQuiz = async (req, res) => {
           ((obtainedMarks / totalMarks) * 100).toFixed(2) : 0
       },
       feedback: feedback,
-      submittedAt: submission.submittedAt
+      submittedAt: submission.submittedAt,
+      studentInfo: populatedSubmission?.studentId || null
     });
 
   } catch (err) {
@@ -1139,7 +892,6 @@ const submitQuiz = async (req, res) => {
   }
 };
 
-// GET leaderboard
 const getLeaderboard = async (req, res) => {
   try {
     const { groupId } = req.query;
@@ -1164,33 +916,77 @@ const getLeaderboard = async (req, res) => {
       .populate({
         path: 'studentId',
         select: 'name email rollNo classInfo sectionInfo',
-        populate: [
-          {
-            path: 'classInfo.id',
-            select: 'class'
-          }
-        ]
+        model: 'Student'
       })
       .sort({ totalMarksObtained: -1, submittedAt: 1 })
       .skip(skip)
       .limit(parseInt(limit))
       .lean();
 
-    const total = await QuizSubmission.countDocuments({ groupId });
+    // const total = await QuizSubmission.countDocuments({ groupId });
 
-    const results = submissions.map((sub, index) => {
+    const classIds = [...new Set(
+      submissions
+        .filter(sub => sub.studentId?.classInfo?.id)
+        .map(sub => sub.studentId.classInfo.id.toString())
+    )];
+
+    const sectionIds = [...new Set(
+      submissions
+        .filter(sub => sub.studentId?.sectionInfo?.id)
+        .map(sub => sub.studentId.sectionInfo.id.toString())
+    )];
+
+    const classes = await ClassSection.find({
+      _id: { $in: classIds },
+      school: group.school
+    }).lean();
+
+    const classMap = new Map();
+    classes.forEach(cls => {
+      classMap.set(cls._id.toString(), cls);
+    });
+
+    const validSubmissions = submissions.filter(sub => sub.studentId !== null);
+
+    const results = validSubmissions.map((sub, index) => {
       const student = sub.studentId;
       const percentage = sub.totalMarks > 0 ?
         ((sub.totalMarksObtained / sub.totalMarks) * 100).toFixed(2) : 0;
 
+      let classInfo = null;
+      let sectionInfo = null;
+
+      if (student.classInfo?.id) {
+        const classDoc = classMap.get(student.classInfo.id.toString());
+        if (classDoc) {
+          classInfo = {
+            id: classDoc._id,
+            name: classDoc.class
+          };
+
+          if (student.sectionInfo?.id) {
+            const section = classDoc.sections?.find(
+              sec => sec._id.toString() === student.sectionInfo.id.toString()
+            );
+            if (section) {
+              sectionInfo = {
+                id: section._id,
+                name: section.name
+              };
+            }
+          }
+        }
+      }
+
       return {
         rank: skip + index + 1,
         studentId: student._id,
-        studentName: student.name,
-        studentEmail: student.email,
+        studentName: student.name || 'Unknown',
+        studentEmail: student.email || 'N/A',
         rollNumber: student.rollNo || 'N/A',
-        className: student.classInfo?.id?.class || 'Not assigned',
-        // sectionName: student.sectionInfo?.name || 'Not assigned',
+        classInfo: classInfo,
+        sectionInfo: sectionInfo,
         totalMarksObtained: sub.totalMarksObtained,
         totalMarks: sub.totalMarks,
         percentage: percentage,
@@ -1199,22 +995,22 @@ const getLeaderboard = async (req, res) => {
     });
 
     return res.status(200).json({
-      total,
+      total: validSubmissions.length,
       page: parseInt(page),
-      totalPages: Math.ceil(total / limit),
+      totalPages: Math.ceil(validSubmissions.length / limit),
       limit: parseInt(limit),
       quizTitle: group.title,
       results
     });
 
   } catch (err) {
-    console.error("getLeaderboard error:", err);
     return res.status(500).json({
       message: "Server error",
       error: err.message
     });
   }
 };
+
 
 module.exports = {
   createQuizGroup,

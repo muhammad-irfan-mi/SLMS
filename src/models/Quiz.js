@@ -33,7 +33,7 @@ const QuizSubmissionSchema = new Schema(
   {
     school: { type: Schema.Types.ObjectId, ref: "School", required: true },
     groupId: { type: Schema.Types.ObjectId, ref: "QuizGroup", required: true },
-    studentId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    studentId: { type: Schema.Types.ObjectId, ref: "Student", required: true },
     answers: [
       {
         questionId: { type: Schema.Types.ObjectId },

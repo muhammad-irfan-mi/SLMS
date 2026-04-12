@@ -357,7 +357,6 @@ const schoolResetPasswordWithOTP = async (req, res) => {
     const hashedPassword = await bcrypt.hash(newPassword, 10);
     school.password = hashedPassword;
     school.forgotPasswordOTP = undefined;
-    school.tokenVersion += 1; // Invalidate all existing sessions
     await school.save();
 
     // Send password changed notification
