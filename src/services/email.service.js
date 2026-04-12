@@ -411,6 +411,19 @@ class EmailService {
         });
     }
 
+    async sendSchoolForgotPasswordOTPEmail(email, otpCode, schoolName) {
+        return this.sendEmail({
+            to: email,
+            subject: "School Password Reset OTP",
+            html: this.generateTemplate({
+                title: "Password Reset",
+                message: `Hello <strong>${schoolName}</strong>, use the code below to reset your school account password.`,
+                otp: otpCode,
+                schoolName
+            }),
+        });
+    }
+
     async sendPasswordChangedNotification(email, userName, schoolId) {
         const schoolName = await this.getSchoolName(schoolId);
         return this.sendEmail({

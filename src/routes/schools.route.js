@@ -3,7 +3,7 @@ const router = express.Router();
 const { validationSchemas } = require('../validators/school.validator');
 const validate = require('../middlewares/validate');
 const multer = require('multer');
-const { verifySchoolOTP, resendSchoolOTP, setSchoolPassword, addSchoolBySuperAdmin, editSchoolBySuperAdmin, deleteSchoolBySuperAdmin, getAllSchools, getPendingRegistrations, getSchoolById, updateSchoolLogo, removeSchoolLogo } = require('../controllers/school.controller');
+const { verifySchoolOTP, resendSchoolOTP, setSchoolPassword, addSchoolBySuperAdmin, editSchoolBySuperAdmin, deleteSchoolBySuperAdmin, getAllSchools, getPendingRegistrations, getSchoolById, updateSchoolLogo, removeSchoolLogo, schoolForgotPassword, verifySchoolForgotPasswordOTP, schoolResetPasswordWithOTP, resendSchoolForgotPasswordOTP } = require('../controllers/school.controller');
 const { upload } = require("../utils/multer");
 const { isSuperAdmin, isAdminOffice, protect } = require('../middlewares/auth');
 
@@ -37,6 +37,23 @@ router.post(
     isSuperAdmin,
     validate(validationSchemas.addSchool),
     addSchoolBySuperAdmin
+);
+
+router.post(
+    '/forgot-password',
+    schoolForgotPassword
+);
+router.post(
+    '/verify-forgot-password-otp',
+    verifySchoolForgotPasswordOTP
+);
+router.post(
+    '/reset-password',
+    schoolResetPasswordWithOTP
+);
+router.post(
+    '/resend-forgot-password-otp',
+    resendSchoolForgotPasswordOTP
 );
 
 router.put(

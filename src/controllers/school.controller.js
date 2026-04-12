@@ -151,6 +151,320 @@ const addSchoolBySuperAdmin = async (req, res) => {
   }
 };
 
+const generateSchoolOTP = () => {
+  return crypto.randomInt(100000, 999999).toString();
+};
+
+const calculateSchoolOTPExpiry = (minutes = 10) => {
+  const expiry = new Date();
+  expiry.setMinutes(expiry.getMinutes() + minutes);
+  return expiry;
+};
+
+const schoolForgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        message: "Email is required"
+      });
+    }
+
+    const school = await School.findOne({
+      email: { $regex: new RegExp(`^${email}$`, 'i') },
+      verified: true,
+      isDeleted: false
+    });
+
+    if (!school) {
+      return res.status(404).json({
+        message: "School not found with this email"
+      });
+    }
+
+    // Check if school has password set
+    if (!school.password) {
+      return res.status(400).json({
+        message: "Password not set. Please complete your registration first."
+      });
+    }
+
+    // Generate OTP
+    const otpCode = generateSchoolOTP();
+    const otpExpiry = calculateSchoolOTPExpiry(10);
+
+    // Save OTP in school document
+    school.forgotPasswordOTP = {
+      code: otpCode,
+      expiresAt: otpExpiry,
+      attempts: 0,
+      lastAttempt: new Date(),
+      verified: false
+    };
+
+    await school.save();
+
+    // Send OTP email
+    await emailService.sendSchoolForgotPasswordOTPEmail(
+      school.email,
+      otpCode,
+      school.name
+    );
+
+    return res.status(200).json({
+      message: "OTP sent to registered email",
+      email: school.email,
+      otpExpiry: otpExpiry,
+      note: "OTP is valid for 10 minutes"
+    });
+
+  } catch (err) {
+    console.error("School forgot password error:", err);
+    return res.status(500).json({
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+const verifySchoolForgotPasswordOTP = async (req, res) => {
+  try {
+    const { email, otp } = req.body;
+
+    if (!email || !otp) {
+      return res.status(400).json({
+        message: "Email and OTP are required"
+      });
+    }
+
+    const school = await School.findOne({
+      email: { $regex: new RegExp(`^${email}$`, 'i') },
+      verified: true,
+      isDeleted: false
+    });
+
+    if (!school) {
+      return res.status(404).json({
+        message: "School not found"
+      });
+    }
+
+    if (!school.forgotPasswordOTP) {
+      return res.status(400).json({
+        message: "No password reset request found. Please request a new OTP."
+      });
+    }
+
+    if (school.forgotPasswordOTP.attempts >= 5) {
+      return res.status(429).json({
+        message: "Too many OTP attempts. Please request a new OTP."
+      });
+    }
+
+    const isExpired = new Date() > new Date(school.forgotPasswordOTP.expiresAt);
+    if (isExpired) {
+      school.forgotPasswordOTP.attempts += 1;
+      school.forgotPasswordOTP.lastAttempt = new Date();
+      await school.save();
+
+      return res.status(400).json({
+        message: "OTP has expired. Please request a new OTP.",
+        attemptsRemaining: 5 - school.forgotPasswordOTP.attempts
+      });
+    }
+
+    if (otp !== school.forgotPasswordOTP.code) {
+      school.forgotPasswordOTP.attempts += 1;
+      school.forgotPasswordOTP.lastAttempt = new Date();
+      await school.save();
+
+      return res.status(400).json({
+        message: "Invalid OTP",
+        attemptsRemaining: 5 - school.forgotPasswordOTP.attempts
+      });
+    }
+
+    school.forgotPasswordOTP.verified = true;
+    await school.save();
+
+    return res.status(200).json({
+      message: "OTP verified successfully. You can now reset your password.",
+      canResetPassword: true,
+      email: school.email
+    });
+
+  } catch (err) {
+    console.error("Verify school forgot password OTP error:", err);
+    return res.status(500).json({
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+const schoolResetPasswordWithOTP = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({
+        message: "Email, OTP, and new password are required"
+      });
+    }
+
+    // Validate password strength
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        message: "Password must be at least 6 characters long"
+      });
+    }
+
+    const school = await School.findOne({
+      email: { $regex: new RegExp(`^${email}$`, 'i') },
+      verified: true,
+      isDeleted: false
+    });
+
+    if (!school) {
+      return res.status(404).json({
+        message: "School not found"
+      });
+    }
+
+    if (!school.forgotPasswordOTP || !school.forgotPasswordOTP.verified) {
+      return res.status(400).json({
+        message: "Please verify OTP first before resetting password."
+      });
+    }
+
+    if (otp !== school.forgotPasswordOTP.code) {
+      return res.status(400).json({
+        message: "Invalid OTP"
+      });
+    }
+
+    const isExpired = new Date() > new Date(school.forgotPasswordOTP.expiresAt);
+    if (isExpired) {
+      school.forgotPasswordOTP = undefined;
+      await school.save();
+
+      return res.status(400).json({
+        message: "OTP has expired. Please request a new password reset."
+      });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    school.password = hashedPassword;
+    school.forgotPasswordOTP = undefined;
+    school.tokenVersion += 1; // Invalidate all existing sessions
+    await school.save();
+
+    // Send password changed notification
+    try {
+      await emailService.sendSchoolPasswordChangedNotification(
+        school.email,
+        school.name
+      );
+    } catch (emailError) {
+      console.error('Failed to send password changed notification:', emailError);
+    }
+
+    return res.status(200).json({
+      message: "Password reset successfully! You can now login."
+    });
+
+  } catch (err) {
+    console.error("School reset password error:", err);
+    return res.status(500).json({
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
+const resendSchoolForgotPasswordOTP = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        message: "Email is required"
+      });
+    }
+
+    const school = await School.findOne({
+      email: { $regex: new RegExp(`^${email}$`, 'i') },
+      verified: true,
+      isDeleted: false
+    });
+
+    if (!school) {
+      return res.status(404).json({
+        message: "School not found"
+      });
+    }
+
+    if (!school.forgotPasswordOTP) {
+      return res.status(400).json({
+        message: "No password reset request found. Please use forgot password first."
+      });
+    }
+
+    if (school.forgotPasswordOTP.verified) {
+      return res.status(400).json({
+        message: "OTP already verified. Please reset your password or request a new OTP."
+      });
+    }
+
+    if (school.forgotPasswordOTP.lastAttempt) {
+      const cooldownTime = 60 * 1000;
+      const timeSinceLastAttempt = new Date() - new Date(school.forgotPasswordOTP.lastAttempt);
+
+      if (timeSinceLastAttempt < cooldownTime) {
+        const waitTime = Math.ceil((cooldownTime - timeSinceLastAttempt) / 1000);
+        return res.status(429).json({
+          message: `Please wait ${waitTime} seconds before requesting a new OTP`
+        });
+      }
+    }
+
+    const newOTP = generateSchoolOTP();
+    const newExpiry = calculateSchoolOTPExpiry(10);
+
+    school.forgotPasswordOTP.code = newOTP;
+    school.forgotPasswordOTP.expiresAt = newExpiry;
+    school.forgotPasswordOTP.attempts = 0;
+    school.forgotPasswordOTP.verified = false;
+    school.forgotPasswordOTP.lastAttempt = new Date();
+    await school.save();
+
+    try {
+      await emailService.sendSchoolForgotPasswordOTPEmail(
+        school.email,
+        newOTP,
+        school.name
+      );
+    } catch (emailError) {
+      console.error('Failed to send email:', emailError);
+    }
+
+    return res.status(200).json({
+      message: "New OTP sent successfully",
+      email: school.email,
+      otpExpiry: newExpiry,
+      note: "OTP is valid for 10 minutes"
+    });
+
+  } catch (err) {
+    console.error("Resend school forgot password OTP error:", err);
+    return res.status(500).json({
+      message: "Server error",
+      error: err.message
+    });
+  }
+};
+
 const verifySchoolOTP = async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -616,6 +930,10 @@ const updateSchoolLogo = async (req, res) => {
 
 module.exports = {
   addSchoolBySuperAdmin,
+  schoolForgotPassword,
+  verifySchoolForgotPasswordOTP,
+  schoolResetPasswordWithOTP,
+  resendSchoolForgotPasswordOTP,
   verifySchoolOTP,
   resendSchoolOTP,
   setSchoolPassword,

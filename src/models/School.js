@@ -31,6 +31,13 @@ const SchoolSchema = new Schema({
     attempts: { type: Number, default: 0 },
     lastAttempt: Date
   },
+  forgotPasswordOTP: {
+    code: String,
+    expiresAt: Date,
+    attempts: { type: Number, default: 0 },
+    lastAttempt: Date,
+    verified: { type: Boolean, default: false }
+  },
   tempData: {
     name: String,
     email: String,
