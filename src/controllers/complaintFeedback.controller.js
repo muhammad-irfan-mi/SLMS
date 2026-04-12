@@ -2,6 +2,7 @@ const ComplaintFeedback = require("../models/ComplaintFeedback");
 const User = require("../models/User");
 const School = require("../models/School");
 const Student = require("../models/Student");
+const Staff = require("../models/Staff");
 
 // Helper: verify student exists and class/section match
 async function verifyStudentClassSection(studentId, classId, sectionId, schoolId) {
@@ -547,8 +548,8 @@ const getComplainByStudent = async (req, res) => {
 
                         if (review.reviewerId) {
                             try {
-                                const user = await Student.findById(review.reviewerId)
-                                    .select("name email role profileImage")
+                                const user = await Staff.findById(review.reviewerId)
+                                    .select("name email role images.recentPic")
                                     .lean();
 
                                 if (user) {
@@ -557,11 +558,11 @@ const getComplainByStudent = async (req, res) => {
                                         name: user.name,
                                         email: user.email,
                                         role: user.role,
-                                        profileImage: user.profileImage
+                                        profileImage: user.images?.recentPic || null
                                     };
                                 } else {
                                     const school = await School.findById(review.reviewerId)
-                                        .select("name email schoolId")
+                                        .select("name email schoolId images.logo")
                                         .lean();
 
                                     if (school) {
@@ -570,7 +571,8 @@ const getComplainByStudent = async (req, res) => {
                                             name: school.name,
                                             email: school.email,
                                             role: "school",
-                                            schoolId: school.schoolId
+                                            schoolId: school.schoolId,
+                                            lgog: school.images?.logo || null
                                         };
                                     }
                                 }
