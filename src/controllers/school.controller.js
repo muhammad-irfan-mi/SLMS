@@ -779,6 +779,45 @@ const deleteSchoolBySuperAdmin = async (req, res) => {
   }
 };
 
+const restoreSchoolBySuperAdmin = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const school = await School.findById(id);
+
+    if (!school) {
+      return res.status(404).json({ message: "School not found" });
+    }
+
+    if (!school.isDeleted) {
+      return res.status(400).json({ message: "School is already active" });
+    }
+
+    school.isDeleted = false;
+    school.deletedAt = null;
+
+    school.tokenVersion += 1;
+
+    await school.save();
+
+    return res.status(200).json({
+      message: "School restored successfully",
+      school: {
+        _id: school._id,
+        name: school.name,
+        isDeleted: school.isDeleted,
+        deletedAt: school.deletedAt
+      }
+    });
+  } catch (err) {
+    console.error("Error restoring school:", err);
+    return res.status(500).json({
+      message: "Server error while restoring school",
+      error: err.message,
+    });
+  }
+};
+
 const getAllSchools = async (req, res) => {
   try {
     let { page = 1, limit = 20 } = req.query;
@@ -937,6 +976,7 @@ module.exports = {
   resendSchoolOTP,
   setSchoolPassword,
   deleteSchoolBySuperAdmin,
+  restoreSchoolBySuperAdmin,
   editSchoolBySuperAdmin,
   getAllSchools,
   getSchoolById,

@@ -420,9 +420,123 @@ const getDocumentRequests = async (req, res) => {
 };
 
 // Get student's document requests
+// const getStudentDocumentRequests = async (req, res) => {
+//     try {
+//         const studentId = req.user._id;
+//         const {
+//             status,
+//             requestType,
+//             documentType,
+//             page = 1,
+//             limit = 10
+//         } = req.query;
+
+//         const filter = { studentId };
+
+//         if (status) filter.status = status;
+//         if (requestType) filter.requestType = requestType;
+//         if (documentType) filter.documentType = documentType;
+
+//         const skip = (Number(page) - 1) * Number(limit);
+
+//         const student = await Student.findById(studentId)
+//             .select('name email rollNo classInfo sectionInfo school images.recentPic')
+//             .lean();
+
+//         if (!student) {
+//             return res.status(404).json({
+//                 success: false,
+//                 message: "Student not found"
+//             });
+//         }
+
+//         const query = DocumentRequest.find(filter)
+//             .populate({
+//                 path: 'requesterInfo',
+//                 select: 'name email role schoolId',
+//                 justOne: true
+//             })
+//             .populate({
+//                 path: 'uploadedDocument',
+//                 select: 'text files status createdAt'
+//             })
+//             .sort({ createdAt: -1 })
+//             .skip(skip)
+//             .limit(Number(limit));
+
+//         const [total, requests] = await Promise.all([
+//             DocumentRequest.countDocuments(filter),
+//             query.lean()
+//         ]);
+
+//         const formattedRequests = await Promise.all(requests.map(async (request) => {
+//             const reqObj = { ...request };
+
+//             delete reqObj.studentId;
+
+//             reqObj.studentInfo = {
+//                 _id: student._id,
+//                 name: student.name,
+//                 email: student.email,
+//                 rollNo: student.rollNo,
+//                 school: student.school,
+//                 recentPic: student.images?.recentPic || null
+//             };
+
+//             if (student.classInfo && student.classInfo.id) {
+//                 const classSectionInfo = await getClassSectionInfo(
+//                     student.classInfo.id,
+//                     student.sectionInfo ? student.sectionInfo.id : null,
+//                     student.school
+//                 );
+
+//                 if (classSectionInfo.class) {
+//                     reqObj.classInfo = {
+//                         id: classSectionInfo.class._id,
+//                         name: classSectionInfo.class.name
+//                     };
+//                 }
+
+//                 if (classSectionInfo.section) {
+//                     reqObj.sectionInfo = {
+//                         id: classSectionInfo.section._id,
+//                         name: classSectionInfo.section.name
+//                     };
+//                 }
+
+//                 delete reqObj.classId;
+//                 delete reqObj.sectionId;
+//             }
+
+//             if (reqObj.requesterInfo) {
+//                 reqObj.requestedBy = reqObj.requesterInfo;
+//                 delete reqObj.requesterInfo;
+//             }
+
+//             return reqObj;
+//         }));
+
+//         res.status(200).json({
+//             total,
+//             page: Number(page),
+//             limit: Number(limit),
+//             totalPages: Math.ceil(total / limit),
+//             data: formattedRequests,
+//         });
+//     } catch (err) {
+//         console.error("Get Student Document Requests Error:", err);
+//         res.status(500).json({
+//             success: false,
+//             message: "Server error",
+//             error: process.env.NODE_ENV === 'development' ? err.message : undefined
+//         });
+//     }
+// };
+
 const getStudentDocumentRequests = async (req, res) => {
     try {
         const studentId = req.user._id;
+
         const {
             status,
             requestType,
@@ -440,7 +554,7 @@ const getStudentDocumentRequests = async (req, res) => {
         const skip = (Number(page) - 1) * Number(limit);
 
         const student = await Student.findById(studentId)
-            .select('name email rollNo classInfo sectionInfo school')
+            .select('name email rollNo classInfo sectionInfo school images.recentPic')
             .lean();
 
         if (!student) {
@@ -453,7 +567,7 @@ const getStudentDocumentRequests = async (req, res) => {
         const query = DocumentRequest.find(filter)
             .populate({
                 path: 'requesterInfo',
-                select: 'name email role schoolId',
+                select: 'name email role schoolId logo',
                 justOne: true
             })
             .populate({
@@ -469,62 +583,87 @@ const getStudentDocumentRequests = async (req, res) => {
             query.lean()
         ]);
 
-        const formattedRequests = await Promise.all(requests.map(async (request) => {
-            const reqObj = { ...request };
+        const formattedRequests = await Promise.all(
+            requests.map(async (request) => {
+                const reqObj = { ...request };
 
-            delete reqObj.studentId;
+                delete reqObj.studentId;
 
-            reqObj.studentInfo = {
-                _id: student._id,
-                name: student.name,
-                email: student.email,
-                rollNo: student.rollNo,
-                school: student.school
-            };
+                reqObj.studentInfo = {
+                    _id: student._id,
+                    name: student.name,
+                    email: student.email,
+                    rollNo: student.rollNo,
+                    school: student.school,
+                    recentPic: student.images?.recentPic || null
+                };
 
-            if (student.classInfo && student.classInfo.id) {
-                const classSectionInfo = await getClassSectionInfo(
-                    student.classInfo.id,
-                    student.sectionInfo ? student.sectionInfo.id : null,
-                    student.school
-                );
+                if (student.classInfo?.id) {
+                    const classSectionInfo = await getClassSectionInfo(
+                        student.classInfo.id,
+                        student.sectionInfo?.id || null,
+                        student.school
+                    );
 
-                if (classSectionInfo.class) {
-                    reqObj.classInfo = {
-                        id: classSectionInfo.class._id,
-                        name: classSectionInfo.class.name
-                    };
+                    if (classSectionInfo.class) {
+                        reqObj.classInfo = {
+                            id: classSectionInfo.class._id,
+                            name: classSectionInfo.class.name
+                        };
+                    }
+
+                    if (classSectionInfo.section) {
+                        reqObj.sectionInfo = {
+                            id: classSectionInfo.section._id,
+                            name: classSectionInfo.section.name
+                        };
+                    }
+
+                    delete reqObj.classId;
+                    delete reqObj.sectionId;
                 }
 
-                if (classSectionInfo.section) {
-                    reqObj.sectionInfo = {
-                        id: classSectionInfo.section._id,
-                        name: classSectionInfo.section.name
-                    };
+                if (reqObj.requesterInfo) {
+                    let requestedByData = { ...reqObj.requesterInfo };
+
+                    if (reqObj.requestedByModel === "School") {
+                        const school = await School.findById(requestedByData._id)
+                            .select("logo images")
+                            .lean();
+
+                        requestedByData.logo =
+                            school?.logo || school?.images?.logo || null;
+                    }
+
+                    if (reqObj.requestedByModel === "Staff") {
+                        const staff = await Staff.findById(requestedByData._id)
+                            .select("images")
+                            .lean();
+
+                        requestedByData.recentPic =
+                            staff?.images?.recentPic || null;
+                    }
+
+                    reqObj.requestedBy = requestedByData;
+                    delete reqObj.requesterInfo;
                 }
 
-                delete reqObj.classId;
-                delete reqObj.sectionId;
-            }
+                return reqObj;
+            })
+        );
 
-            if (reqObj.requesterInfo) {
-                reqObj.requestedBy = reqObj.requesterInfo;
-                delete reqObj.requesterInfo;
-            }
-
-            return reqObj;
-        }));
-
-        res.status(200).json({
+        return res.status(200).json({
             total,
             page: Number(page),
             limit: Number(limit),
             totalPages: Math.ceil(total / limit),
             data: formattedRequests,
         });
+
     } catch (err) {
         console.error("Get Student Document Requests Error:", err);
-        res.status(500).json({
+
+        return res.status(500).json({
             success: false,
             message: "Server error",
             error: process.env.NODE_ENV === 'development' ? err.message : undefined
