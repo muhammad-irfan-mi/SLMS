@@ -1107,7 +1107,6 @@ const updateExamSchedule = async (req, res) => {
       }).populate("subjectId", "name");
 
       if (classOverlap) {
-        console.log(`Class overlap found with schedule: ${classOverlap._id}, Time: ${classOverlap.startTime}-${classOverlap.endTime}`);
         return res.status(400).json({
           success: false,
           message: `Cannot schedule exam. Class already has "${classOverlap.subjectId?.name}" exam from ${classOverlap.startTime} to ${classOverlap.endTime} on ${examDateTime.toDateString()}. Please choose a different time.`
@@ -1145,7 +1144,6 @@ const updateExamSchedule = async (req, res) => {
       }).populate("subjectId", "name");
 
       if (teacherOverlap) {
-        console.log(`Teacher overlap found with schedule: ${teacherOverlap._id}, Time: ${teacherOverlap.startTime}-${teacherOverlap.endTime}`);
         return res.status(400).json({
           success: false,
           message: `Cannot schedule exam. Teacher already has "${teacherOverlap.subjectId?.name}" exam from ${teacherOverlap.startTime} to ${teacherOverlap.endTime} on ${examDateTime.toDateString()}. Please choose a different time.`

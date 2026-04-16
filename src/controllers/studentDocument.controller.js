@@ -1594,6 +1594,7 @@ const updateDocumentStatus = async (req, res) => {
         const { id } = req.params;
         const { status, reviewComments } = req.body;
         const user = req.user;
+        console.log("object", id)
 
         const document = await StudentDocument.findById(id);
         if (!document) {
@@ -1616,8 +1617,8 @@ const updateDocumentStatus = async (req, res) => {
                 requesterSchoolId.toString() === studentSchoolId.toString()) {
 
                 if (document.uploadedFor === 'teacher' && user.role === 'teacher') {
-                    if (document.classId.toString() === user.classId?.toString() &&
-                        document.sectionId.toString() === user.sectionId?.toString()) {
+                    if (document.classId.toString() === user.classInfo?.id?.toString() &&
+                        document.sectionId.toString() === user.sectionInfo?.id?.toString()) {
                         hasPermission = true;
                     }
                 }
