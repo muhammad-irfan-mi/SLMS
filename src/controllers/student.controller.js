@@ -629,7 +629,7 @@ const getStudentById = async (req, res) => {
 
         const student = await Student.findById(id)
             .select("-password -otp -forgotPasswordOTP")
-            .populate('school', 'name logo')
+            .populate('school', 'name images.logo')
             .lean();
 
         if (!student || student.role !== "student") {
@@ -640,6 +640,14 @@ const getStudentById = async (req, res) => {
             return res.status(403).json({ message: "Unauthorized" });
         }
 
+        if (student.school) {
+            student.school = {
+                _id: student.school._id,
+                name: student.school.name,
+                logo: student.school.images?.logo || null
+            };
+        }
+        
         // Get class and section names
         let classInfoWithName = student.classInfo;
         let sectionInfoWithName = student.sectionInfo;
@@ -671,14 +679,14 @@ const getStudentById = async (req, res) => {
         }
 
         // Get siblings with their class/section names
-        const siblings = await Student.find({
-            $or: [
-                { siblingGroupId: student.siblingGroupId },
-                { email: student.email, school: schoolId, _id: { $ne: id } }
-            ]
-        })
-            .select("name username classInfo sectionInfo rollNo email discount isFixed")
-            .lean();
+        // const siblings = await Student.find({
+        //     $or: [
+        //         { siblingGroupId: student.siblingGroupId },
+        //         { email: student.email, school: schoolId, _id: { $ne: id } }
+        //     ]
+        // })
+        //     .select("name username classInfo sectionInfo rollNo email discount isFixed")
+        //     .lean();
 
         // const enrichedSiblings = await Promise.all(siblings.map(async (sibling) => {
         //     let siblingClassInfo = sibling.classInfo;

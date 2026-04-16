@@ -270,8 +270,8 @@ const updateStaff = async (req, res) => {
 
         if (req.body.classId) {
             const result = await getClassAndSection(
-                req.body.classId, 
-                req.body.sectionId, 
+                req.body.classId,
+                req.body.sectionId,
                 schoolId
             );
             if (result.error) {
@@ -395,7 +395,7 @@ const getAllStaff = async (req, res) => {
                 staffMember.sectionInfo?.id,
                 schoolId
             );
-            
+
             return {
                 ...staffMember,
                 classInfo,
@@ -427,8 +427,16 @@ const getStaffById = async (req, res) => {
 
         const staff = await Staff.findById(id)
             .select("-password -otp -forgotPasswordOTP")
-            .populate('school', 'name logo')
+            .populate('school', 'name images.logo')
             .lean();
+
+        if (staff.school) {
+            staff.school = {
+                _id: staff.school._id,
+                name: staff.school.name,
+                logo: staff.school.images?.logo || null
+            };
+        }
 
         if (!staff || !["teacher", "admin_office"].includes(staff.role)) {
             return res.status(404).json({ message: "Staff not found" });
@@ -485,8 +493,8 @@ const updateOwnProfile = async (req, res) => {
         };
 
         const updated = await Staff.findByIdAndUpdate(
-            userId, 
-            updatableFields, 
+            userId,
+            updatableFields,
             { new: true }
         ).select("-password -otp -forgotPasswordOTP");
 
