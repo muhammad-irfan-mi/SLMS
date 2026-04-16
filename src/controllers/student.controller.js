@@ -580,48 +580,6 @@ const getAllStudents = async (req, res) => {
 };
 
 // Get student by ID
-// const getStudentById = async (req, res) => {
-//     try {
-//         const { id } = req.params;
-//         const schoolId = req.user.school;
-
-//         const student = await Student.findById(id)
-//             .select("-password -otp -forgotPasswordOTP")
-//             .populate('school', 'name logo');
-
-//         if (!student || student.role !== "student") {
-//             return res.status(404).json({ message: "Student not found" });
-//         }
-
-//         if (student.school?._id.toString() !== schoolId.toString()) {
-//             return res.status(403).json({ message: "Unauthorized" });
-//         }
-
-//         // Get siblings
-//         const siblings = await Student.find({
-//             $or: [
-//                 { siblingGroupId: student.siblingGroupId },
-//                 { email: student.email, school: schoolId, _id: { $ne: id } }
-//             ]
-//         })
-//             .select("name username classInfo sectionInfo rollNo email discount")
-//             .limit(10);
-
-//         return res.status(200).json({
-//             student,
-//             siblings,
-//             siblingCount: siblings.length
-//         });
-
-//     } catch (err) {
-//         console.error("Error fetching student:", err);
-//         return res.status(500).json({
-//             message: err.message || "Server error while fetching student"
-//         });
-//     }
-// };
-
-// Get student by ID
 const getStudentById = async (req, res) => {
     try {
         const { id } = req.params;

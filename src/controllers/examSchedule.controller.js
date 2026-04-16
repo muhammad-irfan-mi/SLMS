@@ -888,9 +888,6 @@ const updateExamSchedule = async (req, res) => {
     const createdBy = req.user._id;
     const updateData = req.body;
 
-    console.log(`Update request for schedule ID: ${id}`);
-    console.log('Update data:', updateData);
-
     const existingSchedule = await ExamSchedule.findById(id)
       .populate("subjectId", "name")
       .populate("teacherId", "name");
@@ -951,24 +948,29 @@ const updateExamSchedule = async (req, res) => {
       finalUpdateData.status = updateData.status;
     }
 
-    if (updateData.teacherId && updateData.teacherId !== existingSchedule.teacherId.toString()) {
-      const oldTeacher = await Staff.findById(existingSchedule.teacherId);
-      const newTeacher = await Staff.findById(updateData.teacherId);
+    // Handle teacher update - with null check
+    if (updateData.teacherId) {
+      const existingTeacherId = existingSchedule.teacherId ? existingSchedule.teacherId.toString() : null;
+      
+      if (updateData.teacherId !== existingTeacherId) {
+        const oldTeacher = existingSchedule.teacherId ? await Staff.findById(existingSchedule.teacherId) : null;
+        const newTeacher = await Staff.findById(updateData.teacherId);
+        
+        if (newTeacher) {
+          if (newTeacher.school.toString() !== schoolId.toString() || newTeacher.role !== 'teacher') {
+            return res.status(400).json({
+              success: false,
+              message: "Invalid teacher selected"
+            });
+          }
 
-      if (newTeacher) {
-        if (newTeacher.school.toString() !== schoolId.toString() || newTeacher.role !== 'teacher') {
-          return res.status(400).json({
-            success: false,
-            message: "Invalid teacher selected"
-          });
+          if (oldTeacher && newTeacher) {
+            changes.push(`Teacher: ${oldTeacher.name} → ${newTeacher.name}`);
+          } else if (newTeacher) {
+            changes.push(`Teacher: Assigned to ${newTeacher.name}`);
+          }
+          finalUpdateData.teacherId = updateData.teacherId;
         }
-
-        if (oldTeacher && newTeacher) {
-          changes.push(`Teacher: ${oldTeacher.name} → ${newTeacher.name}`);
-        } else if (newTeacher) {
-          changes.push(`Teacher: Assigned to ${newTeacher.name}`);
-        }
-        finalUpdateData.teacherId = updateData.teacherId;
       }
     }
 
@@ -1028,7 +1030,7 @@ const updateExamSchedule = async (req, res) => {
 
       const subject = await Subject.findOne({
         _id: updateData.subjectId,
-        class: classId,
+        classId: classId,  
         $or: [
           { sectionId: sectionId },
           { sectionId: null }
@@ -1062,8 +1064,6 @@ const updateExamSchedule = async (req, res) => {
       });
     }
 
-    console.log('Final update data:', finalUpdateData);
-
     const conflictError = await checkForConflicts(existingSchedule, finalUpdateData, schoolId);
     if (conflictError) {
       return res.status(400).json(conflictError);
@@ -1076,79 +1076,81 @@ const updateExamSchedule = async (req, res) => {
     const sectionId = finalUpdateData.sectionId || existingSchedule.sectionId;
     const teacherId = finalUpdateData.teacherId || existingSchedule.teacherId;
 
-    console.log(`Additional safety check for: Date: ${examDateTime.toDateString()}, Time: ${examStart}-${examEnd}`);
+    if (classId && sectionId) {
+      const classOverlap = await ExamSchedule.findOne({
+        _id: { $ne: id },
+        school: schoolId,
+        classId: classId,
+        sectionId: sectionId,
+        examDate: examDateTime,
+        status: { $ne: 'cancelled' },
+        $or: [
+          {
+            $and: [
+              { startTime: { $lte: examStart } },
+              { endTime: { $gt: examStart } }
+            ]
+          },
+          {
+            $and: [
+              { startTime: { $lt: examEnd } },
+              { endTime: { $gte: examEnd } }
+            ]
+          },
+          {
+            $and: [
+              { startTime: { $gte: examStart } },
+              { endTime: { $lte: examEnd } }
+            ]
+          }
+        ]
+      }).populate("subjectId", "name");
 
-    const classOverlap = await ExamSchedule.findOne({
-      _id: { $ne: id },
-      school: schoolId,
-      classId: classId,
-      sectionId: sectionId,
-      examDate: examDateTime,
-      status: { $ne: 'cancelled' },
-      $or: [
-        {
-          $and: [
-            { startTime: { $lte: examStart } },
-            { endTime: { $gt: examStart } }
-          ]
-        },
-        {
-          $and: [
-            { startTime: { $lt: examEnd } },
-            { endTime: { $gte: examEnd } }
-          ]
-        },
-        {
-          $and: [
-            { startTime: { $gte: examStart } },
-            { endTime: { $lte: examEnd } }
-          ]
-        }
-      ]
-    }).populate("subjectId", "name");
-
-    if (classOverlap) {
-      console.log(`Class overlap found with schedule: ${classOverlap._id}, Time: ${classOverlap.startTime}-${classOverlap.endTime}`);
-      return res.status(400).json({
-        success: false,
-        message: `Cannot schedule exam. Class already has "${classOverlap.subjectId?.name}" exam from ${classOverlap.startTime} to ${classOverlap.endTime} on ${examDateTime.toDateString()}. Please choose a different time.`
-      });
+      if (classOverlap) {
+        console.log(`Class overlap found with schedule: ${classOverlap._id}, Time: ${classOverlap.startTime}-${classOverlap.endTime}`);
+        return res.status(400).json({
+          success: false,
+          message: `Cannot schedule exam. Class already has "${classOverlap.subjectId?.name}" exam from ${classOverlap.startTime} to ${classOverlap.endTime} on ${examDateTime.toDateString()}. Please choose a different time.`
+        });
+      }
     }
 
-    const teacherOverlap = await ExamSchedule.findOne({
-      _id: { $ne: id },
-      school: schoolId,
-      teacherId: teacherId,
-      examDate: examDateTime,
-      status: { $ne: 'cancelled' },
-      $or: [
-        {
-          $and: [
-            { startTime: { $lte: examStart } },
-            { endTime: { $gt: examStart } }
-          ]
-        },
-        {
-          $and: [
-            { startTime: { $lt: examEnd } },
-            { endTime: { $gte: examEnd } }
-          ]
-        },
-        {
-          $and: [
-            { startTime: { $gte: examStart } },
-            { endTime: { $lte: examEnd } }
-          ]
-        }
-      ]
-    }).populate("subjectId", "name");
+    if (teacherId) {
+      const teacherOverlap = await ExamSchedule.findOne({
+        _id: { $ne: id },
+        school: schoolId,
+        teacherId: teacherId,
+        examDate: examDateTime,
+        status: { $ne: 'cancelled' },
+        $or: [
+          {
+            $and: [
+              { startTime: { $lte: examStart } },
+              { endTime: { $gt: examStart } }
+            ]
+          },
+          {
+            $and: [
+              { startTime: { $lt: examEnd } },
+              { endTime: { $gte: examEnd } }
+            ]
+          },
+          {
+            $and: [
+              { startTime: { $gte: examStart } },
+              { endTime: { $lte: examEnd } }
+            ]
+          }
+        ]
+      }).populate("subjectId", "name");
 
-    if (teacherOverlap) {
-      console.log(`Teacher overlap found with schedule: ${teacherOverlap._id}, Time: ${teacherOverlap.startTime}-${teacherOverlap.endTime}`);
-      return res.status(400).json({
-        success: false,
-        message: `Cannot schedule exam. Teacher already has "${teacherOverlap.subjectId?.name}" exam from ${teacherOverlap.startTime} to ${teacherOverlap.endTime} on ${examDateTime.toDateString()}. Please choose a different time.`
-      });
+      if (teacherOverlap) {
+        console.log(`Teacher overlap found with schedule: ${teacherOverlap._id}, Time: ${teacherOverlap.startTime}-${teacherOverlap.endTime}`);
+        return res.status(400).json({
+          success: false,
+          message: `Cannot schedule exam. Teacher already has "${teacherOverlap.subjectId?.name}" exam from ${teacherOverlap.startTime} to ${teacherOverlap.endTime} on ${examDateTime.toDateString()}. Please choose a different time.`
+        });
+      }
     }
 
     const updatedSchedule = await ExamSchedule.findByIdAndUpdate(
@@ -1160,10 +1162,10 @@ const updateExamSchedule = async (req, res) => {
       .populate("subjectId", "name code")
       .populate("teacherId", "name email");
 
-    if (changes.length > 0) {
+    if (changes.length > 0 && updatedSchedule) {
       await createExamUpdateNotification(
         schoolId,
-        updatedSchedule.classId._id,
+        updatedSchedule.classId?._id,
         updatedSchedule.sectionId,
         {
           subjectName: updatedSchedule.subjectId?.name,
@@ -1187,7 +1189,6 @@ const updateExamSchedule = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("updateExamSchedule error:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error",
@@ -1195,6 +1196,7 @@ const updateExamSchedule = async (req, res) => {
     });
   }
 };
+
 
 // DELETE EXAM SCHEDULE
 const deleteSchedule = async (req, res) => {

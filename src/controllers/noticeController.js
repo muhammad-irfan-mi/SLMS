@@ -661,7 +661,7 @@ const getNotices = async (req, res) => {
     const [staffUsers, studentUsers, schoolUsers] = await Promise.all([
       staffIds.length > 0 ? Staff.find({ _id: { $in: [...new Set(staffIds.map(id => id.toString()))] } }).select('name email role images.recentPic').lean() : [],
       studentIds.length > 0 ? Student.find({ _id: { $in: [...new Set(studentIds.map(id => id.toString()))] } }).select('name email role username images.recentPic classInfo sectionInfo').lean() : [],
-      schoolIds.length > 0 ? School.find({ _id: { $in: [...new Set(schoolIds.map(id => id.toString()))] } }).select('name email schoolId').lean() : []
+      schoolIds.length > 0 ? School.find({ _id: { $in: [...new Set(schoolIds.map(id => id.toString()))] } }).select('name email schoolId images.logo').lean() : []
     ]);
 
     // Create maps for quick lookup
@@ -711,6 +711,7 @@ const getNotices = async (req, res) => {
             email: school.email,
             role: 'school',
             schoolId: school.schoolId,
+            logo: school.images?.logo || null,
             model: 'School'
           };
         }
@@ -752,6 +753,7 @@ const getNotices = async (req, res) => {
           email: school.email,
           role: 'school',
           schoolId: school.schoolId,
+          logo: school.images?.logo || null,
           model: 'School'
         };
       }
