@@ -565,10 +565,8 @@ const updateSchedule = async (req, res) => {
       }
     }
 
-    // Check for time conflicts (excluding current schedule)
     const incoming = normalizeRange(finalStartTime, finalEndTime);
 
-    // Validate time range
     if (incoming.end - incoming.start < 30) {
       return res.status(400).json({
         message: "Schedule duration must be at least 30 minutes"
@@ -581,7 +579,6 @@ const updateSchedule = async (req, res) => {
       });
     }
 
-    // Check teacher conflicts
     if (finalTeacherId) {
       const teacherSchedules = await Schedule.find({
         _id: { $ne: id },
@@ -601,7 +598,6 @@ const updateSchedule = async (req, res) => {
       }
     }
 
-    // Check class/section conflicts
     const classSchedules = await Schedule.find({
       _id: { $ne: id },
       school: schoolId,
@@ -620,7 +616,6 @@ const updateSchedule = async (req, res) => {
       }
     }
 
-    // Check for duplicate subject on same day (for subject type)
     if (finalType === 'subject' && finalSubjectId) {
       const duplicateSubject = await Schedule.findOne({
         _id: { $ne: id },
@@ -639,7 +634,6 @@ const updateSchedule = async (req, res) => {
       }
     }
 
-    // Prepare update object
     const updateFields = {};
     if (updateData.classId !== undefined) updateFields.classId = updateData.classId;
     if (updateData.sectionId !== undefined) updateFields.sectionId = updateData.sectionId;
@@ -650,7 +644,6 @@ const updateSchedule = async (req, res) => {
     if (updateData.subjectId !== undefined) updateFields.subjectId = updateData.subjectId;
     if (updateData.teacherId !== undefined) updateFields.teacherId = updateData.teacherId;
 
-    // Update the schedule
     const updatedSchedule = await Schedule.findByIdAndUpdate(
       id,
       { $set: updateFields },
