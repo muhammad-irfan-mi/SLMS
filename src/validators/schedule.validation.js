@@ -196,13 +196,9 @@ const addScheduleValidation = Joi.object({
         schedule.sectionIds.forEach(sectionId => {
           const key = `${schedule.classId}-${sectionId}-${schedule.day}-${schedule.startTime}-${schedule.endTime}`;
           if (seen.has(key)) {
-            duplicates.push({
-              index,
-              classId: schedule.classId,
-              sectionId,
-              day: schedule.day,
-              time: `${schedule.startTime}-${schedule.endTime}`
-            });
+            duplicates.push(
+              `Duplicate schedule for class-section on ${schedule.day} at ${schedule.startTime}-${schedule.endTime}`
+            );
           } else {
             seen.add(key);
           }
@@ -210,11 +206,8 @@ const addScheduleValidation = Joi.object({
       });
 
       if (duplicates.length > 0) {
-        const errors = duplicates.map(d =>
-          `Duplicate schedule for class-section ${d.classId}-${d.sectionId} on ${d.day} at ${d.time}`
-        );
         return helpers.error('any.custom', {
-          message: errors.join('; ')
+          error: duplicates.join('; ')  
         });
       }
 

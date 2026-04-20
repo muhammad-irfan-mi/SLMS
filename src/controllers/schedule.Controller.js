@@ -489,6 +489,7 @@ const updateSchedule = async (req, res) => {
     const schoolId = req.user.school;
     const updateData = req.body;
 
+    // Get existing schedule
     const schedule = await Schedule.findOne({
       _id: id,
       school: schoolId
@@ -500,29 +501,159 @@ const updateSchedule = async (req, res) => {
       });
     }
 
-    if (updateData.classId && updateData.classId !== schedule.classId.toString()) {
-      const classResult = await getClassSectionData(updateData.classId, schoolId);
-      if (classResult.error) {
-        return res.status(classResult.error.status).json({
-          message: classResult.error.message
+    // Prepare final values (use existing if not updating)
+    const finalClassId = updateData.classId || schedule.classId;
+    const finalSectionId = updateData.sectionId || schedule.sectionId;
+    const finalTeacherId = updateData.teacherId !== undefined ? updateData.teacherId : schedule.teacherId;
+    const finalSubjectId = updateData.subjectId !== undefined ? updateData.subjectId : schedule.subjectId;
+    const finalDay = updateData.day || schedule.day;
+    const finalStartTime = updateData.startTime || schedule.startTime;
+    const finalEndTime = updateData.endTime || schedule.endTime;
+    const finalType = updateData.type || schedule.type;
+
+    // Validate class exists
+    const classDoc = await ClassSection.findOne({
+      _id: finalClassId,
+      school: schoolId
+    });
+
+    if (!classDoc) {
+      return res.status(400).json({
+        message: "Class not found in your school"
+      });
+    }
+
+    // Validate section exists in class
+    const sectionExists = classDoc.sections.some(
+      sec => sec._id.toString() === finalSectionId.toString()
+    );
+    if (!sectionExists) {
+      return res.status(400).json({
+        message: "Section not found in this class"
+      });
+    }
+
+    // If type is subject, validate subject and teacher
+    if (finalType === 'subject') {
+      if (!finalSubjectId) {
+        return res.status(400).json({
+          message: "Subject ID is required for subject type"
+        });
+      }
+
+      const subject = await Subject.findOne({
+        _id: finalSubjectId,
+        school: schoolId
+      });
+      if (!subject) {
+        return res.status(400).json({ message: "Subject not found" });
+      }
+
+      if (!finalTeacherId) {
+        return res.status(400).json({
+          message: "Teacher ID is required for subject type"
+        });
+      }
+
+      const teacher = await Staff.findOne({
+        _id: finalTeacherId,
+        school: schoolId,
+        role: 'teacher'
+      });
+      if (!teacher) {
+        return res.status(400).json({ message: "Teacher not found" });
+      }
+    }
+
+    // Check for time conflicts (excluding current schedule)
+    const incoming = normalizeRange(finalStartTime, finalEndTime);
+
+    // Validate time range
+    if (incoming.end - incoming.start < 30) {
+      return res.status(400).json({
+        message: "Schedule duration must be at least 30 minutes"
+      });
+    }
+
+    if (incoming.end - incoming.start > 120) {
+      return res.status(400).json({
+        message: "Schedule duration cannot exceed 120 minutes"
+      });
+    }
+
+    // Check teacher conflicts
+    if (finalTeacherId) {
+      const teacherSchedules = await Schedule.find({
+        _id: { $ne: id },
+        school: schoolId,
+        teacherId: finalTeacherId,
+        day: finalDay,
+        isActive: true
+      });
+
+      for (const sch of teacherSchedules) {
+        const existing = normalizeRange(sch.startTime, sch.endTime);
+        if (isOverlap(incoming.start, incoming.end, existing.start, existing.end)) {
+          return res.status(400).json({
+            message: `Teacher already has schedule from ${sch.startTime} to ${sch.endTime} on ${finalDay}`
+          });
+        }
+      }
+    }
+
+    // Check class/section conflicts
+    const classSchedules = await Schedule.find({
+      _id: { $ne: id },
+      school: schoolId,
+      classId: finalClassId,
+      sectionId: finalSectionId,
+      day: finalDay,
+      isActive: true
+    });
+
+    for (const sch of classSchedules) {
+      const existing = normalizeRange(sch.startTime, sch.endTime);
+      if (isOverlap(incoming.start, incoming.end, existing.start, existing.end)) {
+        return res.status(400).json({
+          message: `Class already has schedule from ${sch.startTime} to ${sch.endTime} on ${finalDay}`
         });
       }
     }
 
-    if (updateData.sectionId) {
-      const classId = updateData.classId || schedule.classId;
-      const classResult = await getClassSectionData(classId, schoolId, updateData.sectionId);
-      if (classResult.error) {
-        return res.status(classResult.error.status).json({
-          message: classResult.error.message
+    // Check for duplicate subject on same day (for subject type)
+    if (finalType === 'subject' && finalSubjectId) {
+      const duplicateSubject = await Schedule.findOne({
+        _id: { $ne: id },
+        school: schoolId,
+        classId: finalClassId,
+        sectionId: finalSectionId,
+        subjectId: finalSubjectId,
+        day: finalDay,
+        isActive: true
+      });
+
+      if (duplicateSubject) {
+        return res.status(400).json({
+          message: `Subject "${finalSubjectId}" is already scheduled on ${finalDay} for this class/section`
         });
       }
     }
+
+    // Prepare update object
+    const updateFields = {};
+    if (updateData.classId !== undefined) updateFields.classId = updateData.classId;
+    if (updateData.sectionId !== undefined) updateFields.sectionId = updateData.sectionId;
+    if (updateData.day !== undefined) updateFields.day = updateData.day;
+    if (updateData.type !== undefined) updateFields.type = updateData.type;
+    if (updateData.startTime !== undefined) updateFields.startTime = updateData.startTime;
+    if (updateData.endTime !== undefined) updateFields.endTime = updateData.endTime;
+    if (updateData.subjectId !== undefined) updateFields.subjectId = updateData.subjectId;
+    if (updateData.teacherId !== undefined) updateFields.teacherId = updateData.teacherId;
 
     // Update the schedule
     const updatedSchedule = await Schedule.findByIdAndUpdate(
       id,
-      updateData,
+      { $set: updateFields },
       { new: true, runValidators: true }
     )
       .populate("subjectId", "name code")
