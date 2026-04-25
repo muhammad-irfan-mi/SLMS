@@ -9,36 +9,6 @@ const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
 const Staff = require("../models/Staff");
 const Student = require("../models/Student");
 
-// const getClassAndSection = async (classId, sectionId, schoolId) => {
-//   if (!classId) return { classInfo: null, sectionInfo: null };
-
-//   const classDoc = await ClassSection.findOne({
-//     _id: classId,
-//     school: schoolId
-//   });
-
-//   if (!classDoc) return { error: "Class not found or does not belong to your school" };
-
-//   const classInfo = {
-//     id: classDoc._id,
-//     name: classDoc.class
-//   };
-
-//   let sectionInfo = null;
-//   if (sectionId) {
-//     const sectionObj = classDoc.sections.find(
-//       (sec) => sec._id.toString() === sectionId
-//     );
-//     if (!sectionObj) return { error: "Invalid section ID for this class" };
-
-//     sectionInfo = {
-//       id: sectionObj._id,
-//       name: sectionObj.name
-//     };
-//   }
-
-//   return { classInfo, sectionInfo };
-// };
 
 const getClassAndSection = async (classId, sectionId, schoolId) => {
   if (!classId) return { classInfo: null, sectionInfo: null };
@@ -106,26 +76,45 @@ const validateStudentsInClass = async (studentIds, school, classId, sectionId) =
   return { validStudents: students, invalidIds };
 };
 
-const handleProjectUploads = async (files, existing = {}) => {
+const handleProjectUploads = async (files, existing = {}, updateOptions = {}) => {
   let images = existing.images || [];
   let pdf = existing.pdf || null;
 
-  if (files?.images) {
-    for (const img of images) await deleteFileFromS3(img);
-    images = [];
+  const { replaceImages = false, replacePdf = false } = updateOptions;
 
+  if (files?.images) {
+    if (replaceImages) {
+      for (const img of images) {
+        await deleteFileFromS3(img).catch(console.error);
+      }
+      images = [];
+    }
+
+    const newImages = [];
     for (const file of files.images.slice(0, 5)) {
       const uploaded = await uploadFileToS3({
         fileBuffer: file.buffer,
         fileName: `${Date.now()}-${file.originalname}`,
         mimeType: file.mimetype,
       });
-      images.push(uploaded);
+      newImages.push(uploaded);
+    }
+
+    if (replaceImages) {
+      images = newImages;
+    } else {
+      images = [...images, ...newImages];
     }
   }
 
   if (files?.pdf?.[0]) {
-    if (pdf) await deleteFileFromS3(pdf);
+    if (replacePdf) {
+      if (pdf) {
+        await deleteFileFromS3(pdf).catch(console.error);
+      }
+      pdf = null;
+    }
+
     pdf = await uploadFileToS3({
       fileBuffer: files.pdf[0].buffer,
       fileName: `${Date.now()}-${files.pdf[0].originalname}`,
@@ -191,8 +180,6 @@ const getCreatorInfo = async (assignedBy, schoolId) => {
 
   return null;
 };
-
-
 
 const createProject = async (req, res) => {
   try {
@@ -330,122 +317,6 @@ const createProject = async (req, res) => {
   }
 };
 
-// const getProjects = async (req, res) => {
-//   try {
-//     const { school, _id: userId, role } = req.user;
-//     const {
-//       classId, sectionId: querySectionId, subjectId,
-//       page = 1, limit = 10, status, targetType,
-//       fromDate, toDate,
-//       withSubmissions = false,
-//       createdBy
-//     } = req.query;
-
-//     const filter = { school };
-
-//     if (role === 'teacher') {
-//       filter.assignedBy = userId;
-//     } else if (role === 'admin_office' || role === 'school') {
-//       const allowedUsers = await Staff.find({
-//         school,
-//         role: role === 'admin_office' ? 'admin_office' : { $in: ['admin_office', 'teacher'] }
-//       }).select('_id').lean();
-
-//       const allowedCreators = allowedUsers.map(u => u._id);
-//       allowedCreators.push(school);
-
-//       filter.assignedBy = { $in: allowedCreators };
-
-//       if (createdBy) {
-//         const isValidCreator = allowedCreators.some(id => String(id) === String(createdBy));
-//         if (!isValidCreator) return res.status(403).json({ message: "Not authorized to view projects by this creator" });
-//         filter.assignedBy = createdBy;
-//       }
-//     }
-
-//     if (classId) filter.classId = classId;
-//     if (querySectionId) filter.sectionId = querySectionId;
-//     if (subjectId) filter.subjectId = subjectId;
-//     if (status) filter.status = status;
-//     if (targetType) filter.targetType = targetType;
-
-//     if (fromDate || toDate) {
-//       filter.createdAt = {};
-//       if (fromDate) filter.createdAt.$gte = new Date(fromDate);
-//       if (toDate) filter.createdAt.$lte = new Date(toDate);
-//     }
-
-//     const skip = (page - 1) * limit;
-//     let query = Project.find(filter)
-//       .populate("classId", "class")
-//       .populate("subjectId", "name code")
-//       .sort({ createdAt: -1 })
-//       .skip(skip)
-//       .limit(Number(limit));
-
-//     const includeSubmissions = withSubmissions === true || withSubmissions === 'true';
-//     if (includeSubmissions) {
-//       query = query.populate({
-//         path: 'submissions.studentId',
-//         select: 'name email rollNumber'
-//       });
-//     }
-
-//     const projects = await query;
-
-//     const formattedProjects = await Promise.all(
-//       projects.map(async (project) => {
-//         const creator = await getCreatorInfo(project.assignedBy, school);
-//         const { classInfo, sectionInfo } = await getClassAndSection(
-//           project.classId,
-//           project.sectionId,
-//           school
-//         );
-
-//         return {
-//           _id: project._id,
-//           school: project.school,
-//           title: project.title,
-//           description: project.description,
-//           detail: project.detail,
-//           classInfo,
-//           sectionInfo,
-//           creator,
-//           targetType: project.targetType,
-//           subjectInfo: project.subjectId,
-//           studentIds: project.studentIds,
-//           deadline: project.deadline,
-//           maxMarks: project.maxMarks,
-//           status: project.status,
-//           images: project.images,
-//           pdf: project.pdf,
-//           gradingCompleted: project.gradingCompleted,
-//           submissionStats: project.submissionStats,
-//           submissions: includeSubmissions ? project.submissions : [],
-//           submissionCount: project.submissions.length,
-//           createdAt: project.createdAt,
-//           isDeadlinePassed: project.deadline < new Date()
-//         };
-//       })
-//     );
-
-
-//     const total = await Project.countDocuments(filter);
-
-//     return res.status(200).json({
-//       total,
-//       page: Number(page),
-//       totalPages: Math.ceil(total / limit),
-//       limit: Number(limit),
-//       projects: formattedProjects
-//     });
-
-//   } catch (err) {
-//     console.error("getProjects error:", err);
-//     return res.status(500).json({ message: "Server error" });
-//   }
-// };
-
 const getProjects = async (req, res) => {
   try {
     const { school, _id: userId, role } = req.user;
@@ -526,7 +397,7 @@ const getProjects = async (req, res) => {
             _id: { $in: project.studentIds }
           }).select('name email rollNo').lean();
         }
-        console.log("project",project)
+        console.log("project", project)
 
         return {
           _id: project._id,
@@ -571,6 +442,67 @@ const getProjects = async (req, res) => {
   }
 };
 
+// const updateProject = async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { school, _id: userId, role } = req.user;
+
+//     const project = await Project.findById(id);
+//     if (!project) return res.status(404).json({ message: "Project not found" });
+
+//     const isCreator = String(project.assignedBy) === String(userId);
+//     const isAdminOrSchool = ['admin_office', 'school'].includes(role);
+//     if (!isCreator && !isAdminOrSchool) return res.status(403).json({ message: "Not authorized to update this project" });
+
+//     if (role === 'teacher' && isCreator) {
+//       const isAuthorized = await checkTeacherAuthorization(project.school, userId, project.classId, project.sectionId, project.subjectId);
+//       if (!isAuthorized) return res.status(403).json({ message: "Teacher is no longer assigned this subject in schedule" });
+//     }
+
+//     const updates = req.body;
+//     if ((updates.targetType && updates.targetType === 'students') || (updates.studentIds && project.targetType === 'students')) {
+//       const studentIdsToValidate = updates.studentIds || project.studentIds;
+//       if (studentIdsToValidate && studentIdsToValidate.length > 0) {
+//         const validationResult = await validateStudentsInClass(studentIdsToValidate, project.school, project.classId, project.sectionId);
+//         if (validationResult.invalidIds.length > 0) {
+//           return res.status(400).json({ message: "Some students are not in this class/section" });
+//         }
+//         updates.studentIds = studentIdsToValidate;
+//       }
+//     }
+
+//     const uploads = await handleProjectUploads(req.files, {
+//       images: project.images,
+//       pdf: project.pdf
+//     });
+
+//     Object.assign(project, updates);
+//     project.images = uploads.images.length ? uploads.images : project.images;
+//     project.pdf = uploads.pdf || project.pdf;
+//     if (updates.deadline) project.deadline = new Date(updates.deadline);
+
+//     await project.save();
+
+//     const updatedProject = await Project.findById(project._id)
+//       .populate('classId', 'class')
+//       .populate('subjectId', 'name code')
+//       .populate('assignedBy', 'name email role')
+//       .populate({
+//         path: 'studentIds',
+//         select: 'name email rollNumber',
+//         match: { isActive: true }
+//       });
+
+//     return res.status(200).json({
+//       message: "Project updated successfully",
+//       project: updatedProject
+//     });
+
+//   } catch (err) {
+//     return res.status(500).json({ message: "Server error" });
+//   }
+// };
+
 const updateProject = async (req, res) => {
   try {
     const { id } = req.params;
@@ -600,14 +532,25 @@ const updateProject = async (req, res) => {
       }
     }
 
-    const uploads = await handleProjectUploads(req.files, {
+    const files = req.files;
+    const updateOptions = {
+      replaceImages: !!files?.images, 
+      replacePdf: !!files?.pdf?.[0]   
+    };
+
+    const uploads = await handleProjectUploads(files, {
       images: project.images,
       pdf: project.pdf
-    });
+    }, updateOptions);
+
+    if (uploads.images !== undefined) {
+      project.images = uploads.images;
+    }
+    if (uploads.pdf !== undefined) {
+      project.pdf = uploads.pdf;
+    }
 
     Object.assign(project, updates);
-    project.images = uploads.images.length ? uploads.images : project.images;
-    project.pdf = uploads.pdf || project.pdf;
     if (updates.deadline) project.deadline = new Date(updates.deadline);
 
     await project.save();
@@ -628,6 +571,7 @@ const updateProject = async (req, res) => {
     });
 
   } catch (err) {
+    console.error("updateProject error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
@@ -917,116 +861,6 @@ const getProjectSubmissions = async (req, res) => {
     return res.status(500).json({ message: "Server error" });
   }
 };
-
-// const getProjectSubmissions = async (req, res) => {
-//   try {
-//     const { projectId } = req.params;
-//     const { _id: userId, role, school } = req.user;
-//     const { status, graded, studentId } = req.query;
-
-//     const project = await Project.findById(projectId)
-//       .populate('classId', 'class')
-//       .populate('subjectId', 'name code')
-//       .populate('assignedBy', 'name email')
-//       .populate({
-//         path: 'submissions.studentId',
-//         select: 'name email rollNo images.recentPic',
-//         model: 'Student'
-//       });
-
-//     if (!project) {
-//       return res.status(404).json({ message: "Project not found" });
-//     }
-
-//     // Check if assignedBy exists
-//     if (!project.assignedBy) {
-//       return res.status(403).json({ message: "Project has no assigned teacher" });
-//     }
-
-//     const isCreator = String(project.assignedBy._id) === String(userId);
-//     const isAdminOrSchool = ['admin_office', 'school', 'superadmin'].includes(role);
-
-//     if (!isCreator && !isAdminOrSchool) {
-//       return res.status(403).json({ message: "Not authorized to view submissions" });
-//     }
-
-//     // Ensure submissions exists
-//     const submissions = project.submissions || [];
-
-//     let filteredSubmissions = [...submissions];
-
-//     if (status) {
-//       filteredSubmissions = filteredSubmissions.filter(sub => sub.status === status);
-//     }
-
-//     if (graded === 'true') {
-//       filteredSubmissions = filteredSubmissions.filter(sub => sub.status === 'graded');
-//     } else if (graded === 'false') {
-//       filteredSubmissions = filteredSubmissions.filter(sub => sub.status !== 'graded');
-//     }
-
-//     if (studentId) {
-//       filteredSubmissions = filteredSubmissions.filter(sub =>
-//         sub.studentId && String(sub.studentId._id) === studentId
-//       );
-//     }
-
-//     // Get submitted student IDs
-//     const submittedStudentIds = submissions
-//       .filter(sub => sub.studentId)
-//       .map(sub => String(sub.studentId._id));
-
-//     let pendingStudents = [];
-
-//     if (project.targetType === 'students' && project.studentIds && project.studentIds.length > 0) {
-//       const allStudents = await Student.find({
-//         _id: { $in: project.studentIds },
-//         isActive: true,
-//         school: school
-//       }).select('name email rollNo images.recentPic').lean();
-
-//       pendingStudents = allStudents.filter(
-//         student => !submittedStudentIds.includes(String(student._id))
-//       );
-//     }
-
-//     // Format submissions
-//     const formattedSubmissions = filteredSubmissions.map(sub => ({
-//       _id: sub._id,
-//       files: sub.files?.images || [],
-//       pdf: sub.files?.pdf || null,
-//       submittedAt: sub.submittedAt,
-//       submissionText: sub.submissionText || '',
-//       status: sub.status || 'pending',
-//       marks: sub.marks,
-//       grade: sub.grade,
-//       feedback: sub.feedback,
-//       studentInfo: sub.studentId ? {
-//         _id: sub.studentId._id,
-//         name: sub.studentId.name || 'Unknown',
-//         email: sub.studentId.email || 'N/A',
-//         rollNo: sub.studentId.rollNo || 'N/A',
-//         recentPic: sub.studentId.images?.recentPic || null
-//       } : null
-//     }));
-
-//     return res.status(200).json({
-//       success: true,
-//       totalSubmissions: submissions.length,
-//       filteredSubmissions: filteredSubmissions.length,
-//       submissions: formattedSubmissions,
-//       pendingStudents: pendingStudents,
-//       submissionStats: project.submissionStats
-//     });
-
-//   } catch (err) {
-//     console.error("ERROR in getProjectSubmissions:", err);
-//     return res.status(500).json({
-//       message: "Server error",
-//       error: process.env.NODE_ENV === 'development' ? err.message : undefined
-//     });
-//   }
-// };
 
 const getSubmission = async (req, res) => {
   try {

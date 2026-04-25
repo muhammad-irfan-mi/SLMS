@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const { protect, isAdminOffice, isTeacherOrAdminOfficeOrSchool, allowedRoles } = require("../middlewares/auth");
+const { protect, isAdminOffice, isTeacherOrAdminOfficeOrSchool, allowedRoles, isStudent } = require("../middlewares/auth");
 const { upload } = require("../utils/multer");
 const validate = require("../middlewares/validate");
 const studentValidation = require("../validators/student.validation");
-const { sendOTP, verifyOTP, resendOTP, setPasswordAfterOTP, login, forgotPassword, verifyForgotPasswordOTP, resetPasswordWithOTP, resetPassword, resendForgotPasswordOTP, addStudent, getAllStudents, getStudentsBySection, getStudentSiblingsByEmail, getStudentsByParentEmail, getDeletedStudents, getStudentById, updateOwnProfile, toggleStudentStatus, updateStudent } = require("../controllers/student.controller");
+const { sendOTP, verifyOTP, resendOTP, setPasswordAfterOTP, login, forgotPassword, verifyForgotPasswordOTP, resetPasswordWithOTP, resetPassword, resendForgotPasswordOTP, addStudent, getAllStudents, getStudentsBySection, getStudentSiblingsByEmail, getStudentsByParentEmail, getDeletedStudents, getStudentById, updateOwnProfile, toggleStudentStatus, updateStudent, deleteOwnAccount, restoreOwnAccount } = require("../controllers/student.controller");
 
 // Public auth routes
 router.post(
@@ -149,6 +149,10 @@ router.put(
     validate(studentValidation.profile.update),
     updateOwnProfile
 );
+
+router.delete("/me/account", protect, isStudent, deleteOwnAccount);
+
+router.post("/account/restore/:userId",protect, isAdminOffice, restoreOwnAccount);
 
 router.delete(
     "/:id",

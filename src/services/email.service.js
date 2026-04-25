@@ -437,52 +437,69 @@ class EmailService {
     }
 
     async sendPasswordChangedNotification(email, userName, schoolId) {
-    const schoolName = await this.getSchoolName(schoolId);
-    return this.sendEmail({
-        to: email,
-        subject: "Password Changed Successfully",
-        html: this.generateTemplate({
-            title: "Password Updated",
-            message: `Hello ${userName}, your password has been changed successfully.`,
-            schoolName
-        }),
-    });
-}
+        const schoolName = await this.getSchoolName(schoolId);
+        return this.sendEmail({
+            to: email,
+            subject: "Password Changed Successfully",
+            html: this.generateTemplate({
+                title: "Password Updated",
+                message: `Hello ${userName}, your password has been changed successfully.`,
+                schoolName
+            }),
+        });
+    }
 
     async sendStudentRegistrationEmail(
-    email,
-    otpCode,
-    name,
-    username,
-    schoolId
-) {
-    const schoolName = await this.getSchoolName(schoolId);
+        email,
+        otpCode,
+        name,
+        username,
+        schoolId
+    ) {
+        const schoolName = await this.getSchoolName(schoolId);
 
-    return this.sendEmail({
-        to: email,
-        subject: `Student Account Created - ${schoolName}`,
-        html: this.generateTemplate({
-            title: "Student Account Created",
-            message: `Hello ${name}, your student account has been created successfully.`,
-            otp: otpCode,
-            username,
-            schoolName,
-            role: "student"
-        }),
-    });
-}
+        return this.sendEmail({
+            to: email,
+            subject: `Student Account Created - ${schoolName}`,
+            html: this.generateTemplate({
+                title: "Student Account Created",
+                message: `Hello ${name}, your student account has been created successfully.`,
+                otp: otpCode,
+                username,
+                schoolName,
+                role: "student"
+            }),
+        });
+    }
 
     async sendWelcomeEmail(email, userName, role, username = null) {
-    return this.sendEmail({
-        to: email,
-        subject: "Welcome to School Management System",
-        html: this.generateTemplate({
-            title: "Welcome",
-            message: `Hello ${userName}, your role is ${role}.`,
-            username,
-        }),
-    });
-}
+        return this.sendEmail({
+            to: email,
+            subject: "Welcome to School Management System",
+            html: this.generateTemplate({
+                title: "Welcome",
+                message: `Hello ${userName}, your role is ${role}.`,
+                username,
+            }),
+        });
+    }
+
+    async sendAccountDeletionNotification(email, userName, permanentDeletionDate) {
+        return this.sendEmail({
+            to: email,
+            subject: "Account Deletion Request",
+            html: this.generateTemplate({
+                title: "Account Deletion Request",
+                message: `
+Hello ${userName},<br/><br/>
+You have requested to delete your account. Your account will be permanently deleted on <strong>${permanentDeletionDate.toDateString()}</strong>.<br/><br/>
+If you wish to restore your account, please login before that date.<br/><br/>
+If you did not request this, please contact your school administrator immediately.
+            `,
+                schoolName: "School Management System"
+            })
+        });
+    }
 }
 
 

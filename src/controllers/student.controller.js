@@ -202,11 +202,9 @@ const addStudent = async (req, res) => {
             rollNo,
             classInfo: {
                 id: classId,
-                name: classDoc.class
             },
             sectionInfo: {
                 id: sectionId,
-                name: classDoc.sections.find(s => s._id.toString() === sectionId)?.name
             },
             school: schoolId,
             images,
@@ -605,7 +603,7 @@ const getStudentById = async (req, res) => {
                 logo: student.school.images?.logo || null
             };
         }
-        
+
         // Get class and section names
         let classInfoWithName = student.classInfo;
         let sectionInfoWithName = student.sectionInfo;
@@ -895,6 +893,104 @@ const updateOwnProfile = async (req, res) => {
     }
 };
 
+const deleteOwnAccount = async (req, res) => {
+    const { role } = req.user;
+    let Model;
+
+    if (['student', 'admin_office'].includes(role)) {
+        Model = Student;
+    } else {
+        return res.status(400).json({
+            success: false,
+            message: "Invalid user type for account deletion"
+        });
+    }
+
+    return common.toggleUserStatus(req, res, Model, true);
+};
+
+const restoreOwnAccount = async (req, res) => {
+    try {
+        const userId = req.params.userId;
+        const schoolId = req.user.school;
+        const role = req.user.role || 'school';
+
+        let Model = Student;
+        if (['school', 'admin_office'].includes(!role)) {
+            return res.status(400).json({
+                success: false,
+                message: "You are not eligible to restore this account."
+            });
+        }
+
+        const user = await Model.findOne({
+            _id: userId,
+            school: schoolId,
+            isActive: false
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "No deactivated account found"
+            });
+        }
+
+        if (user.isActive !== false) {
+            return res.status(400).json({
+                success: false,
+                message: "User account is already active"
+            });
+        }
+
+        if (!user.deactivatedAt) {
+            return res.status(400).json({
+                success: false,
+                message: "User account is not marked for deletion"
+            });
+        }
+
+        const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+        const timeSinceDeactivation = Date.now() - new Date(user.deactivatedAt).getTime();
+
+        if (timeSinceDeactivation >= sevenDaysInMs) {
+            return res.status(400).json({
+                success: false,
+                message: "Account cannot be restored. 7 days have already passed. Account is permanently deactivated.",
+                canRestore: false,
+                deactivatedAt: user.deactivatedAt,
+                daysPassed: Math.floor(timeSinceDeactivation / (24 * 60 * 60 * 1000))
+            });
+        }
+
+        if (user.isRestorable === false) {
+            return res.status(400).json({
+                success: false,
+                message: "Account is not eligible for restoration."
+            });
+        }
+
+        user.isActive = true;
+        user.deactivatedAt = null;
+        user.isRestorable = true;
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+        await user.save();
+
+        return res.status(200).json({
+            success: true,
+            message: `Account restored successfully for ${user.name}`,
+        });
+
+    } catch (err) {
+        console.error("restoreOwnAccount error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: err.message
+        });
+    }
+};
+
 // Toggle student status
 const toggleStudentStatus = async (req, res) => {
     return common.toggleUserStatus(req, res, Student);
@@ -922,6 +1018,8 @@ module.exports = {
     getStudentSiblingsByEmail,
     getDeletedStudents,
     updateOwnProfile,
+    deleteOwnAccount,
+    restoreOwnAccount,
     toggleStudentStatus,
     sendOTP,
     verifyOTP,

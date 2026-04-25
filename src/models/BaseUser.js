@@ -15,12 +15,12 @@ const baseUserSchema = {
     school: {
         type: mongoose.Schema.Types.ObjectId,
         ref: "School",
-        required: function() {
-      if (this.role === 'superadmin') {
-        return false;
-      }
-      return true;
-    }
+        required: function () {
+            if (this.role === 'superadmin') {
+                return false;
+            }
+            return true;
+        }
     },
     password: {
         type: String,
@@ -47,7 +47,8 @@ const baseUserSchema = {
     verificationExpiresAt: Date,
     verified: { type: Boolean, default: false },
     isActive: { type: Boolean, default: true },
-    deactivatedAt: Date,
+    deactivatedAt: { type: Date, default: null },
+    isRestorable: { type: Boolean, default: true },
     tokenVersion: { type: Number, default: 0 }
 };
 

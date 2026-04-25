@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const { protect, isAdminOffice, isTeacherOrAdminOfficeOrSchool } = require("../middlewares/auth");
+const { protect, isAdminOffice, isTeacherOrAdminOfficeOrSchool, isTeacher } = require("../middlewares/auth");
 const { upload } = require("../utils/multer");
 const validate = require("../middlewares/validate");
 const staffValidation = require("../validators/staff.validation");
-const { sendOTP, verifyOTP, resendOTP, setPasswordAfterOTP, login, forgotPassword, verifyForgotPasswordOTP, resetPasswordWithOTP, resetPassword, resendForgotPasswordOTP, addStaff, getAllStaff, getStaffById, updateOwnProfile, toggleStaffStatus, updateStaff } = require("../controllers/staff.controller");
+const { sendOTP, verifyOTP, resendOTP, setPasswordAfterOTP, login, forgotPassword, verifyForgotPasswordOTP, resetPasswordWithOTP, resetPassword, resendForgotPasswordOTP, addStaff, getAllStaff, getStaffById, updateOwnProfile, toggleStaffStatus, updateStaff, deleteOwnAccount, restoreOwnAccount } = require("../controllers/staff.controller");
 
 // Public auth routes
 router.post(
@@ -126,6 +126,10 @@ router.put(
     validate(staffValidation.profile.update),
     updateOwnProfile
 );
+
+router.delete("/me/account", protect, isTeacher, deleteOwnAccount);
+
+router.post("/account/restore/:userId",protect, isAdminOffice, restoreOwnAccount);
 
 router.delete(
     "/:id",

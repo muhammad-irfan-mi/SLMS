@@ -5,6 +5,8 @@ require("dotenv").config();
 
 const connectDB = require('./src/config/db');
 const logger = require('./src/utils/logger');
+const { scheduleAccountCleanup } = require('./src/jobs/permanentAccountDeletion');
+
 
 
 const authRoutes = require('./src/routes/auth');
@@ -57,7 +59,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/schools', schoolRoutes);
-app.use('/api/empStudent', empStudentRoutes); 
+// app.use('/api/empStudent', empStudentRoutes); 
 app.use('/api/staff', staffRoutes); 
 app.use('/api/student', studentRoutes); 
 app.use('/api/classSection', classSectionRoutes);
@@ -91,6 +93,7 @@ const startServer = async () => {
   try {
     console.log("MONGO_URI:", process.env.MONGO_URI); 
     await connectDB();
+    await scheduleAccountCleanup();
     await seedSuperAdmin();
     app.listen(port, () =>
       logger.info(`Server running on port ${port}`)
