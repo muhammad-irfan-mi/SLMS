@@ -360,7 +360,7 @@ const protect = async (req, res, next) => {
         }
 
         if (school.isDeleted) {
-            return res.status(403).json({
+            return res.status(401).json({
                 message: "Your school is inactive"
             });
         }
