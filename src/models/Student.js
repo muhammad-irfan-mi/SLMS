@@ -52,6 +52,10 @@ const StudentSchema = new mongoose.Schema({
     // max: 100,
     default: 0
   },
+  isDefaulter: {
+    type: Boolean,
+    default: false
+  },
   enrollmentDate: {
     type: Date,
     default: Date.now,

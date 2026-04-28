@@ -173,6 +173,17 @@ const sendPaymentStatusNotification = async (fee, actor, status) => {
   }
 };
 
+const updateStudentDefaulterStatus = async (studentId) => {
+  const remaining = await FeeDetail.countDocuments({
+    studentId,
+    status: { $ne: "approved" }
+  });
+
+  await Student.findByIdAndUpdate(studentId, {
+    isDefaulter: remaining > 0
+  });
+};
+
 // Helper function to get class fee and calculate student fee
 const calculateStudentFee = async (studentId, schoolId, customAmount = null) => {
   try {
@@ -207,7 +218,7 @@ const calculateStudentFee = async (studentId, schoolId, customAmount = null) => 
     let discountAmount = 0;
 
     if (student.isFixed === true) {
-      const fixedDiscount = Math.min(student.discount, classFee - 1); 
+      const fixedDiscount = Math.min(student.discount, classFee - 1);
       finalAmount = classFee - fixedDiscount;
       discountAmount = fixedDiscount;
     } else {
@@ -332,6 +343,10 @@ const bulkCreateFeeDetails = async (req, res) => {
 
     const createdFees = await FeeDetail.insertMany(feeDocuments);
 
+    await Promise.all(
+      createdFees.map(fee => updateStudentDefaulterStatus(fee.studentId))
+    );
+
     const notificationPromises = createdFees.map(async (fee) => {
       try {
         await sendFeeNotificationToStudent(fee, actor, 'created');
@@ -445,6 +460,7 @@ const createFeeDetail = async (req, res) => {
 
     await fee.save();
 
+    await updateStudentDefaulterStatus(studentId);
     await sendFeeNotificationToStudent(fee, actor, 'created');
 
     const responseFee = fee.toObject();
@@ -566,6 +582,10 @@ const bulkUpdateFeeDetails = async (req, res) => {
 
     const bulkResult = await FeeDetail.bulkWrite(bulkOps);
 
+    await Promise.all(
+      feeUpdates.map(f => updateStudentDefaulterStatus(existingFeeMap.get(f.feeId).studentId._id))
+    );
+
     const updatedFees = await FeeDetail.find({
       _id: { $in: feeIds }
     })
@@ -667,6 +687,7 @@ const updateFeeDetail = async (req, res) => {
 
     await fee.save();
 
+    await updateStudentDefaulterStatus(fee.studentId);
     await sendFeeNotificationToStudent(fee, actor, 'updated');
 
     const responseFee = fee.toObject();
@@ -709,10 +730,7 @@ const uploadStudentProof = async (req, res) => {
     fee.status = "submitted";
     await fee.save();
 
-    // Send notification to student
-    // await sendFeeNotificationToStudent(fee, actor, 'submitted');
-
-    // Send notification to admins
+    await updateStudentDefaulterStatus(fee.studentId);
     await sendFeeNotificationToAdmins(fee, actor);
 
     res.status(200).json({
@@ -742,7 +760,7 @@ const approvePayment = async (req, res) => {
     fee.status = status;
     await fee.save();
 
-    // Send notification to student about approval/rejection
+    await updateStudentDefaulterStatus(fee.studentId);
     await sendPaymentStatusNotification(fee, actor, status);
 
     res.status(200).json({
@@ -943,6 +961,156 @@ const getMyFeeDetails = async (req, res) => {
   }
 };
 
+const getDefaulterStudents = async (req, res) => {
+  try {
+    const schoolId = req.user.school;
+
+    let {
+      page = 1,
+      limit = 10,
+      month,
+      classId,
+      sectionId,
+      search
+    } = req.query;
+
+    page = parseInt(page);
+    limit = parseInt(limit);
+    const skip = (page - 1) * limit;
+
+    const matchStage = {
+      school: schoolId,
+      status: { $ne: "approved" }
+    };
+
+    if (month) matchStage.month = month;
+
+    const pipeline = [
+      { $match: matchStage },
+
+      {
+        $lookup: {
+          from: "students",
+          localField: "studentId",
+          foreignField: "_id",
+          as: "student"
+        }
+      },
+      { $unwind: "$student" },
+
+      ...(classId ? [{
+        $match: { "student.classInfo.id": new mongoose.Types.ObjectId(classId) }
+      }] : []),
+
+      ...(sectionId ? [{
+        $match: { "student.sectionInfo.id": new mongoose.Types.ObjectId(sectionId) }
+      }] : []),
+
+      ...(search ? [{
+        $match: {
+          $or: [
+            { "student.name": { $regex: search, $options: "i" } },
+            { "student.rollNo": { $regex: search, $options: "i" } }
+          ]
+        }
+      }] : []),
+
+      {
+        $group: {
+          _id: "$student._id",
+          student: { $first: "$student" },
+          pendingFees: {
+            $push: {
+              _id: "$_id",
+              month: "$month",
+              amount: "$amount",
+              status: "$status",
+              title: "$title"
+            }
+          },
+          totalDue: { $sum: "$amount" }
+        }
+      },
+
+      { $sort: { totalDue: -1 } },
+
+      {
+        $facet: {
+          data: [
+            { $skip: skip },
+            { $limit: limit }
+          ],
+          totalCount: [
+            { $count: "count" }
+          ]
+        }
+      }
+    ];
+
+    const result = await FeeDetail.aggregate(pipeline);
+
+    let data = result[0]?.data || [];
+    const total = result[0]?.totalCount[0]?.count || 0;
+
+    data = await Promise.all(data.map(async (item) => {
+      const student = item.student;
+
+      let formattedClassInfo = null;
+      let formattedSectionInfo = null;
+
+      if (student?.classInfo?.id) {
+        const classSectionInfo = await getClassSectionInfo(
+          student.classInfo.id,
+          student.sectionInfo?.id || null,
+          student.school
+        );
+
+        if (classSectionInfo.class) {
+          formattedClassInfo = {
+            id: classSectionInfo.class._id,
+            name: classSectionInfo.class.name
+          };
+        }
+
+        if (classSectionInfo.section) {
+          formattedSectionInfo = {
+            id: classSectionInfo.section._id,
+            name: classSectionInfo.section.name
+          };
+        }
+      }
+
+      return {
+        _id: item._id,
+        studentInfo: {
+          _id: student._id,
+          name: student.name,
+          email: student.email,
+          rollNo: student.rollNo
+        },
+        classInfo: formattedClassInfo,
+        sectionInfo: formattedSectionInfo,
+        totalDue: item.totalDue,
+        pendingFees: item.pendingFees
+      };
+    }));
+
+    return res.status(200).json({
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      },
+      defaulters: data
+    });
+
+  } catch (err) {
+    console.error("Error fetching defaulters:", err);
+    res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   createFeeDetail,
   uploadStudentProof,
@@ -952,5 +1120,6 @@ module.exports = {
   getAllFeeDetails,
   getMyFeeDetails,
   bulkCreateFeeDetails,
-  bulkUpdateFeeDetails
+  bulkUpdateFeeDetails,
+  getDefaulterStudents
 };

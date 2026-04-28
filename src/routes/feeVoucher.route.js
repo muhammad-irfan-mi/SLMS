@@ -11,6 +11,7 @@ const {
   getAllFeeDetails,
   bulkCreateFeeDetails,
   bulkUpdateFeeDetails,
+  getDefaulterStudents,
 } = require('../controllers/feeDetail.controller');
 
 const router = express.Router();
@@ -24,5 +25,6 @@ router.post("/bulk", protect, isAdminOffice, bulkCreateFeeDetails);
 router.put("/bulk", protect, isAdminOffice, bulkUpdateFeeDetails);
 router.get("/", protect, isAdminOffice, getAllFeeDetails);
 router.get("/student", protect, isStudent, getMyFeeDetails);
+router.get("/defaulters", protect, isAdminOffice, getDefaulterStudents);
 
 module.exports = router;
