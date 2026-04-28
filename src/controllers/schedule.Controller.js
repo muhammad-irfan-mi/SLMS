@@ -242,7 +242,7 @@ const getSchedule = async (req, res) => {
       .populate({
         path: "subjectId",
         select: "name code",
-        match: { isActive: true }
+        // match: { isActive: true }
       })
       .populate({ path: "teacherId", select: "name email", model: "Staff" })
       .populate("classId", "class sections")
@@ -302,7 +302,7 @@ const getScheduleBySection = async (req, res) => {
       .populate({
         path: "subjectId",
         select: "name code",
-        match: { isActive: true }
+        // match: { isActive: true }
       })
       .populate({ path: "teacherId", select: "name email", model: "Staff" })
       .populate("classId", "class sections")
@@ -360,7 +360,7 @@ const getScheduleByTeacher = async (req, res) => {
       .populate({
         path: "subjectId",
         select: "name code",
-        match: { isActive: true }
+        // match: { isActive: true }
       })
       .populate({ path: "teacherId", select: "name email", model: "Staff" })
       .populate("classId", "class sections")
@@ -436,7 +436,7 @@ const getScheduleByStudent = async (req, res) => {
       .populate({
         path: "subjectId",
         select: "name code",
-        match: { isActive: true }
+        // match: { isActive: true }
       })
       .populate({ path: "teacherId", select: "name email", model: "Staff" })
       .populate("classId", "class sections")
