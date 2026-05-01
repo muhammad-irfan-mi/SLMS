@@ -117,13 +117,13 @@ router.get(
     getStudentSiblingsByEmail
 );
 
-router.get(
-    "/parent/:email",
-    protect,
-    isAdminOffice,
-    validate(studentValidation.emailParam, 'params'),
-    getStudentsByParentEmail
-);
+// router.get(
+//     "/parent/:email",
+//     protect,
+//     isAdminOffice,
+//     validate(studentValidation.emailParam, 'params'),
+//     getStudentsByParentEmail
+// );
 
 router.get(
     "/deleted",

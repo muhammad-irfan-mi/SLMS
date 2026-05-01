@@ -17,27 +17,27 @@ const StudentSchema = new mongoose.Schema({
   },
   classInfo: {
     id: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection" },
-    name: String
+    // name: String
   },
   sectionInfo: {
     id: { type: mongoose.Schema.Types.ObjectId },
-    name: String
+    // name: String
   },
   rollNo: {
     type: String,
     index: true
   },
-  parentEmail: {
-    type: String,
-    lowercase: true,
-    index: true
-  },
-  siblingGroupId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Student",
-    index: true,
-    default: null
-  },
+  // parentEmail: {
+  //   type: String,
+  //   lowercase: true,
+  //   index: true
+  // },
+  // siblingGroupId: {
+  //   type: mongoose.Schema.Types.ObjectId,
+  //   ref: "Student",
+  //   index: true,
+  //   default: null
+  // },
   deviceLocation: {
     lat: Number,
     lng: Number,
@@ -56,11 +56,21 @@ const StudentSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  enrollmentDate: {
-    type: Date,
-    default: Date.now,
-    index: true
+  status: {
+    type: String,
+    enum: ['active', 'passout', 'left'],
+    default: 'active'
+  },
+  historyInfo: {
+    classId: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection" },
+    sectionId: { type: mongoose.Schema.Types.ObjectId },
+    date: { type: Date },
   }
+  // enrollmentDate: {
+  //   type: Date,
+  //   default: Date.now,
+  //   index: true
+  // }
 }, {
   timestamps: true,
   collection: 'students'
@@ -69,9 +79,11 @@ const StudentSchema = new mongoose.Schema({
 StudentSchema.index({ school: 1, username: 1 }, { unique: true });
 StudentSchema.index({ school: 1, email: 1 });
 StudentSchema.index({ school: 1, "classInfo.id": 1, "sectionInfo.id": 1, rollNo: 1 }, { unique: true, sparse: true });
-StudentSchema.index({ school: 1, parentEmail: 1 });
-StudentSchema.index({ siblingGroupId: 1 });
-StudentSchema.index({ school: 1, enrollmentDate: 1 });
+// StudentSchema.index({ school: 1, parentEmail: 1 });
+// StudentSchema.index({ siblingGroupId: 1 });
+// StudentSchema.index({ school: 1, enrollmentDate: 1 });
+StudentSchema.index({ school: 1, status: 1 });
+StudentSchema.index({ school: 1, "leftInfo.date": 1 });
 StudentSchema.index({ "otp.expiresAt": 1 }, {
   expireAfterSeconds: 0,
   partialFilterExpression: { "otp.expiresAt": { $exists: true }, verified: false }

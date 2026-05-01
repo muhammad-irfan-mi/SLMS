@@ -5,7 +5,34 @@ const User = require("../models/User");
 const Student = require("../models/Student");
 const Staff = require("../models/Staff");
 
+const getClassSectionDetails = async (classId, sectionId, schoolId) => {
+    const classDoc = await ClassSection.findOne({
+        _id: classId,
+        school: schoolId
+    }).lean();
 
+    if (!classDoc) return { classInfo: null, sectionInfo: null };
+
+    const classInfo = {
+        id: classDoc._id,
+        name: classDoc.class
+    };
+
+    let sectionInfo = null;
+    if (sectionId && classDoc.sections) {
+        const section = classDoc.sections.find(
+            sec => sec._id.toString() === sectionId.toString()
+        );
+        if (section) {
+            sectionInfo = {
+                id: section._id,
+                name: section.name
+            };
+        }
+    }
+
+    return { classInfo, sectionInfo };
+};
 
 const addMultipleClassesWithSections = async (req, res) => {
     try {
@@ -730,7 +757,6 @@ const promoteStudentsToNextClass = async (req, res) => {
             });
         }
 
-        // Get destination class and section
         const toClass = await ClassSection.findOne({
             _id: toClassId,
             school: schoolId
@@ -747,25 +773,17 @@ const promoteStudentsToNextClass = async (req, res) => {
             });
         }
 
-        if (toClass.order <= fromClass.order) {
-            return res.status(400).json({
-                message: "Destination class must be higher order than source class",
-                fromClass: { name: fromClass.class, order: fromClass.order },
-                toClass: { name: toClass.class, order: toClass.order }
-            });
-        }
-
         const existingStudents = await Student.find({
             school: schoolId,
             "classInfo.id": toClassId,
             "sectionInfo.id": toSectionId,
-            role: "student",
+            status: 'active',
             isActive: true
         });
 
         if (existingStudents.length > 0) {
             return res.status(400).json({
-                message: "Destination section already has active students",
+                message: "Destination section already has active students.",
                 count: existingStudents.length,
                 students: existingStudents.map(s => ({ name: s.name, rollNo: s.rollNo }))
             });
@@ -775,7 +793,7 @@ const promoteStudentsToNextClass = async (req, res) => {
             school: schoolId,
             "classInfo.id": fromClassId,
             "sectionInfo.id": fromSectionId,
-            role: "student",
+            status: 'active',
             isActive: true
         });
 
@@ -793,25 +811,28 @@ const promoteStudentsToNextClass = async (req, res) => {
             errors: []
         };
 
-        let successful = 0;
-        let failed = 0;
-        const errors = [];
+        const promotedStudents = [];
 
         for (const student of studentsToPromote) {
             try {
-                student.classInfo.id = toClassId;
-                student.sectionInfo.id = toSectionId;
+                const { classInfo, sectionInfo } = await getClassSectionDetails(toClassId, toSectionId, schoolId);
 
-                student.promotedFromClass = fromClassId;
-                student.promotedFromSection = fromSectionId;
-                student.promotedAt = new Date();
+                student.classInfo = classInfo;
+                student.sectionInfo = sectionInfo;
 
                 await student.save();
 
-                successful++;
+                results.successful++;
+                promotedStudents.push({
+                    id: student._id,
+                    name: student.name,
+                    rollNo: student.rollNo,
+                    from: `${fromClass.class}-${fromSection.name}`,
+                    to: `${toClass.class}-${toSection.name}`
+                });
             } catch (error) {
-                failed++;
-                errors.push({
+                results.failed++;
+                results.errors.push({
                     studentId: student._id,
                     name: student.name,
                     error: error.message,
@@ -821,10 +842,11 @@ const promoteStudentsToNextClass = async (req, res) => {
 
         return res.status(200).json({
             message: "Students promoted successfully",
-            total: studentsToPromote.length,
-            successful,
-            failed,
-            errors,
+            // total: studentsToPromote.length,
+            // successful: results.successful,
+            // failed: results.failed,
+            // promotedStudents,
+            // errors: results.errors,
         });
 
     } catch (err) {
@@ -832,6 +854,163 @@ const promoteStudentsToNextClass = async (req, res) => {
             message: "Server error",
             error: err.message
         });
+    }
+};
+
+const markStudentsAsPassout = async (req, res) => {
+    try {
+        const { classId, sectionId } = req.body;
+        const schoolId = req.user.school;
+
+        if (!classId || !sectionId) {
+            return res.status(400).json({
+                message: "Missing required fields. Need: classId, sectionId"
+            });
+        }
+
+        const classDoc = await ClassSection.findOne({
+            _id: classId,
+            school: schoolId
+        });
+
+        if (!classDoc) {
+            return res.status(404).json({ message: "Class not found" });
+        }
+
+        const section = classDoc.sections.id(sectionId);
+        if (!section) {
+            return res.status(404).json({ message: "Section not found in class" });
+        }
+
+        const studentsToPassout = await Student.find({
+            school: schoolId,
+            "classInfo.id": classId,
+            "sectionInfo.id": sectionId,
+            role: "student",
+            status: 'active',
+            isActive: true
+        });
+
+        if (studentsToPassout.length === 0) {
+            return res.status(200).json({
+                message: "No active students found to mark as passout",
+            });
+        }
+
+        const results = { successful: 0, failed: 0, errors: [] };
+        const passedOutStudents = [];
+
+        for (const student of studentsToPassout) {
+            try {
+                student.historyInfo = {
+                    classId: student.classInfo.id,
+                    sectionId: student.sectionInfo.id,
+                    date: new Date(),
+                };
+
+                student.status = 'passout';
+                student.isActive = false;
+                student.deactivatedAt = new Date();
+
+                await student.save();
+
+                results.successful++;
+                passedOutStudents.push({
+                    id: student._id,
+                    name: student.name,
+                    rollNo: student.rollNo
+                });
+            } catch (error) {
+                results.failed++;
+                results.errors.push({
+                    studentId: student._id,
+                    name: student.name,
+                    error: error.message,
+                });
+            }
+        }
+
+        return res.status(200).json({
+            message: `Successfully marked ${results.successful} students as passout`,
+        });
+
+    } catch (err) {
+        console.error("markStudentsAsPassout error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
+    }
+};
+
+const markStudentsAsLeftSchool = async (req, res) => {
+    try {
+        const { studentIds } = req.body;
+        const schoolId = req.user.school;
+
+        if (!studentIds || studentIds.length === 0) {
+            return res.status(400).json({
+                message: "Student IDs are required to mark as left school"
+            });
+        }
+
+        const studentsToLeft = await Student.find({
+            _id: { $in: studentIds },
+            school: schoolId,
+            role: "student",
+            status: 'active',
+            isActive: true
+        });
+
+        if (studentsToLeft.length === 0) {
+            return res.status(404).json({
+                message: "No active students found with the provided IDs"
+            });
+        }
+
+        const results = { successful: 0, failed: 0, errors: [] };
+        const leftStudents = [];
+
+        for (const student of studentsToLeft) {
+            try {
+                student.historyInfo = {
+                    classId: student.classInfo.id,
+                    sectionId: student.sectionInfo.id,
+                    date: new Date(),
+                };
+
+                student.status = 'left';
+                student.isActive = false;
+                student.deactivatedAt = new Date();
+
+                await student.save();
+
+                results.successful++;
+                leftStudents.push({
+                    id: student._id,
+                    name: student.name,
+                    rollNo: student.rollNo,
+                    leavingDate: leavingDate || new Date(),
+                });
+            } catch (error) {
+                results.failed++;
+                results.errors.push({
+                    studentId: student._id,
+                    name: student.name,
+                    error: error.message,
+                });
+            }
+        }
+
+        return res.status(200).json({
+            message: `Successfully marked students as left school`,
+            // total: studentsToLeft.length,
+            // successful: results.successful,
+            // failed: results.failed,
+            // leftStudents,
+            // errors: results.errors
+        });
+
+    } catch (err) {
+        console.error("markStudentsAsLeftSchool error:", err);
+        res.status(500).json({ message: "Server error", error: err.message });
     }
 };
 
@@ -892,5 +1071,7 @@ module.exports = {
     removeSectionIncharge,
     getClassesBySchool,
     promoteStudentsToNextClass,
+    markStudentsAsPassout,
+    markStudentsAsLeftSchool,
     updateSectionName
 };

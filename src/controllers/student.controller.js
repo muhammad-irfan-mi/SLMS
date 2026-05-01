@@ -557,16 +557,57 @@ const getAllStudents = async (req, res) => {
                 .select("-password -otp -forgotPasswordOTP -tokenVersion")
                 .skip(skip)
                 .limit(parseInt(limit))
-                .sort({ "classInfo.id": 1, "sectionInfo.id": 1, rollNo: 1 }),
+                .sort({ "classInfo.id": 1, "sectionInfo.id": 1, rollNo: 1 })
+                .lean(),
             Student.countDocuments(filter)
         ]);
+
+        const classIds = [...new Set(students.map(s => s.classInfo?.id).filter(id => id))];
+
+        const classes = await ClassSection.find({
+            _id: { $in: classIds },
+            school: schoolId
+        }).lean();
+
+        const classMap = new Map();
+        classes.forEach(cls => {
+            classMap.set(cls._id.toString(), cls);
+        });
+
+        const formattedStudents = students.map(student => {
+            const studentObj = { ...student };
+
+            if (studentObj.classInfo?.id) {
+                const classDoc = classMap.get(studentObj.classInfo.id.toString());
+                if (classDoc) {
+                    studentObj.classInfo = {
+                        id: classDoc._id,
+                        name: classDoc.class
+                    };
+
+                    if (studentObj.sectionInfo?.id && classDoc.sections) {
+                        const section = classDoc.sections.find(
+                            sec => sec._id.toString() === studentObj.sectionInfo.id.toString()
+                        );
+                        if (section) {
+                            studentObj.sectionInfo = {
+                                id: section._id,
+                                name: section.name
+                            };
+                        }
+                    }
+                }
+            }
+
+            return studentObj;
+        });
 
         return res.status(200).json({
             total,
             page: parseInt(page),
             limit: parseInt(limit),
             totalPages: Math.ceil(total / parseInt(limit)),
-            students
+            students: formattedStudents
         });
 
     } catch (err) {
@@ -803,26 +844,51 @@ const getStudentSiblingsByEmail = async (req, res) => {
 const getDeletedStudents = async (req, res) => {
     try {
         const schoolId = req.user.school;
-        const { page = 1, limit = 10, classId, sectionId, year } = req.query;
+        const {
+            page = 1,
+            limit = 10,
+            classId,
+            sectionId,
+            year,
+            status,
+            search
+        } = req.query;
 
         const filter = {
             school: schoolId,
-            role: "student",
             isActive: false
         };
+
+        if (status === 'passout') {
+            filter.status = 'passout';
+        } else if (status === 'left') {
+            filter.status = 'left';
+        } else if (status === 'deactivated') {
+            filter.status = { $ne: 'active' };
+        } else {
+            filter.status = { $in: ['passout', 'left'] };
+        }
 
         if (classId) {
             filter["classInfo.id"] = classId;
         }
-
         if (sectionId) {
             filter["sectionInfo.id"] = sectionId;
         }
 
         if (year) {
-            const start = new Date(`${year}-01-01`);
-            const end = new Date(`${year}-12-31`);
-            filter.deactivatedAt = { $gte: start, $lte: end };
+            const startDate = new Date(`${year}-01-01`);
+            const endDate = new Date(`${year}-12-31`);
+            filter["historyInfo.date"] = { $gte: startDate, $lte: endDate };
+        }
+
+        if (search) {
+            filter.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { username: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } },
+                { rollNo: { $regex: search, $options: 'i' } }
+            ];
         }
 
         const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -832,22 +898,101 @@ const getDeletedStudents = async (req, res) => {
                 .select("-password -otp -forgotPasswordOTP -tokenVersion")
                 .skip(skip)
                 .limit(parseInt(limit))
-                .sort({ deactivatedAt: -1 }),
+                .sort({ deactivatedAt: -1, createdAt: -1 })
+                .lean(),
             Student.countDocuments(filter)
         ]);
+
+        const classIds = new Set();
+
+        students.forEach(student => {
+            if (student.classInfo?.id) {
+                classIds.add(student.classInfo.id.toString());
+            }
+            if (student.historyInfo?.classId) {
+                classIds.add(student.historyInfo.classId.toString());
+            }
+        });
+
+        const classes = await ClassSection.find({
+            _id: { $in: Array.from(classIds) },
+            school: schoolId
+        }).lean();
+
+        const classMap = new Map();
+        classes.forEach(cls => {
+            classMap.set(cls._id.toString(), cls);
+        });
+
+        const getClassSectionInfo = (classId, sectionId) => {
+            if (!classId) return { classInfo: null, sectionInfo: null };
+
+            const classDoc = classMap.get(classId.toString());
+            if (!classDoc) return { classInfo: null, sectionInfo: null };
+
+            const classInfo = {
+                id: classDoc._id,
+                name: classDoc.class
+            };
+
+            let sectionInfo = null;
+            if (sectionId && classDoc.sections) {
+                const section = classDoc.sections.find(
+                    sec => sec._id.toString() === sectionId.toString()
+                );
+                if (section) {
+                    sectionInfo = {
+                        id: section._id,
+                        name: section.name
+                    };
+                }
+            }
+
+            return { classInfo, sectionInfo };
+        };
+
+        const studentsWithNames = students.map(student => {
+            const studentObj = { ...student };
+
+            if (studentObj.classInfo?.id) {
+                const { classInfo, sectionInfo } = getClassSectionInfo(
+                    studentObj.classInfo.id,
+                    studentObj.sectionInfo?.id
+                );
+                studentObj.classInfo = classInfo;
+                studentObj.sectionInfo = sectionInfo;
+            }
+
+            if (studentObj.historyInfo?.classId) {
+                const { classInfo, sectionInfo } = getClassSectionInfo(
+                    studentObj.historyInfo.classId,
+                    studentObj.historyInfo.sectionId
+                );
+
+                studentObj.historyInfo = {
+                    classInfo: classInfo,
+                    sectionInfo: sectionInfo,
+                    date: studentObj.historyInfo.date,
+                    reason: studentObj.historyInfo.reason
+                };
+            }
+
+            return studentObj;
+        });
+
 
         return res.status(200).json({
             total,
             page: parseInt(page),
             limit: parseInt(limit),
             totalPages: Math.ceil(total / parseInt(limit)),
-            students
+            students: studentsWithNames
         });
 
     } catch (err) {
-        console.error("Error fetching deleted students:", err);
+        console.error("Error fetching students:", err);
         return res.status(500).json({
-            message: err.message || "Server error while fetching deleted students"
+            message: err.message || "Server error while fetching students"
         });
     }
 };

@@ -10,6 +10,8 @@ const {
     promoteStudentsToNextClass,
     removeSectionIncharge,
     updateSectionName,
+    markStudentsAsLeftSchool,
+    markStudentsAsPassout,
 } = require("../controllers/classSection.controller");
 const { protect, isAdminOffice } = require("../middlewares/auth");
 const validate = require("../middlewares/validate");
@@ -73,6 +75,19 @@ router.post(
     '/promote-student',
     validate(promoteStudentsSchema),
     promoteStudentsToNextClass
+);
+
+router.post(
+    "/passout-student",
+    protect,
+    isAdminOffice,
+    markStudentsAsPassout
+);
+router.post(
+    "/left-student",
+    protect,
+    isAdminOffice,
+    markStudentsAsLeftSchool
 );
 
 router.put(
