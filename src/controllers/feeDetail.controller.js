@@ -174,14 +174,42 @@ const sendPaymentStatusNotification = async (fee, actor, status) => {
 };
 
 const updateStudentDefaulterStatus = async (studentId) => {
-  const remaining = await FeeDetail.countDocuments({
+  const now = new Date();
+
+  // Count overdue fees (due date passed and not approved)
+  const overdueFees = await FeeDetail.find({
+    studentId,
+    dueDate: { $lt: now },
+    status: { $ne: "approved" }
+  }).select('amount');
+
+  const overdueCount = overdueFees.length;
+  const overdueAmount = overdueFees.reduce((sum, fee) => sum + fee.amount, 0);
+
+  // Count total pending fees (not approved)
+  const totalPendingFees = await FeeDetail.find({
     studentId,
     status: { $ne: "approved" }
+  }).select('amount');
+
+  const totalPendingCount = totalPendingFees.length;
+  const totalPendingAmount = totalPendingFees.reduce((sum, fee) => sum + fee.amount, 0);
+
+  // Student is defaulter if they have ANY overdue fee
+  const isDefaulter = overdueCount > 0;
+
+  // Only update isDefaulter field in Student schema (existing field)
+  await Student.findByIdAndUpdate(studentId, {
+    isDefaulter: isDefaulter
   });
 
-  await Student.findByIdAndUpdate(studentId, {
-    isDefaulter: remaining > 0
-  });
+  return {
+    overdueCount,
+    overdueAmount,
+    totalPendingCount,
+    totalPendingAmount,
+    isDefaulter
+  };
 };
 
 // Helper function to get class fee and calculate student fee
@@ -326,6 +354,7 @@ const bulkCreateFeeDetails = async (req, res) => {
         studentId: feeData.studentId,
         school: schoolId,
         month: feeData.month,
+        dueDate: new Date(feeData.dueDate),
         amount: feeCalculation.finalAmount,
         title: feeData.title,
         description: feeData.description || '',
@@ -424,7 +453,7 @@ const createFeeDetail = async (req, res) => {
     const { error } = createFeeDetailSchema.validate(req.body);
     if (error) return res.status(400).json({ message: error.details[0].message });
 
-    const { studentId, month, amount, title, description } = req.body;
+    const { studentId, month, dueDate, amount, title, description } = req.body;
     const schoolId = req.user.school;
     const actor = req.user;
 
@@ -451,6 +480,7 @@ const createFeeDetail = async (req, res) => {
       studentId,
       school: schoolId,
       month,
+      dueDate: new Date(dueDate),
       amount: feeCalculation.finalAmount,
       title,
       description,
@@ -537,6 +567,7 @@ const bulkUpdateFeeDetails = async (req, res) => {
       const updateObj = { $set: {} };
 
       if (updateData.month) updateObj.$set.month = updateData.month;
+      if (updateData.dueDate) updateObj.$set.dueDate = new Date(updateData.dueDate);
       if (updateData.title) updateObj.$set.title = updateData.title;
       if (updateData.description !== undefined) updateObj.$set.description = updateData.description;
 
@@ -652,10 +683,11 @@ const updateFeeDetail = async (req, res) => {
       return res.status(400).json({ message: "Associated student not found" });
     }
 
-    const { month, amount, title, description } = req.body;
+    const { month, dueDate, amount, title, description } = req.body;
 
     // Update basic fields
     if (month) fee.month = month;
+    if (dueDate) fee.dueDate = new Date(dueDate);
     if (title) fee.title = title;
     if (description !== undefined) fee.description = description;
 
@@ -887,11 +919,11 @@ const getMyFeeDetails = async (req, res) => {
 
     const studentId = req.user._id;
     const { page, limit } = value;
-
     const skip = (page - 1) * limit;
+    const now = new Date();
 
     const student = await Student.findById(studentId)
-      .select("name email school classInfo sectionInfo")
+      .select("name email school classInfo sectionInfo isDefaulter")
       .lean();
 
     if (!student) {
@@ -923,15 +955,11 @@ const getMyFeeDetails = async (req, res) => {
       }
     }
 
-    const [fees, total, bankAccounts] = await Promise.all([
+    const [allFees, total, bankAccounts] = await Promise.all([
       FeeDetail.find({ studentId })
         .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limit)
         .lean(),
-
       FeeDetail.countDocuments({ studentId }),
-
       BankAccount.find({
         school: student.school,
         isActive: true
@@ -940,6 +968,21 @@ const getMyFeeDetails = async (req, res) => {
         .sort({ createdAt: -1 })
         .lean()
     ]);
+
+    const pendingFees = allFees.filter(f => f.status !== 'approved');
+
+    const overdueFees = pendingFees.filter(f => f.dueDate && new Date(f.dueDate) < now);
+    const overdueCount = overdueFees.length;
+
+    const paginatedFees = allFees.slice(skip, skip + limit);
+
+    const feesWithOverdue = paginatedFees.map(fee => ({
+      ...fee,
+      daysOverdue: fee.dueDate && fee.status !== 'approved' && new Date(fee.dueDate) < now
+        ? Math.floor((now - new Date(fee.dueDate)) / (1000 * 60 * 60 * 24))
+        : 0,
+      isOverdue: fee.dueDate && fee.status !== 'approved' && new Date(fee.dueDate) < now
+    }));
 
     return res.status(200).json({
       total,
@@ -952,11 +995,13 @@ const getMyFeeDetails = async (req, res) => {
         email: student.email,
         classInfo: formattedClassInfo,
         sectionInfo: formattedSectionInfo,
-        fees,
+        isDefaulter: student.isDefaulter || overdueCount > 0,
+        fees: feesWithOverdue,
         bankAccounts
       },
     });
   } catch (err) {
+    console.error("getMyFeeDetails error:", err);
     return res.status(500).json({ message: "Server error" });
   }
 };
@@ -964,6 +1009,7 @@ const getMyFeeDetails = async (req, res) => {
 const getDefaulterStudents = async (req, res) => {
   try {
     const schoolId = req.user.school;
+    const now = new Date();
 
     let {
       page = 1,
@@ -978,16 +1024,14 @@ const getDefaulterStudents = async (req, res) => {
     limit = parseInt(limit);
     const skip = (page - 1) * limit;
 
-    const matchStage = {
-      school: schoolId,
-      status: { $ne: "approved" }
-    };
-
-    if (month) matchStage.month = month;
-
-    const pipeline = [
-      { $match: matchStage },
-
+    const overdueFeesAggregation = [
+      {
+        $match: {
+          school: schoolId,
+          dueDate: { $lt: now },
+          status: { $ne: "approved" }
+        }
+      },
       {
         $lookup: {
           from: "students",
@@ -1004,6 +1048,10 @@ const getDefaulterStudents = async (req, res) => {
 
       ...(sectionId ? [{
         $match: { "student.sectionInfo.id": new mongoose.Types.ObjectId(sectionId) }
+      }] : []),
+
+      ...(month ? [{
+        $match: { month: month }
       }] : []),
 
       ...(search ? [{
@@ -1024,15 +1072,25 @@ const getDefaulterStudents = async (req, res) => {
               _id: "$_id",
               month: "$month",
               amount: "$amount",
+              dueDate: "$dueDate",
               status: "$status",
-              title: "$title"
+              title: "$title",
+              daysOverdue: {
+                $ceil: {
+                  $divide: [
+                    { $subtract: [now, "$dueDate"] },
+                    1000 * 60 * 60 * 24
+                  ]
+                }
+              }
             }
           },
-          totalDue: { $sum: "$amount" }
+          totalDue: { $sum: "$amount" },
+          overdueCount: { $sum: 1 }
         }
       },
 
-      { $sort: { totalDue: -1 } },
+      { $sort: { overdueCount: -1, totalDue: -1 } },
 
       {
         $facet: {
@@ -1047,13 +1105,38 @@ const getDefaulterStudents = async (req, res) => {
       }
     ];
 
-    const result = await FeeDetail.aggregate(pipeline);
+    const result = await FeeDetail.aggregate(overdueFeesAggregation);
 
     let data = result[0]?.data || [];
     const total = result[0]?.totalCount[0]?.count || 0;
 
+    const allPendingFees = await FeeDetail.aggregate([
+      {
+        $match: {
+          school: schoolId,
+          status: { $ne: "approved" }
+        }
+      },
+      {
+        $group: {
+          _id: "$studentId",
+          totalPendingAmount: { $sum: "$amount" },
+          totalPendingCount: { $sum: 1 }
+        }
+      }
+    ]);
+
+    const pendingMap = new Map();
+    allPendingFees.forEach(item => {
+      pendingMap.set(item._id.toString(), {
+        totalPendingAmount: item.totalPendingAmount,
+        totalPendingCount: item.totalPendingCount
+      });
+    });
+
     data = await Promise.all(data.map(async (item) => {
       const student = item.student;
+      const pendingInfo = pendingMap.get(student._id.toString()) || { totalPendingAmount: 0, totalPendingCount: 0 };
 
       let formattedClassInfo = null;
       let formattedSectionInfo = null;
@@ -1086,22 +1169,23 @@ const getDefaulterStudents = async (req, res) => {
           _id: student._id,
           name: student.name,
           email: student.email,
-          rollNo: student.rollNo
+          rollNo: student.rollNo,
+          isDefaulter: true
         },
         classInfo: formattedClassInfo,
         sectionInfo: formattedSectionInfo,
-        totalDue: item.totalDue,
-        pendingFees: item.pendingFees
+        overdueCount: item.overdueCount,
+        totalPendingAmount: pendingInfo.totalPendingAmount,
+        overdueFees: item.pendingFees
       };
     }));
 
+
     return res.status(200).json({
-      pagination: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit)
-      },
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
       defaulters: data
     });
 

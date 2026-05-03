@@ -16,6 +16,7 @@ const FeeDetailSchema = new mongoose.Schema(
     amount: { type: Number, required: true },
     title: { type: String, required: true },
     description: { type: String },
+    dueDate: { type: Date, required: true },
     voucherImage: { type: String },
     studentProofImage: { type: String },
     status: {
@@ -26,5 +27,8 @@ const FeeDetailSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+FeeDetailSchema.index({ dueDate: 1, status: 1 });
+FeeDetailSchema.index({ studentId: 1, dueDate: 1 });
 
 module.exports = mongoose.model("FeeDetail", FeeDetailSchema);

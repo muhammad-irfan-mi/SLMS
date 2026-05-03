@@ -21,6 +21,12 @@ const createFeeDetailSchema = Joi.object({
       'string.pattern.base': 'Month must be in YYYY-MM format',
       'any.required': 'Month is required'
     }),
+  dueDate: Joi.date().greater('now').required()
+    .messages({
+      'date.base': 'Due date must be a valid date',
+      'date.greater': 'Due date must be greater than current date',
+      'any.required': 'Due date is required'
+    }),
   amount: Joi.number().positive()
     .messages({
       'number.base': 'Amount must be a number',
@@ -42,6 +48,11 @@ const updateFeeDetailSchema = Joi.object({
   month: Joi.string().pattern(/^\d{4}-\d{2}$/)
     .messages({
       'string.pattern.base': 'Month must be in YYYY-MM format'
+    }),
+  dueDate: Joi.date().greater('now')
+    .messages({
+      'date.base': 'Due date must be a valid date',
+      'date.greater': 'Due date must be greater than current date'
     }),
   amount: Joi.number().positive()
     .messages({
@@ -100,6 +111,12 @@ const bulkCreateFeeDetailsSchema = Joi.object({
           'string.pattern.base': 'Month must be in YYYY-MM format',
           'any.required': 'Month is required'
         }),
+      dueDate: Joi.date().greater('now').required()
+        .messages({
+          'date.base': 'Due date must be a valid date',
+          'date.greater': 'Due date must be greater than current date',
+          'any.required': 'Due date is required'
+        }),
       amount: Joi.number().positive()
         .messages({
           'number.base': 'Amount must be a number',
@@ -136,6 +153,11 @@ const bulkUpdateFeeDetailsSchema = Joi.object({
       month: Joi.string().pattern(/^\d{4}-\d{2}$/)
         .messages({
           'string.pattern.base': 'Month must be in YYYY-MM format'
+        }),
+      dueDate: Joi.date().greater('now')
+        .messages({
+          'date.base': 'Due date must be a valid date',
+          'date.greater': 'Due date must be greater than current date'
         }),
       amount: Joi.number().positive()
         .messages({
