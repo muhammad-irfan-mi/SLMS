@@ -86,17 +86,14 @@ const protect = async (req, res, next) => {
 
         let permissions = [];
 
-        // SUPER ADMIN
         if (user.role === 'superadmin') {
             permissions = ['*'];
         }
 
-        // ADMIN OFFICE
         else if (user.role === 'admin_office') {
             permissions = user.permissions || [];
         }
 
-        // TEACHER/STUDENT
         else if (
             user.role === 'teacher' ||
             user.role === 'student'
@@ -104,7 +101,6 @@ const protect = async (req, res, next) => {
             permissions = school.permissions || [];
         }
 
-        // SCHOOL
         else if (user.verified && user.schoolId) {
             permissions = user.permissions || [];
         }
