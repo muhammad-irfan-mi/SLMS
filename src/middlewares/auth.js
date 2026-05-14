@@ -111,7 +111,6 @@ const protect = async (req, res, next) => {
             schoolPermissions: school.permissions || []
         };
 
-        // req.user = user;
         next();
     } catch (error) {
         logger.error("Protect middleware error:", error);
