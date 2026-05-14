@@ -25,6 +25,10 @@ const SchoolSchema = new Schema({
     lon: Number,
   },
   noOfStudents: { type: Number, default: 0 },
+  permissions: [{
+    type: String,
+    index: true
+  }],
   otp: {
     code: String,
     expiresAt: Date,
@@ -53,7 +57,6 @@ const SchoolSchema = new Schema({
       lat: Number,
       lon: Number,
     },
-    noOfStudents: Number,
   },
   createdAt: { type: Date, default: Date.now },
 });
@@ -70,5 +73,8 @@ SchoolSchema.index({ "otp.expiresAt": 1 }, {
     verified: false
   }
 });
+
+SchoolSchema.index({ permissions: 1 });
+SchoolSchema.index({ _id: 1, permissions: 1 });
 
 module.exports = mongoose.model("School", SchoolSchema);

@@ -25,7 +25,11 @@ const StaffSchema = new mongoose.Schema({
         type: String,
         unique: true,
         sparse: true
-    }
+    },
+    permissions: [{
+        type: String,
+        index: true
+    }],
 }, {
     timestamps: true,
     collection: 'staff'
@@ -33,6 +37,7 @@ const StaffSchema = new mongoose.Schema({
 
 StaffSchema.index({ email: 1, school: 1 }, { unique: true });
 StaffSchema.index({ school: 1, role: 1 });
+StaffSchema.index({ permissions: 1 });
 StaffSchema.index({ "otp.expiresAt": 1 }, {
     expireAfterSeconds: 0,
     partialFilterExpression: { "otp.expiresAt": { $exists: true }, verified: false }

@@ -3,7 +3,7 @@ const router = express.Router();
 const { validationSchemas } = require('../validators/school.validator');
 const validate = require('../middlewares/validate');
 const multer = require('multer');
-const { verifySchoolOTP, resendSchoolOTP, setSchoolPassword, addSchoolBySuperAdmin, editSchoolBySuperAdmin, deleteSchoolBySuperAdmin, getAllSchools, getPendingRegistrations, getSchoolById, updateSchoolLogo, removeSchoolLogo, schoolForgotPassword, verifySchoolForgotPasswordOTP, schoolResetPasswordWithOTP, resendSchoolForgotPasswordOTP, restoreSchoolBySuperAdmin } = require('../controllers/school.controller');
+const { verifySchoolOTP, resendSchoolOTP, setSchoolPassword, addSchoolBySuperAdmin, editSchoolBySuperAdmin, deleteSchoolBySuperAdmin, getAllSchools, getPendingRegistrations, getSchoolById, updateSchoolLogo, removeSchoolLogo, schoolForgotPassword, verifySchoolForgotPasswordOTP, schoolResetPasswordWithOTP, resendSchoolForgotPasswordOTP, restoreSchoolBySuperAdmin, addSchoolPermissions, removeSchoolPermissions, getSchoolPermissions } = require('../controllers/school.controller');
 const { upload } = require("../utils/multer");
 const { isSuperAdmin, isAdminOffice, protect } = require('../middlewares/auth');
 
@@ -117,6 +117,28 @@ router.put(
     ]),
     validate(validationSchemas.idParam, 'params'),
     updateSchoolLogo
+);
+
+router.put(
+    '/:id/permissions/add',
+    protect,
+    isSuperAdmin,
+    validate(validationSchemas.idParam, 'params'),
+    addSchoolPermissions
+);
+
+router.put(
+    '/:id/permissions/remove',
+    protect,
+    isSuperAdmin,
+    validate(validationSchemas.idParam, 'params'),
+    removeSchoolPermissions
+);
+
+router.get(
+    '/:id/permissions',
+    validate(validationSchemas.idParam, 'params'),
+    getSchoolPermissions
 );
 
 

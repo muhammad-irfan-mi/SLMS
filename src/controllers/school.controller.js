@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const Student = require("../models/Student");
+const ServicePermission = require("../models/ServicePermission");
 
 
 const addSchoolBySuperAdmin = async (req, res) => {
@@ -965,6 +966,151 @@ const updateSchoolLogo = async (req, res) => {
   }
 };
 
+const addSchoolPermissions = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permissions } = req.body;
+
+    if (!Array.isArray(permissions) || permissions.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Permissions must be a non-empty array'
+      });
+    }
+
+    const school = await School.findById(id);
+    if (!school) {
+      return res.status(404).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    const currentPermissions = school.permissions || [];
+    const updatedPermissions = [...new Set([...currentPermissions, ...permissions])];
+
+    school.permissions = updatedPermissions;
+    school.updatedAt = Date.now();
+    await school.save();
+
+    const addedPermissions = permissions.filter(p => !currentPermissions.includes(p));
+
+    res.status(200).json({
+      success: true,
+      message: 'Permissions added successfully',
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add permissions',
+      error: error.message
+    });
+  }
+};
+
+const removeSchoolPermissions = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permissions } = req.body;
+
+    if (!Array.isArray(permissions) || permissions.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Permissions must be a non-empty array'
+      });
+    }
+
+    const school = await School.findById(id);
+    if (!school) {
+      return res.status(404).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    const staffUsingPermissions = await Staff.find({
+      schoolId: id,
+      permissions: { $in: permissions }
+    }).select('name email permissions');
+
+    if (staffUsingPermissions.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot remove permissions. Staff members are using these permissions',
+        staffAffected: staffUsingPermissions.map(s => ({
+          name: s.name,
+          email: s.email,
+          permissions: s.permissions
+        }))
+      });
+    }
+
+    const currentPermissions = school.permissions || [];
+    const updatedPermissions = currentPermissions.filter(p => !permissions.includes(p));
+
+    school.permissions = updatedPermissions;
+    school.updatedAt = Date.now();
+    await school.save();
+
+    const removedPermissions = permissions.filter(p => currentPermissions.includes(p));
+
+    res.status(200).json({
+      success: true,
+      message: 'Permissions removed successfully',
+      data: {
+        schoolId: school._id,
+        name: school.name,
+        removedPermissions: removedPermissions,
+        currentPermissions: school.permissions
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove permissions',
+      error: error.message
+    });
+  }
+};
+
+const getSchoolPermissions = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const school = await School.findById(id)
+      .select('name email permissions schoolId');
+
+    if (!school) {
+      return res.status(404).json({
+        success: false,
+        message: 'School not found'
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        school: {
+          _id: school._id,
+          name: school.name,
+          email: school.email,
+          schoolId: school.schoolId
+        },
+        permissions: school.permissions || [],
+      }
+    });
+
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch school permissions',
+      error: error.message
+    });
+  }
+};
+
 
 module.exports = {
   addSchoolBySuperAdmin,
@@ -981,5 +1127,8 @@ module.exports = {
   getAllSchools,
   getSchoolById,
   getPendingRegistrations,
-  updateSchoolLogo
+  updateSchoolLogo,
+  addSchoolPermissions,
+  removeSchoolPermissions,
+  getSchoolPermissions
 };
