@@ -11,7 +11,69 @@ const ServicePermission = require("../models/ServicePermission");
 
 const addSchoolBySuperAdmin = async (req, res) => {
   try {
-    const { name, email, phone, address, remainVideo, cnic, lat, lon, noOfStudents } = req.body;
+    const { name, email, phone, address, remainVideo, cnic, lat, lon, noOfStudents, permissions } = req.body;
+
+    let schoolPermissions = [];
+
+    if (permissions) {
+      if (typeof permissions === "string") {
+        try {
+          const parsed = JSON.parse(permissions);
+
+          if (Array.isArray(parsed)) {
+            schoolPermissions = parsed;
+          } else {
+            schoolPermissions = [parsed];
+          }
+
+        } catch (err) {
+          schoolPermissions = permissions
+            .split(",")
+            .map(p => p.trim().toLowerCase())
+            .filter(Boolean);
+        }
+      }
+
+      else if (Array.isArray(permissions)) {
+
+        schoolPermissions = permissions
+          .flatMap(item => item.split(","))
+          .map(p => p.trim().toLowerCase())
+          .filter(Boolean);
+      }
+    }
+
+    schoolPermissions = [...new Set(schoolPermissions)];
+
+    let validPermissions = [];
+    let invalidPermissions = [];
+
+    if (schoolPermissions.length > 0) {
+
+      const allServices = await ServicePermission
+        .find({ isActive: true })
+        .select("key");
+
+      const validServiceKeys = allServices.map(service =>
+        service.key.toLowerCase()
+      );
+
+      validPermissions = schoolPermissions.filter(permission =>
+        validServiceKeys.includes(permission)
+      );
+
+      invalidPermissions = schoolPermissions.filter(permission =>
+        !validServiceKeys.includes(permission)
+      );
+
+      if (invalidPermissions.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid permissions: ${invalidPermissions.join(", ")}`
+        });
+      }
+    }
+
     const existingSchool = await School.findOne({
       $or: [
         { email },
@@ -94,7 +156,9 @@ const addSchoolBySuperAdmin = async (req, res) => {
         location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
         remainVideo: Number(remainVideo) || 4,
         noOfStudents: Number(noOfStudents) || 0,
+        permissions: validPermissions
       };
+      pendingSchool.permissions = validPermissions;
       pendingSchool.otp = {
         code: otpCode,
         expiresAt: otpExpiry,
@@ -113,6 +177,7 @@ const addSchoolBySuperAdmin = async (req, res) => {
         schoolId: tempSchoolId,
         location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
         noOfStudents: Number(noOfStudents) || 0,
+        permissions: validPermissions,
         verified: false,
         tempData: {
           name,
@@ -124,6 +189,7 @@ const addSchoolBySuperAdmin = async (req, res) => {
           location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
           remainVideo: Number(remainVideo) || 4,
           noOfStudents: Number(noOfStudents) || 0,
+          permissions: validPermissions
         },
         otp: {
           code: otpCode,

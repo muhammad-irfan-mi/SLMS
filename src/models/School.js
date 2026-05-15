@@ -48,6 +48,9 @@ const SchoolSchema = new Schema({
     phone: String,
     address: String,
     cnic: String,
+    permissions: [{
+      type: String
+    }],
     images: {
       cnicFront: String,
       cnicBack: String,

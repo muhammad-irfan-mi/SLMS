@@ -116,7 +116,13 @@ const validationSchemas = {
     cnic: commonValidations.cnic,
     lat: commonValidations.lat,
     lon: commonValidations.lon,
-    noOfStudents: commonValidations.noOfStudents
+    noOfStudents: commonValidations.noOfStudents,
+    permissions: Joi.alternatives()
+      .try(
+        Joi.array().items(Joi.string()),
+        Joi.string()
+      )
+      .optional()
   }),
 
   // Update school schema

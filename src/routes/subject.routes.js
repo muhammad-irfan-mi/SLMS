@@ -17,12 +17,14 @@ const {
   getSubjectsByTeacherValidation,
   idParamValidation,
 } = require("../validators/subject.validation");
+const { checkPermission } = require("../middlewares/permission");
 
 router.post(
   "/",
   protect,
   isAdminOffice,
   validate(addSubjectValidation),
+  checkPermission('subject'),
   addSubject
 );
 
@@ -31,6 +33,7 @@ router.get(
   protect,
   isAdminOffice,
   validate(getSubjectsValidation, 'query'),
+  checkPermission('subject'),
   getSubjects
 );
 
@@ -39,6 +42,7 @@ router.get(
   protect,
   isTeacher,
   validate(getSubjectsByTeacherValidation, 'query'),
+  checkPermission('subject'),
   getSubjectsByTeacher
 );
 
@@ -47,6 +51,7 @@ router.get(
   protect,
   isAdminOffice,
   validate(idParamValidation, 'params'),
+  checkPermission('subject'),
   getSubjectById
 );
 
@@ -56,6 +61,7 @@ router.put(
   isAdminOffice,
   validate(idParamValidation, 'params'),
   validate(updateSubjectValidation),
+  checkPermission('subject'),
   updateSubject
 );
 
@@ -64,6 +70,7 @@ router.delete(
   protect,
   isAdminOffice,
   validate(idParamValidation, 'params'),
+  checkPermission('subject'),
   deleteSubject
 );
 

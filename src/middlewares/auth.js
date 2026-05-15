@@ -57,7 +57,7 @@ const protect = async (req, res, next) => {
         }
 
         const school = await School.findById(decoded.school || user.school)
-            .select("isDeleted tokenVersion");
+            .select("isDeleted tokenVersion permissions");
 
         if (!school) {
             return res.status(401).json({ message: "School not found" });

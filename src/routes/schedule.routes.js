@@ -25,6 +25,7 @@ const {
   updateScheduleValidation,
   idParamValidation,
 } = require("../validators/schedule.validation");
+const { checkPermission } = require("../middlewares/permission");
 
 // Admin/Office routes
 router.post(
@@ -32,6 +33,7 @@ router.post(
   protect,
   isAdminOffice,
   validate(addScheduleValidation),
+  checkPermission('schedule'),
   addSchedule
 );
 
@@ -40,6 +42,7 @@ router.get(
   protect,
   isTeacherOrAdminOfficeOrSchool,
   validate(getScheduleValidation, 'query'),
+  checkPermission('schedule'),
   getSchedule
 );
 
@@ -48,6 +51,7 @@ router.get(
   protect,
   isAdminOffice,
   validate(getScheduleBySectionValidation, 'query'),
+  checkPermission('schedule'),
   getScheduleBySection
 );
 
@@ -57,6 +61,7 @@ router.put(
   isAdminOffice,
   validate(idParamValidation, 'params'),
   validate(updateScheduleValidation),
+  checkPermission('schedule'),
   updateSchedule
 );
 
@@ -65,6 +70,7 @@ router.delete(
   protect,
   isAdminOffice,
   validate(idParamValidation, 'params'),
+  checkPermission('schedule'),
   deleteSchedule
 );
 
@@ -74,6 +80,7 @@ router.get(
   protect,
   isTeacherOrAdminOfficeOrSchool,
   validate(teacherScheduleValidation, 'query'),
+  checkPermission('schedule'),
   getScheduleByTeacher
 );
 
@@ -83,6 +90,7 @@ router.get(
   protect,
   isTeacherOrStudent,
   validate(studentScheduleValidation, 'query'),
+  checkPermission('schedule'),
   getScheduleByStudent
 );
 

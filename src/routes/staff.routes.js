@@ -4,7 +4,8 @@ const { protect, isAdminOffice, isTeacherOrAdminOfficeOrSchool, isTeacher } = re
 const { upload } = require("../utils/multer");
 const validate = require("../middlewares/validate");
 const staffValidation = require("../validators/staff.validation");
-const { sendOTP, verifyOTP, resendOTP, setPasswordAfterOTP, login, forgotPassword, verifyForgotPasswordOTP, resetPasswordWithOTP, resetPassword, resendForgotPasswordOTP, addStaff, getAllStaff, getStaffById, updateOwnProfile, toggleStaffStatus, updateStaff, deleteOwnAccount, restoreOwnAccount } = require("../controllers/staff.controller");
+const { sendOTP, verifyOTP, resendOTP, setPasswordAfterOTP, login, forgotPassword, verifyForgotPasswordOTP, resetPasswordWithOTP, resetPassword, resendForgotPasswordOTP, addStaff, getAllStaff, getStaffById, updateOwnProfile, toggleStaffStatus, updateStaff, deleteOwnAccount, restoreOwnAccount, addStaffPermissions, removeStaffPermissions, updateStaffPermissions } = require("../controllers/staff.controller");
+const { checkPermission } = require("../middlewares/permission");
 
 // Public auth routes
 router.post(
@@ -78,6 +79,7 @@ router.post(
         { name: "recentPic", maxCount: 1 },
     ]),
     validate(staffValidation.add),
+    checkPermission('staff'),
     addStaff
 );
 
@@ -92,6 +94,7 @@ router.put(
     ]),
     validate(staffValidation.idParam, 'params'),
     validate(staffValidation.update),
+    checkPermission('staff'),
     updateStaff
 );
 
@@ -99,6 +102,7 @@ router.get(
     "/",
     protect,
     isAdminOffice,
+    checkPermission('staff'),
     getAllStaff
 );
 
@@ -106,6 +110,7 @@ router.get(
     "/teachers",
     protect,
     isAdminOffice,
+    checkPermission('staff'),
     getAllStaff
 );
 
@@ -114,6 +119,7 @@ router.get(
     protect,
     isTeacherOrAdminOfficeOrSchool,
     validate(staffValidation.idParam, 'params'),
+    checkPermission('staff'),
     getStaffById
 );
 
@@ -124,19 +130,45 @@ router.put(
         { name: "recentPic", maxCount: 1 },
     ]),
     validate(staffValidation.profile.update),
+    checkPermission('staff'),
     updateOwnProfile
 );
 
-router.delete("/me/account", protect, isTeacher, deleteOwnAccount);
+router.delete("/me/account", protect, isTeacher, checkPermission('staff'), deleteOwnAccount);
 
-router.post("/account/restore/:userId",protect, isAdminOffice, restoreOwnAccount);
+router.post("/account/restore/:userId",protect, isAdminOffice, checkPermission('staff'), restoreOwnAccount);
 
 router.delete(
     "/:id",
     protect,
     isAdminOffice,
     validate(staffValidation.idParam, 'params'),
+    checkPermission('staff'),
     toggleStaffStatus
+);
+
+
+router.put(
+    "/:id/permissions/add",
+    protect,
+    isAdminOffice,
+    validate(staffValidation.idParam, 'params'),
+    addStaffPermissions
+);
+
+router.put(
+    "/:id/permissions/remove",
+    protect,
+    isAdminOffice,
+    validate(staffValidation.idParam, 'params'),
+    removeStaffPermissions
+);
+router.put(
+    "/:id/update",
+    protect,
+    isAdminOffice,
+    validate(staffValidation.idParam, 'params'),
+    updateStaffPermissions
 );
 
 module.exports = router;

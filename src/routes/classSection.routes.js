@@ -1,8 +1,6 @@
 const express = require("express");
 const router = express.Router();
 const {
-    // deleteSectionFromClass,
-    // deleteClass,
     getClassesBySchool,
     addMultipleClassesWithSections,
     updateAllClassesAndSections,
@@ -18,7 +16,6 @@ const validate = require("../middlewares/validate");
 const {
     addMultipleClassesValidation,
     updateAllClassesValidation,
-    // deleteSectionValidation,
     assignInchargeValidation,
     paginationQueryValidation,
     idParamValidation,
@@ -26,8 +23,9 @@ const {
     promoteStudentsSchema,
     updateSectionNameValidation,
 } = require("../validators/classSection.validation");
+const { checkPermission } = require("../middlewares/permission");
 
-router.use(protect, isAdminOffice);
+router.use(protect, isAdminOffice, checkPermission('classSection'));
 
 router.post(
     "/add",
@@ -40,18 +38,6 @@ router.put(
     validate(updateAllClassesValidation),
     updateAllClassesAndSections
 );
-
-// router.delete(
-//     "/delete-section",
-//     validate(deleteSectionValidation),
-//     deleteSectionFromClass
-// );
-
-// router.delete(
-//     "/:id",
-//     validate(idParamValidation, 'params'),
-//     deleteClass
-// );
 
 router.get(
     "/:schoolId",

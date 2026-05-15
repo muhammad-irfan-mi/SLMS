@@ -88,11 +88,11 @@ const addStaff = async (req, res) => {
             isIncharge,
             classId,
             sectionId,
+            permissions
         } = req.body;
 
         const schoolId = req.user.school;
 
-        // Check if staff exists in this school
         const existing = await Staff.findOne({
             email: { $regex: new RegExp(`^${email}$`, 'i') },
             school: schoolId,
@@ -117,6 +117,74 @@ const addStaff = async (req, res) => {
             sectionInfo = result.sectionInfo;
         }
 
+        let staffPermissions = [];
+
+        if (role === "admin_office") {
+
+            let parsedPermissions = [];
+
+            if (permissions) {
+
+                if (Array.isArray(permissions)) {
+
+                    parsedPermissions = permissions
+                        .flatMap(p => p.split(","))
+                        .map(p => p.trim().toLowerCase())
+                        .filter(Boolean);
+                }
+
+                else if (typeof permissions === "string") {
+
+                    parsedPermissions = permissions
+                        .split(",")
+                        .map(p => p.trim().toLowerCase())
+                        .filter(Boolean);
+                }
+            }
+
+            parsedPermissions = [...new Set(parsedPermissions)];
+
+            console.log("parsedPermissions:", parsedPermissions);
+
+            if (!parsedPermissions.length) {
+                return res.status(400).json({
+                    success: false,
+                    message:
+                        "Admin office staff must have at least one permission assigned"
+                });
+            }
+
+            const school = await School.findById(schoolId);
+
+            if (!school) {
+                return res.status(404).json({
+                    success: false,
+                    message: "School not found"
+                });
+            }
+
+            const schoolPermissions = school.permissions || [];
+
+            console.log("schoolPermissions:", schoolPermissions);
+
+            const invalidPermissions = parsedPermissions.filter(
+                permission => !schoolPermissions.includes(permission)
+            );
+
+            if (invalidPermissions.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Invalid permissions for this school: ${invalidPermissions.join(", ")}`
+                });
+            }
+
+            staffPermissions = parsedPermissions;
+        }
+
+        if (role === "teacher") {
+            staffPermissions = [];
+        }
+
         const otpCode = common.generateOTP();
         const otpExpiry = common.calculateOTPExpiry(10);
 
@@ -139,6 +207,7 @@ const addStaff = async (req, res) => {
             images,
             verified: false,
             isActive: true,
+            permissions: staffPermissions,
             otp: {
                 code: otpCode,
                 expiresAt: otpExpiry,
@@ -614,6 +683,204 @@ const toggleStaffStatus = async (req, res) => {
     return common.toggleUserStatus(req, res, Staff);
 };
 
+const addStaffPermissions = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { permissions } = req.body;
+
+        if (!Array.isArray(permissions) || permissions.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Permissions must be a non-empty array'
+            });
+        }
+
+        // Find staff member
+        const staff = await Staff.findOne({
+            _id: id,
+            school: req.user.school,
+            role: 'admin_office'
+        });
+
+        if (!staff) {
+            return res.status(404).json({
+                success: false,
+                message: 'Admin office staff not found or does not belong to your school'
+            });
+        }
+
+        const school = await School.findById(req.user.school);
+
+        if (!school) {
+            console.error("School not found for ID:", req.user.school);
+            return res.status(404).json({
+                success: false,
+                message: 'School not found. Please contact super admin.',
+                debug: { schoolId: req.user.school }
+            });
+        }
+
+        const schoolPermissions = school.permissions || [];
+
+        if (schoolPermissions.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'School has no permissions assigned. Contact super admin to assign school permissions first.'
+            });
+        }
+
+        const invalidPermissions = permissions.filter(p => !schoolPermissions.includes(p));
+
+        if (invalidPermissions.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Some permissions are not available for this school',
+                invalidPermissions: invalidPermissions,
+            });
+        }
+
+        const currentPermissions = staff.permissions || [];
+        const updatedPermissions = [...new Set([...currentPermissions, ...permissions])];
+
+        staff.permissions = updatedPermissions;
+        await staff.save();
+
+        const addedPermissions = permissions.filter(p => !currentPermissions.includes(p));
+
+        res.status(200).json({
+            success: true,
+            message: 'Permissions added successfully',
+            data: {
+                staffId: staff._id,
+                name: staff.name,
+                email: staff.email,
+                role: staff.role,
+            }
+        });
+
+    } catch (error) {
+        console.error("Error in addStaffPermissions:", error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to add permissions',
+            error: error.message
+        });
+    }
+};
+
+const updateStaffPermissions = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { permissions } = req.body;
+
+        if (!Array.isArray(permissions)) {
+            return res.status(400).json({
+                success: false,
+                message: 'Permissions must be an array'
+            });
+        }
+
+        const staff = await Staff.findOne({
+            _id: id,
+            school: req.user.school,
+            role: 'admin_office'
+        });
+
+        if (!staff) {
+            return res.status(404).json({
+                success: false,
+                message: 'Admin office staff not found'
+            });
+        }
+
+        const school = await School.findById(req.user.school);
+        if (!school) {
+            return res.status(404).json({
+                success: false,
+                message: 'School not found'
+            });
+        }
+
+        const invalidPermissions = permissions.filter(p => !school.permissions.includes(p));
+        if (invalidPermissions.length > 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Some permissions are not available for this school',
+                invalidPermissions: invalidPermissions
+            });
+        }
+
+        staff.permissions = permissions;
+        staff.updatedAt = Date.now();
+        await staff.save();
+
+        res.status(200).json({
+            success: true,
+            message: 'Staff permissions updated successfully',
+            data: {
+                staffId: staff._id,
+                name: staff.name,
+                email: staff.email,
+                permissions: staff.permissions
+            }
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to update staff permissions',
+            error: error.message
+        });
+    }
+};
+
+const removeStaffPermissions = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { permissions } = req.body;
+
+        if (!Array.isArray(permissions) || permissions.length === 0) {
+            return res.status(400).json({
+                success: false,
+                message: 'Permissions must be a non-empty array'
+            });
+        }
+
+        const staff = await Staff.findOne({
+            _id: id,
+            school: req.user.school,
+            role: 'admin_office'
+        });
+
+        if (!staff) {
+            return res.status(404).json({
+                success: false,
+                message: 'Admin office staff not found'
+            });
+        }
+
+        const currentPermissions = staff.permissions || [];
+        const updatedPermissions = currentPermissions.filter(p => !permissions.includes(p));
+
+        staff.permissions = updatedPermissions;
+        await staff.save();
+
+        const removedPermissions = permissions.filter(p => currentPermissions.includes(p));
+
+        res.status(200).json({
+            success: true,
+            message: 'Permissions removed successfully',
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to remove permissions',
+            error: error.message
+        });
+    }
+};
+
 // Auth functions using common controller
 const sendOTP = (req, res) => common.sendOTP(req, res, Staff, 'staff');
 const verifyOTP = (req, res) => common.verifyOTP(req, res, Staff, 'staff');
@@ -635,6 +902,9 @@ module.exports = {
     deleteOwnAccount,
     restoreOwnAccount,
     toggleStaffStatus,
+    addStaffPermissions,
+    updateStaffPermissions,
+    removeStaffPermissions,
     sendOTP,
     verifyOTP,
     resendOTP,

@@ -35,7 +35,17 @@ const staffValidation = {
       .default(false)
       .optional(),
     classId: commonValidations.classIdOptional,
-    sectionId: commonValidations.sectionIdOptional
+    sectionId: commonValidations.sectionIdOptional,
+    permissions: Joi.array()
+      .items(Joi.string())
+      .when('role', {
+        is: 'admin_office',
+        then: Joi.array().min(1).required(),
+        otherwise: Joi.array().optional()
+      })
+      .messages({
+        'array.min': 'Admin office staff must have at least one permission'
+      })
   }),
 
   update: Joi.object({

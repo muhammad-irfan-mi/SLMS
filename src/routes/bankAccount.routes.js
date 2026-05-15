@@ -29,6 +29,7 @@ router.get(
     protect,
     isAdminOffice,
     validateQuery(getBankAccountsQuerySchema),
+    checkPermission('bankAccount'),
     getBankAccounts
 );
 
@@ -36,6 +37,7 @@ router.get(
     '/:id',
     protect,
     isAdminOffice,
+    checkPermission('bankAccount'),
     getBankAccountById
 );
 
@@ -44,6 +46,7 @@ router.put(
     protect,
     isAdminOffice,
     validate(updateBankAccountSchema),
+    checkPermission('bankAccount'),
     updateBankAccount
 );
 
@@ -51,6 +54,7 @@ router.delete(
     '/:id',
     protect,
     isAdminOffice,
+    checkPermission('bankAccount'),
     deleteBankAccount
 );
 
