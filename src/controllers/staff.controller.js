@@ -768,72 +768,6 @@ const addStaffPermissions = async (req, res) => {
     }
 };
 
-const updateStaffPermissions = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { permissions } = req.body;
-
-        if (!Array.isArray(permissions)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Permissions must be an array'
-            });
-        }
-
-        const staff = await Staff.findOne({
-            _id: id,
-            school: req.user.school,
-            role: 'admin_office'
-        });
-
-        if (!staff) {
-            return res.status(404).json({
-                success: false,
-                message: 'Admin office staff not found'
-            });
-        }
-
-        const school = await School.findById(req.user.school);
-        if (!school) {
-            return res.status(404).json({
-                success: false,
-                message: 'School not found'
-            });
-        }
-
-        const invalidPermissions = permissions.filter(p => !school.permissions.includes(p));
-        if (invalidPermissions.length > 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Some permissions are not available for this school',
-                invalidPermissions: invalidPermissions
-            });
-        }
-
-        staff.permissions = permissions;
-        staff.updatedAt = Date.now();
-        await staff.save();
-
-        res.status(200).json({
-            success: true,
-            message: 'Staff permissions updated successfully',
-            data: {
-                staffId: staff._id,
-                name: staff.name,
-                email: staff.email,
-                permissions: staff.permissions
-            }
-        });
-
-    } catch (error) {
-        res.status(500).json({
-            success: false,
-            message: 'Failed to update staff permissions',
-            error: error.message
-        });
-    }
-};
-
 const removeStaffPermissions = async (req, res) => {
     try {
         const { id } = req.params;
@@ -881,6 +815,45 @@ const removeStaffPermissions = async (req, res) => {
     }
 };
 
+const getStaffPermissions = async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const staff = await Staff.findOne({
+            _id: id,
+            school: req.user.school,
+            role: 'admin_office'
+        }).select('_id name email role permissions');
+
+        if (!staff) {
+            return res.status(404).json({
+                success: false,
+                message: 'Admin office staff not found'
+            });
+        }
+
+        res.status(200).json({
+            success: true,
+            data: {
+                staff: {
+                    id: staff._id,
+                    name: staff.name,
+                    email: staff.email,
+                    role: staff.role
+                },
+                currentPermissions: staff.permissions || [],
+            }
+        });
+
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch staff permissions',
+            error: error.message
+        });
+    }
+};
+
 // Auth functions using common controller
 const sendOTP = (req, res) => common.sendOTP(req, res, Staff, 'staff');
 const verifyOTP = (req, res) => common.verifyOTP(req, res, Staff, 'staff');
@@ -903,8 +876,8 @@ module.exports = {
     restoreOwnAccount,
     toggleStaffStatus,
     addStaffPermissions,
-    updateStaffPermissions,
     removeStaffPermissions,
+    getStaffPermissions,
     sendOTP,
     verifyOTP,
     resendOTP,
