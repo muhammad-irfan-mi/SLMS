@@ -626,7 +626,7 @@ const getStudentById = async (req, res) => {
 
         const student = await Student.findById(id)
             .select("-password -otp -forgotPasswordOTP")
-            .populate('school', 'name images.logo')
+            .populate('school', 'name images.logo permissions')
             .lean();
 
         if (!student || student.role !== "student") {
@@ -641,7 +641,8 @@ const getStudentById = async (req, res) => {
             student.school = {
                 _id: student.school._id,
                 name: student.school.name,
-                logo: student.school.images?.logo || null
+                logo: student.school.images?.logo || null,
+                permissions: student.school.permissions || []
             };
         }
 

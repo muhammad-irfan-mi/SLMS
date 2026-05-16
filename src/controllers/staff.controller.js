@@ -496,14 +496,15 @@ const getStaffById = async (req, res) => {
 
         const staff = await Staff.findById(id)
             .select("-password -otp -forgotPasswordOTP")
-            .populate('school', 'name images.logo')
+            .populate('school', 'name images.logo permissions')
             .lean();
 
         if (staff.school) {
             staff.school = {
                 _id: staff.school._id,
                 name: staff.school.name,
-                logo: staff.school.images?.logo || null
+                logo: staff.school.images?.logo || null,
+                permissions: staff.school.permissions || []
             };
         }
 
