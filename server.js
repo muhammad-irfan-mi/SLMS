@@ -38,6 +38,7 @@ const quizRoutes = require('./src/routes/quiz.routes');
 const bankAccount = require('./src/routes/bankAccount.routes');
 const servicePermission = require('./src/routes/servicePermission.routes');
 const seedSuperAdmin = require('./src/seed/seedSuperAdmin');
+const seedServices = require('./src/seed/services.seed');
 
 const app = express();
 
@@ -97,6 +98,7 @@ const startServer = async () => {
     await connectDB();
     await scheduleAccountCleanup();
     await seedSuperAdmin();
+    await seedServices();
     app.listen(port, () =>
       logger.info(`Server running on port ${port}`)
     );

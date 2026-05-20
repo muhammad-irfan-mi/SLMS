@@ -7,88 +7,152 @@ const bcrypt = require("bcryptjs");
 const User = require("../models/User");
 const Student = require("../models/Student");
 const ServicePermission = require("../models/ServicePermission");
+const Staff = require("../models/Staff");
 
+// const getAllDependencies = async (serviceKeys) => {
+//   const allServices = await ServicePermission.find({
+//     key: { $in: serviceKeys },
+//     isActive: true
+//   });
+
+//   const dependencies = new Set(serviceKeys);
+
+//   for (const service of allServices) {
+//     if (service.dependencies && service.dependencies.length) {
+//       service.dependencies.forEach(dep => dependencies.add(dep));
+//     }
+//   }
+
+//   return Array.from(dependencies);
+// };
+
+const getAllDependenciesRecursive = async (serviceKeys, visited = new Set()) => {
+  const allDependencies = new Set(serviceKeys);
+
+  for (const key of serviceKeys) {
+    if (visited.has(key)) continue;
+    visited.add(key);
+
+    const service = await ServicePermission.findOne({
+      key: key.toLowerCase(),
+      isActive: true
+    });
+
+    if (service && service.dependencies && service.dependencies.length > 0) {
+      for (const dep of service.dependencies) {
+        allDependencies.add(dep);
+        const nestedDeps = await getAllDependenciesRecursive([dep], visited);
+        nestedDeps.forEach(d => allDependencies.add(d));
+      }
+    }
+  }
+
+  return Array.from(allDependencies);
+};
+
+const validatePermissionsWithDependencies = async (selectedPermissions) => {
+  const allServices = await ServicePermission.find({ isActive: true }).select("key dependencies");
+  const validServiceKeys = allServices.map(s => s.key);
+
+  const invalidPermissions = selectedPermissions.filter(p => !validServiceKeys.includes(p));
+  if (invalidPermissions.length > 0) {
+    return {
+      valid: false,
+      error: `Invalid permissions: ${invalidPermissions.join(", ")}`,
+      invalidPermissions
+    };
+  }
+
+  const serviceMap = new Map();
+  allServices.forEach(service => {
+    serviceMap.set(service.key, service.dependencies || []);
+  });
+
+  const missingDependencies = [];
+  const allSelected = new Set(selectedPermissions);
+
+  for (const permission of selectedPermissions) {
+    const dependencies = serviceMap.get(permission) || [];
+    for (const dep of dependencies) {
+      if (!allSelected.has(dep)) {
+        missingDependencies.push({
+          service: permission,
+          missingDependency: dep
+        });
+      }
+    }
+  }
+
+  if (missingDependencies.length > 0) {
+    const missingMessages = missingDependencies.map(
+      md => `"${md.service}" requires "${md.missingDependency}"`
+    );
+    return {
+      valid: false,
+      error: `Missing dependencies: ${missingMessages.join(", ")}`,
+      missingDependencies
+    };
+  }
+
+  const finalPermissions = await getAllDependenciesRecursive(selectedPermissions);
+
+  return {
+    valid: true,
+    finalPermissions: [...new Set(finalPermissions)]
+  };
+};
 
 const addSchoolBySuperAdmin = async (req, res) => {
   try {
-    const { name, email, phone, address, remainVideo, cnic, lat, lon, noOfStudents, permissions } = req.body;
+    const {
+      name, email, phone, address, remainVideo,
+      cnic, lat, lon, noOfStudents, permissions
+    } = req.body;
 
-    let schoolPermissions = [];
-
+    let selectedPermissions = [];
     if (permissions) {
       if (typeof permissions === "string") {
         try {
           const parsed = JSON.parse(permissions);
-
-          if (Array.isArray(parsed)) {
-            schoolPermissions = parsed;
-          } else {
-            schoolPermissions = [parsed];
-          }
-
-        } catch (err) {
-          schoolPermissions = permissions
-            .split(",")
-            .map(p => p.trim().toLowerCase())
-            .filter(Boolean);
+          selectedPermissions = Array.isArray(parsed) ? parsed : [parsed];
+        } catch {
+          selectedPermissions = permissions.split(",").map(p => p.trim().toLowerCase());
         }
-      }
-
-      else if (Array.isArray(permissions)) {
-
-        schoolPermissions = permissions
-          .flatMap(item => item.split(","))
-          .map(p => p.trim().toLowerCase())
-          .filter(Boolean);
+      } else if (Array.isArray(permissions)) {
+        selectedPermissions = permissions.flatMap(p => p.split(",")).map(p => p.trim().toLowerCase());
       }
     }
 
-    schoolPermissions = [...new Set(schoolPermissions)];
+    selectedPermissions = [...new Set(selectedPermissions)];
 
-    let validPermissions = [];
-    let invalidPermissions = [];
+    let finalPermissions = [];
 
-    if (schoolPermissions.length > 0) {
+    if (selectedPermissions.length > 0) {
+      const validation = await validatePermissionsWithDependencies(selectedPermissions);
 
-      const allServices = await ServicePermission
-        .find({ isActive: true })
-        .select("key");
-
-      const validServiceKeys = allServices.map(service =>
-        service.key.toLowerCase()
-      );
-
-      validPermissions = schoolPermissions.filter(permission =>
-        validServiceKeys.includes(permission)
-      );
-
-      invalidPermissions = schoolPermissions.filter(permission =>
-        !validServiceKeys.includes(permission)
-      );
-
-      if (invalidPermissions.length > 0) {
+      if (!validation.valid) {
         return res.status(400).json({
           success: false,
-          message: `Invalid permissions: ${invalidPermissions.join(", ")}`
+          message: validation.error,
         });
       }
+
+      finalPermissions = validation.finalPermissions;
     }
 
     const existingSchool = await School.findOne({
       $or: [
         { email },
-        {
-          name: { $regex: `^${name}$`, $options: "i" },
-          verified: true
-        }
+        { name: { $regex: `^${name}$`, $options: "i" }, verified: true }
       ]
     });
+
     if (existingSchool) {
       if (existingSchool.email === email) {
         return res.status(400).json({
           message: existingSchool.verified
             ? "A school with this email already exists"
-            : "A verification is already pending for this email. Please verify the OTP or wait for it to expire."
+            : "Verification pending for this email"
         });
       }
       if (existingSchool.name.toLowerCase() === name.toLowerCase() && existingSchool.verified) {
@@ -96,124 +160,77 @@ const addSchoolBySuperAdmin = async (req, res) => {
       }
     }
 
-    // const existingByEmail = await School.findOne({ email });
-    // if (existingByEmail) {
-    //   return res.status(400).json({ message: "A school with this email already exists" });
-    // }
-
     const otpCode = otpService.generateOTP();
     const otpExpiry = otpService.calculateExpiry(10);
 
     let cnicFront = null, cnicBack = null, nocDoc = null, logo = null;
-
     if (req.files?.cnicFront?.[0]) {
       const file = req.files.cnicFront[0];
-      cnicFront = await uploadFileToS3({
-        fileBuffer: file.buffer,
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-      });
+      cnicFront = await uploadFileToS3({ fileBuffer: file.buffer, fileName: file.originalname, mimeType: file.mimetype });
     }
-
     if (req.files?.cnicBack?.[0]) {
       const file = req.files.cnicBack[0];
-      cnicBack = await uploadFileToS3({
-        fileBuffer: file.buffer,
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-      });
+      cnicBack = await uploadFileToS3({ fileBuffer: file.buffer, fileName: file.originalname, mimeType: file.mimetype });
     }
-
     if (req.files?.nocDoc?.[0]) {
       const file = req.files.nocDoc[0];
-      nocDoc = await uploadFileToS3({
-        fileBuffer: file.buffer,
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-      });
+      nocDoc = await uploadFileToS3({ fileBuffer: file.buffer, fileName: file.originalname, mimeType: file.mimetype });
     }
-
     if (req.files?.logo?.[0]) {
       const file = req.files.logo[0];
-      logo = await uploadFileToS3({
-        fileBuffer: file.buffer,
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-      });
+      logo = await uploadFileToS3({ fileBuffer: file.buffer, fileName: file.originalname, mimeType: file.mimetype });
     }
 
     const tempSchoolId = "SCH-" + Date.now().toString().slice(-6);
     const pendingSchool = await School.findOne({ email, verified: false });
 
+    const schoolData = {
+      name, email,
+      phone: phone || null,
+      address: address || null,
+      cnic: cnic || null,
+      images: { cnicFront, cnicBack, nocDoc, logo },
+      location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
+      noOfStudents: Number(noOfStudents) || 0,
+      permissions: finalPermissions
+    };
+
     if (pendingSchool) {
-      pendingSchool.tempData = {
-        name,
-        email,
-        phone: phone || null,
-        address: address || null,
-        cnic: cnic || null,
-        images: { cnicFront, cnicBack, nocDoc, logo },
-        location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
-        remainVideo: Number(remainVideo) || 4,
-        noOfStudents: Number(noOfStudents) || 0,
-        permissions: validPermissions
-      };
-      pendingSchool.permissions = validPermissions;
-      pendingSchool.otp = {
-        code: otpCode,
-        expiresAt: otpExpiry,
-        attempts: 0,
-        lastAttempt: new Date()
-      };
+      pendingSchool.tempData = { ...schoolData, remainVideo: Number(remainVideo) || 4 };
+      pendingSchool.permissions = finalPermissions;
+      pendingSchool.otp = { code: otpCode, expiresAt: otpExpiry, attempts: 0, lastAttempt: new Date() };
       await pendingSchool.save();
     } else {
       const newSchool = new School({
-        name,
-        email,
-        phone: phone || null,
-        address: address || null,
-        cnic: cnic || null,
-        images: { cnicFront, cnicBack, nocDoc, logo },
+        ...schoolData,
         schoolId: tempSchoolId,
-        location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
-        noOfStudents: Number(noOfStudents) || 0,
-        permissions: validPermissions,
         verified: false,
-        tempData: {
-          name,
-          email,
-          phone: phone || null,
-          address: address || null,
-          cnic: cnic || null,
-          images: { cnicFront, cnicBack, nocDoc, logo },
-          location: (lat && lon) ? { lat: Number(lat), lon: Number(lon) } : null,
-          remainVideo: Number(remainVideo) || 4,
-          noOfStudents: Number(noOfStudents) || 0,
-          permissions: validPermissions
-        },
-        otp: {
-          code: otpCode,
-          expiresAt: otpExpiry,
-          attempts: 0,
-          lastAttempt: new Date()
-        }
+        tempData: { ...schoolData, remainVideo: Number(remainVideo) || 4 },
+        otp: { code: otpCode, expiresAt: otpExpiry, attempts: 0, lastAttempt: new Date() }
       });
       await newSchool.save();
     }
 
     await emailService.sendOTPEmail(email, otpCode, name);
 
-    return res.status(201).json({
-      message: "OTP sent to school email. Please verify to complete registration.",
-      email,
-      otpExpiry: otpExpiry,
-      note: "OTP is valid for 10 minutes"
-    });
-  } catch (err) {
+    const permissionDetails = await ServicePermission.find({
+      key: { $in: finalPermissions },
+      isActive: true
+    }).select("_id key name");
 
+    return res.status(201).json({
+      success: true,
+      message: "OTP sent to school email",
+      email,
+      otpExpiry,
+      note: "OTP valid for 10 minutes"
+    });
+
+  } catch (err) {
     return res.status(500).json({
+      success: false,
       message: "Server error while adding school",
-      error: err.message,
+      error: err.message
     });
   }
 };
@@ -1035,7 +1052,7 @@ const updateSchoolLogo = async (req, res) => {
 const addSchoolPermissions = async (req, res) => {
   try {
     const { id } = req.params;
-    const { permissions } = req.body;
+    let { permissions } = req.body;
 
     if (!Array.isArray(permissions) || permissions.length === 0) {
       return res.status(400).json({
@@ -1043,6 +1060,8 @@ const addSchoolPermissions = async (req, res) => {
         message: 'Permissions must be a non-empty array'
       });
     }
+
+    permissions = permissions.map(p => p.toLowerCase().trim());
 
     const school = await School.findById(id);
     if (!school) {
@@ -1053,13 +1072,26 @@ const addSchoolPermissions = async (req, res) => {
     }
 
     const currentPermissions = school.permissions || [];
-    const updatedPermissions = [...new Set([...currentPermissions, ...permissions])];
+    const allRequestedPermissions = [...new Set([...currentPermissions, ...permissions])];
+    const validation = await validatePermissionsWithDependencies(allRequestedPermissions);
 
-    school.permissions = updatedPermissions;
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
+    school.permissions = validation.finalPermissions;
     school.updatedAt = Date.now();
     await school.save();
 
-    const addedPermissions = permissions.filter(p => !currentPermissions.includes(p));
+    // const addedPermissions = permissions.filter(p => !currentPermissions.includes(p));
+
+    // const addedServices = await ServicePermission.find({
+    //   key: { $in: addedPermissions },
+    //   isActive: true
+    // }).select("_id key name description dependencies");
 
     res.status(200).json({
       success: true,
@@ -1078,7 +1110,7 @@ const addSchoolPermissions = async (req, res) => {
 const removeSchoolPermissions = async (req, res) => {
   try {
     const { id } = req.params;
-    const { permissions } = req.body;
+    let { permissions } = req.body;
 
     if (!Array.isArray(permissions) || permissions.length === 0) {
       return res.status(400).json({
@@ -1086,6 +1118,9 @@ const removeSchoolPermissions = async (req, res) => {
         message: 'Permissions must be a non-empty array'
       });
     }
+
+    // Normalize permissions to lowercase
+    permissions = permissions.map(p => p.toLowerCase().trim());
 
     const school = await School.findById(id);
     if (!school) {
@@ -1095,8 +1130,18 @@ const removeSchoolPermissions = async (req, res) => {
       });
     }
 
+    const currentPermissions = school.permissions || [];
+
+    const nonExistentPermissions = permissions.filter(p => !currentPermissions.includes(p));
+    if (nonExistentPermissions.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `School does not have these permissions: ${nonExistentPermissions.join(", ")}`,
+      });
+    }
+
     const staffUsingPermissions = await Staff.find({
-      schoolId: id,
+      school: id,
       permissions: { $in: permissions }
     }).select('name email permissions');
 
@@ -1104,22 +1149,35 @@ const removeSchoolPermissions = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: 'Cannot remove permissions. Staff members are using these permissions',
-        staffAffected: staffUsingPermissions.map(s => ({
-          name: s.name,
-          email: s.email,
-          permissions: s.permissions
-        }))
       });
     }
 
-    const currentPermissions = school.permissions || [];
-    const updatedPermissions = currentPermissions.filter(p => !permissions.includes(p));
+    let updatedPermissions = currentPermissions.filter(p => !permissions.includes(p));
+
+    if (updatedPermissions.length > 0) {
+      const validation = await validatePermissionsWithDependencies(updatedPermissions);
+      if (!validation.valid) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot remove permissions because it would break dependencies',
+        });
+      }
+      updatedPermissions = validation.finalPermissions;
+    }
 
     school.permissions = updatedPermissions;
     school.updatedAt = Date.now();
     await school.save();
 
-    const removedPermissions = permissions.filter(p => currentPermissions.includes(p));
+    const removedServices = await ServicePermission.find({
+      key: { $in: permissions },
+      isActive: true
+    }).select("_id key name description dependencies");
+
+    const remainingServices = await ServicePermission.find({
+      key: { $in: updatedPermissions },
+      isActive: true
+    }).select("_id key name description dependencies");
 
     res.status(200).json({
       success: true,
@@ -1127,8 +1185,6 @@ const removeSchoolPermissions = async (req, res) => {
       data: {
         schoolId: school._id,
         name: school.name,
-        removedPermissions: removedPermissions,
-        currentPermissions: school.permissions
       }
     });
 
@@ -1155,6 +1211,17 @@ const getSchoolPermissions = async (req, res) => {
       });
     }
 
+    const schoolPermissions = school.permissions || [];
+
+    const permissionObjects = await ServicePermission.find({
+      key: { $in: schoolPermissions },
+      isActive: true
+    }).select("_id key name description dependencies");
+
+    const allAvailableServices = await ServicePermission.find({
+      isActive: true
+    }).select("_id key name description dependencies");
+
     res.status(200).json({
       success: true,
       data: {
@@ -1164,7 +1231,7 @@ const getSchoolPermissions = async (req, res) => {
           email: school.email,
           schoolId: school.schoolId
         },
-        permissions: school.permissions || [],
+        permissions: permissionObjects,
       }
     });
 
@@ -1176,7 +1243,6 @@ const getSchoolPermissions = async (req, res) => {
     });
   }
 };
-
 
 module.exports = {
   addSchoolBySuperAdmin,

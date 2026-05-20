@@ -87,8 +87,7 @@ const addStaff = async (req, res) => {
             joiningDate,
             isIncharge,
             classId,
-            sectionId,
-            permissions
+            sectionId
         } = req.body;
 
         const schoolId = req.user.school;
@@ -117,74 +116,6 @@ const addStaff = async (req, res) => {
             sectionInfo = result.sectionInfo;
         }
 
-        let staffPermissions = [];
-
-        if (role === "admin_office") {
-
-            let parsedPermissions = [];
-
-            if (permissions) {
-
-                if (Array.isArray(permissions)) {
-
-                    parsedPermissions = permissions
-                        .flatMap(p => p.split(","))
-                        .map(p => p.trim().toLowerCase())
-                        .filter(Boolean);
-                }
-
-                else if (typeof permissions === "string") {
-
-                    parsedPermissions = permissions
-                        .split(",")
-                        .map(p => p.trim().toLowerCase())
-                        .filter(Boolean);
-                }
-            }
-
-            parsedPermissions = [...new Set(parsedPermissions)];
-
-            console.log("parsedPermissions:", parsedPermissions);
-
-            if (!parsedPermissions.length) {
-                return res.status(400).json({
-                    success: false,
-                    message:
-                        "Admin office staff must have at least one permission assigned"
-                });
-            }
-
-            const school = await School.findById(schoolId);
-
-            if (!school) {
-                return res.status(404).json({
-                    success: false,
-                    message: "School not found"
-                });
-            }
-
-            const schoolPermissions = school.permissions || [];
-
-            console.log("schoolPermissions:", schoolPermissions);
-
-            const invalidPermissions = parsedPermissions.filter(
-                permission => !schoolPermissions.includes(permission)
-            );
-
-            if (invalidPermissions.length > 0) {
-                return res.status(400).json({
-                    success: false,
-                    message: `Invalid permissions for this school: ${invalidPermissions.join(", ")}`
-                });
-            }
-
-            staffPermissions = parsedPermissions;
-        }
-
-        if (role === "teacher") {
-            staffPermissions = [];
-        }
-
         const otpCode = common.generateOTP();
         const otpExpiry = common.calculateOTPExpiry(10);
 
@@ -207,7 +138,6 @@ const addStaff = async (req, res) => {
             images,
             verified: false,
             isActive: true,
-            permissions: staffPermissions,
             otp: {
                 code: otpCode,
                 expiresAt: otpExpiry,
@@ -696,7 +626,6 @@ const addStaffPermissions = async (req, res) => {
             });
         }
 
-        // Find staff member
         const staff = await Staff.findOne({
             _id: id,
             school: req.user.school,
@@ -760,7 +689,6 @@ const addStaffPermissions = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error in addStaffPermissions:", error);
         res.status(500).json({
             success: false,
             message: 'Failed to add permissions',
@@ -823,33 +751,29 @@ const getStaffPermissions = async (req, res) => {
         const staff = await Staff.findOne({
             _id: id,
             school: req.user.school,
-            role: 'admin_office'
-        }).select('_id name email role permissions');
+            role: "admin_office"
+        }).select("name email permissions");
 
         if (!staff) {
             return res.status(404).json({
                 success: false,
-                message: 'Admin office staff not found'
+                message: "Staff not found"
             });
         }
+
+        const school = await School.findById(req.user.school).select("permissions");
 
         res.status(200).json({
             success: true,
             data: {
-                staff: {
-                    id: staff._id,
-                    name: staff.name,
-                    email: staff.email,
-                    role: staff.role
-                },
+                staff: { id: staff._id, name: staff.name, email: staff.email },
                 currentPermissions: staff.permissions || [],
             }
         });
-
     } catch (error) {
         res.status(500).json({
             success: false,
-            message: 'Failed to fetch staff permissions',
+            message: "Failed to fetch permissions",
             error: error.message
         });
     }
