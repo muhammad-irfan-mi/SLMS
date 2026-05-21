@@ -609,7 +609,6 @@ const restoreOwnAccount = async (req, res) => {
     }
 };
 
-// Toggle staff status
 const toggleStaffStatus = async (req, res) => {
     return common.toggleUserStatus(req, res, Staff);
 };

@@ -1119,7 +1119,6 @@ const removeSchoolPermissions = async (req, res) => {
       });
     }
 
-    // Normalize permissions to lowercase
     permissions = permissions.map(p => p.toLowerCase().trim());
 
     const school = await School.findById(id);
