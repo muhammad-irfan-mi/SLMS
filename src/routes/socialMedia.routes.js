@@ -20,11 +20,13 @@ const {
   validateFilter 
 } = require('../validators/schoolMedia.validator');
 const { upload } = require('../utils/multer');
+const { checkPermission } = require('../middlewares/permission');
 
 
 router.post('/',
   protect,
   isAdminOffice,
+  checkPermission("socialmedia"),
   upload.single('video'),
   validateCreateMedia,
   createMedia
@@ -33,6 +35,7 @@ router.post('/',
 router.put('/:id',
   protect,
   isAdminOffice,
+  checkPermission("socialmedia"),
   upload.single('video'),
   validateUpdateMedia,
   updateMedia
@@ -41,12 +44,14 @@ router.put('/:id',
 router.delete('/:id',
   protect,
   isAdminOffice,
+  checkPermission("socialmedia"),
   deleteMedia
 );
 
 router.get('/school',
   protect,
   isAdminOffice,
+  checkPermission("socialmedia"),
   validateFilter,
   getOwnUploads
 );
@@ -54,6 +59,7 @@ router.get('/school',
 router.get('/feed',
   protect,
   isTeacherOrStudent,
+  checkPermission("socialmedia"),
   validateFilter,
   getFeed
 );
@@ -61,6 +67,7 @@ router.get('/feed',
 router.get('/:id',
   protect,
   allowedRoles,
+  checkPermission("socialmedia"),
   getById
 );
 

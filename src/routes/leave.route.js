@@ -38,6 +38,7 @@ const {
     updateTeacherLeaveSchema,
     updateLeaveSchema
 } = require("../validators/leave.validation");
+const { checkPermission } = require("../middlewares/permission");
 
 const router = express.Router();
 
@@ -46,6 +47,7 @@ router.post("/apply",
     protect,
     isStudent,
     validate(applyLeaveSchema),
+    checkPermission("leave"),
     applyLeave
 );
 
@@ -54,6 +56,7 @@ router.put(
     protect,
     isStudent,
     validate(updateLeaveSchema),
+    checkPermission("leave"),
     updateLeave
 );
 
@@ -61,6 +64,7 @@ router.post("/:id/cancel",
     protect,
     isStudent,
     validate(cancelLeaveSchema, "params"),
+    checkPermission("leave"),
     cancelLeave
 );
 
@@ -68,6 +72,7 @@ router.get("/",
     protect,
     isTeacherOrAdminOfficeOrSchool,
     validate(getLeavesQuerySchema, "query"),
+    checkPermission("leave"),
     getLeaves
 );
 
@@ -75,6 +80,7 @@ router.get("/student/:studentId",
     protect,
     allowedRoles,
     validate(getLeavesByStudentQuerySchema, "query"),
+    checkPermission("leave"),
     getLeavesByStudent
 );
 
@@ -83,6 +89,7 @@ router.post("/:id/approve",
     isTeacherOrAdminOfficeOrSchool,
     validate(reviewLeaveSchema),
     validate(cancelLeaveSchema, "params"),
+    checkPermission("leave"),
     approveLeave
 );
 
@@ -91,6 +98,7 @@ router.post("/:id/reject",
     isTeacherOrAdminOfficeOrSchool,
     validate(reviewLeaveSchema),
     validate(cancelLeaveSchema, "params"),
+    checkPermission("leave"),
     rejectLeave
 );
 
@@ -99,6 +107,7 @@ router.post("/teacher/apply",
     protect,
     isTeacher,
     validate(applyTeacherLeaveSchema),
+    checkPermission("leave"),
     applyTeacherLeave
 );
 
@@ -106,6 +115,7 @@ router.get("/teacher/all",
     protect,
     isTeacher,
     validate(getTeacherLeavesQuerySchema, "query"),
+    checkPermission("leave"),
     getTeacherLeaves
 );
 
@@ -114,6 +124,7 @@ router.put("/teacher/update/:id",
     isTeacher,
     validate(updateTeacherLeaveSchema),
     validate(cancelLeaveSchema, "params"),
+    checkPermission("leave"),
     updateTeacherLeave
 );
 
@@ -121,6 +132,7 @@ router.put("/teacher/cancel/:id",
     protect,
     isTeacher,
     validate(cancelLeaveSchema, "params"),
+    checkPermission("leave"),
     cancelTeacherLeave
 );
 
@@ -129,6 +141,7 @@ router.post("/admin/approve/:id",
     protect,
     isAdminOffice,
     validate(cancelLeaveSchema, "params"),
+    checkPermission("leave"),
     approveTeacherLeave
 );
 
@@ -137,12 +150,14 @@ router.post("/admin/reject/:id",
     isAdminOffice,
     validate(reviewLeaveSchema),
     validate(cancelLeaveSchema, "params"),
+    checkPermission("leave"),
     rejectTeacherLeave
 );
 
 router.delete("/:id",
     protect,
     allowedRoles,
+    checkPermission("leave"),
     deleteLeave
 );
 

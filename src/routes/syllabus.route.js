@@ -24,11 +24,13 @@ const {
   isAdminOffice, 
   isTeacherOrAdminOfficeOrSchool
 } = require("../middlewares/auth");
+const { checkPermission } = require("../middlewares/permission");
 
 router.post("/",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   validate(createSyllabusSchema),
+  checkPermission("syllabus"),
   createSyllabus
 );
 
@@ -36,6 +38,7 @@ router.get("/",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   validate(getSyllabusQuerySchema, "query"),
+  checkPermission("syllabus"),
   getSyllabus
 );
 
@@ -44,6 +47,7 @@ router.put("/:syllabusId",
   isTeacherOrAdminOfficeOrSchool,
   validate(syllabusIdParamSchema, "params"),
   validate(updateSyllabusSchema),
+  checkPermission("syllabus"),
   updateSyllabus
 );
 
@@ -51,6 +55,7 @@ router.delete("/:syllabusId",
   protect,
   isTeacherOrAdminOfficeOrSchool,
   validate(syllabusIdParamSchema, "params"),
+  checkPermission("syllabus"),
   deleteSyllabus
 );
 
@@ -59,6 +64,7 @@ router.get("/section/:sectionId",
   isTeacherOrStudent,
   validate(sectionIdParamSchema, "params"),
   validate(getSyllabusQuerySchema, "query"),
+  checkPermission("syllabus"),
   getSyllabusBySection
 );
 

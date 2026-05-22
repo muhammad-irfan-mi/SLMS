@@ -32,6 +32,7 @@ const {
 } = require("../validators/slider.validation");
 
 const { upload } = require("../utils/multer");
+const { checkPermission } = require("../middlewares/permission");
 
 const validateFile = (req, res, next) => {
     if (req.route.path === '/' || req.route.path === '/school') {
@@ -80,6 +81,7 @@ router.get("/superadmin",
 router.post("/school",
     protect,
     isAdminOffice,
+    checkPermission("slider"),
     upload.single("image"),
     validateFile,
     validateBody(createSchoolSliderSchema),
@@ -89,6 +91,7 @@ router.post("/school",
 router.get("/school",
     protect,
     isAdminOffice,
+    checkPermission("slider"),
     validateQuery(getSlidersQuerySchema),
     getSchoolAdminSliders
 );

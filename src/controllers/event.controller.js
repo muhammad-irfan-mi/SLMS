@@ -2,7 +2,6 @@ const Event = require("../models/Event");
 const { uploadFileToS3, deleteFileFromS3 } = require("../services/s3.service");
 
 // HELPERS 
-// HELPERS 
 async function uploadMultipleImages(files) {
     if (!files || files.length === 0) return [];
 

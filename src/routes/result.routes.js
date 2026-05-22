@@ -18,11 +18,13 @@ const {
 } = require("../controllers/result.controller");
 const validate = require("../middlewares/validate");
 const { addResultSchema, updateResultSchema, resultIdParamSchema, getResultsQuerySchema, getResultsByPositionQuerySchema } = require("../validators/result.vakidation");
+const { checkPermission } = require("../middlewares/permission");
 
 // Admin/Teacher routes
 router.post("/", 
   protect, 
   isTeacherOrAdminOfficeOrSchool, 
+  checkPermission("result"),
   upload.single("image"), 
   validate(addResultSchema),
   addResult
@@ -31,6 +33,7 @@ router.post("/",
 router.put("/:resultId", 
   protect, 
   isTeacherOrAdminOfficeOrSchool, 
+  checkPermission("result"),
   upload.single("image"), 
   validate(resultIdParamSchema, "params"),
   validate(updateResultSchema),
@@ -40,6 +43,7 @@ router.put("/:resultId",
 router.delete("/:resultId", 
   protect, 
   isTeacherOrAdminOfficeOrSchool, 
+  checkPermission("result"),
   validate(resultIdParamSchema, "params"),
   deleteResult
 );
@@ -47,6 +51,7 @@ router.delete("/:resultId",
 router.get("/", 
   protect, 
   isTeacherOrAdminOfficeOrSchool, 
+  checkPermission("result"),
   validate(getResultsQuerySchema, "query"),
   getResults
 );
@@ -54,6 +59,7 @@ router.get("/",
 router.get("/by-position", 
   protect, 
   isTeacherOrAdminOfficeOrSchool, 
+  checkPermission("result"),
   validate(getResultsByPositionQuerySchema, "query"),
   getResultsByPosition
 );
@@ -62,6 +68,7 @@ router.get("/by-position",
 router.get("/student", 
   protect, 
   isStudent, 
+  checkPermission("result"),
   getStudentResults
 );
 

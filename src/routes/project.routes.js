@@ -20,10 +20,12 @@ const {
   validateSubmission,
   validateGrading
 } = require("../validators/project.validation");
+const { checkPermission } = require("../middlewares/permission");
 
 router.post("/",
   protect,
   isTeacherOrAdminOfficeOrSchool,
+  checkPermission("project"),
   upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]),
   validateProject,
   createProject
@@ -32,6 +34,7 @@ router.post("/",
 router.get("/",
   protect,
   isTeacherOrAdminOfficeOrSchool,
+  checkPermission("project"),
   validateFilter,
   getProjects
 );
@@ -39,6 +42,7 @@ router.get("/",
 router.put("/:id",
   protect,
   isTeacherOrAdminOfficeOrSchool,
+  checkPermission("project"),
   upload.fields([{ name: "images", maxCount: 5 }, { name: "pdf", maxCount: 1 }]),
   updateProject
 );
@@ -46,6 +50,7 @@ router.put("/:id",
 router.delete("/:id",
   protect,
   isTeacherOrAdminOfficeOrSchool,
+  checkPermission("project"),
   deleteProject
 );
 
@@ -66,6 +71,7 @@ router.post("/submit/:projectId",
 router.get("/:projectId/submissions",
   protect,
   isTeacherOrAdminOfficeOrSchool,
+  checkPermission("project"),
   validateFilter,
   getProjectSubmissions
 );
@@ -78,6 +84,7 @@ router.get("/:projectId/submissions/:submissionId",
 router.post("/:projectId/submissions/:submissionId/grade",
   protect,
   isTeacherOrAdminOfficeOrSchool,
+  checkPermission("project"),
   validateGrading,
   gradeSubmission
 );

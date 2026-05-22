@@ -25,6 +25,7 @@ const {
   validateFile
 } = require("../validators/quiz.validator");
 const { upload } = require("../utils/multer");
+const { checkPermission } = require("../middlewares/permission");
 
 const detectRole = (req, res, next) => {
   if (!req.user.role) {
@@ -40,6 +41,7 @@ const detectRole = (req, res, next) => {
 router.post("/",
   protect,
   detectRole,
+  checkPermission("quiz"),
   upload.single('file'),
   validateFile,
   validateQuizGroup,
@@ -49,6 +51,7 @@ router.post("/",
 router.put("/:id",
   protect,
   detectRole,
+  checkPermission("quiz"),
   upload.single("file"),
   validateQuizGroup,
   updateQuizGroup
@@ -57,12 +60,14 @@ router.put("/:id",
 router.delete("/:id",
   protect,
   detectRole,
+  checkPermission("quiz"),
   deleteQuizGroup
 );
 
 router.get("/",
   protect,
   detectRole,
+  checkPermission("quiz"),
   validateFilter,
   getGroups
 );
@@ -70,6 +75,7 @@ router.get("/",
 router.get("/:id",
   protect,
   detectRole,
+  checkPermission("quiz"),
   getGroupById
 );
 
@@ -77,6 +83,7 @@ router.get("/:id",
 router.post("/:id/submit",
   protect,
   isStudent,
+  checkPermission("quiz"),
   validateQuizSubmission,
   submitQuiz
 );
@@ -85,6 +92,7 @@ router.post("/:id/submit",
 router.get("/results/leaderboard",
   protect,
   detectRole,
+  checkPermission("quiz"),
   validateLeaderboardFilter,
   getLeaderboard
 );

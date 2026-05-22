@@ -28,6 +28,7 @@ const {
     isTeacherOrAdminOfficeOrSchool, 
     allowedRoles
 } = require("../middlewares/auth");
+const { checkPermission } = require("../middlewares/permission");
 
 
 router.post(
@@ -35,6 +36,7 @@ router.post(
     protect,
     isStudent,
     validate(createEntrySchema),
+    checkPermission("complaintfeedback"),
     createEntry
 );
 
@@ -43,6 +45,7 @@ router.get(
     protect,
     isStudent,
     validateQuery(getEntriesSchema),
+    checkPermission("complaintfeedback"),
     getComplainByStudent
 );
 
@@ -51,6 +54,7 @@ router.get(
     protect,
     isTeacherOrAdminOfficeOrSchool,
     validateQuery(getEntriesSchema),
+    checkPermission("complaintfeedback"),
     getComplain
 );
 
@@ -59,6 +63,7 @@ router.post(
     protect,
     allowedRoles,
     validate(reviewComplaintSchema),
+    checkPermission("complaintfeedback"),
     reviewComplaint
 );
 
@@ -66,6 +71,7 @@ router.patch(
     "/:id/status",
     protect,
     isAdminOffice,
+    checkPermission("complaintfeedback"),
     updateStatus
 );
 
@@ -74,6 +80,7 @@ router.put(
     "/:id",
     protect,
     validate(updateEntrySchema),
+    checkPermission("complaintfeedback"),
     updateEntry
 );
 
@@ -81,6 +88,7 @@ router.put(
     "/:id/resolve",
     protect,
     isStudent,
+    checkPermission("complaintfeedback"),
     markAsResolvedByStudent
 );
 
@@ -88,6 +96,7 @@ router.delete(
     "/:id",
     protect,
     allowedRoles,
+    checkPermission("complaintfeedback"),
     deleteEntry
 );
 

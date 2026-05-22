@@ -26,10 +26,6 @@ router.post("/school/login",
   schoolLogin
 );
 
-// router.post("/user/set-password", 
-//   validate(validationSchemas.setPassword), 
-//   setPasswordForUser
-// );
 router.post("/user/set-password-student", 
   validate(validationSchemas.setPassword), 
   setPasswordForStudent
@@ -39,10 +35,6 @@ router.post("/user/set-password-staff",
   setPasswordForStaff
 );
 
-// router.post("/user/login", 
-//   validate(validationSchemas.login), 
-//   userLogin
-// );
 router.post("/user-login/staff", 
   validate(validationSchemas.loginStaff), 
   staffLogin

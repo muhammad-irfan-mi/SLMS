@@ -5,6 +5,7 @@ const { upload } = require("../utils/multer");
 const validate = require("../middlewares/validate");
 const studentValidation = require("../validators/student.validation");
 const { sendOTP, verifyOTP, resendOTP, setPasswordAfterOTP, login, forgotPassword, verifyForgotPasswordOTP, resetPasswordWithOTP, resetPassword, resendForgotPasswordOTP, addStudent, getAllStudents, getStudentsBySection, getStudentSiblingsByEmail, getStudentsByParentEmail, getDeletedStudents, getStudentById, updateOwnProfile, toggleStudentStatus, updateStudent, deleteOwnAccount, restoreOwnAccount } = require("../controllers/student.controller");
+const { checkPermission } = require("../middlewares/permission");
 
 // Public auth routes
 router.post(
@@ -77,6 +78,7 @@ router.post(
         { name: "recentPic", maxCount: 1 },
     ]),
     validate(studentValidation.add),
+    checkPermission("student"),
     addStudent
 );
 
@@ -91,6 +93,7 @@ router.put(
     ]),
     validate(studentValidation.idParam, 'params'),
     validate(studentValidation.update),
+    checkPermission("student"),
     updateStudent
 );
 
@@ -98,6 +101,7 @@ router.get(
     "/",
     protect,
     isAdminOffice,
+    checkPermission("student"),
     getAllStudents
 );
 
@@ -106,6 +110,7 @@ router.get(
     protect,
     isTeacherOrAdminOfficeOrSchool,
     validate(studentValidation.sectionParam, 'params'),
+    checkPermission("student"),
     getStudentsBySection
 );
 
@@ -114,6 +119,7 @@ router.get(
     protect,
     isAdminOffice,
     validate(studentValidation.emailParam, 'params'),
+    checkPermission("student"),
     getStudentSiblingsByEmail
 );
 
@@ -122,6 +128,7 @@ router.get(
 //     protect,
 //     isAdminOffice,
 //     validate(studentValidation.emailParam, 'params'),
+//     checkPermission("student"),
 //     getStudentsByParentEmail
 // );
 
@@ -129,6 +136,7 @@ router.get(
     "/deleted",
     protect,
     isAdminOffice,
+    checkPermission("student"),
     getDeletedStudents
 );
 
@@ -137,6 +145,7 @@ router.get(
     protect,
     allowedRoles,
     validate(studentValidation.idParam, 'params'),
+    checkPermission("student"),
     getStudentById
 );
 
@@ -152,13 +161,14 @@ router.put(
 
 router.delete("/me/account", protect, isStudent, deleteOwnAccount);
 
-router.post("/account/restore/:userId",protect, isAdminOffice, restoreOwnAccount);
+router.post("/account/restore/:userId",protect, isAdminOffice,checkPermission("student"), restoreOwnAccount);
 
 router.delete(
     "/:id",
     protect,
     isAdminOffice,
     validate(studentValidation.idParam, 'params'),
+    checkPermission("student"),
     toggleStudentStatus
 );
 

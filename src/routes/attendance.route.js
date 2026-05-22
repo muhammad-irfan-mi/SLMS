@@ -27,11 +27,13 @@ const {
 } = require("../middlewares/auth");
 
 const validate = require("../middlewares/validate");
+const { checkPermission } = require("../middlewares/permission");
 
 router.post("/", 
     protect, 
     isTeacher, 
     validate(markAttendanceSchema), 
+    checkPermission("attendance"),
     markAttendance
 );
 
@@ -40,6 +42,7 @@ router.patch("/:attendanceId",
     isTeacherOrAdminOfficeOrSchool, 
     validate(attendanceIdParamSchema, "params"), 
     validate(updateAttendanceSchema), 
+    checkPermission("attendance"),
     updateAttendance
 );
 
@@ -48,6 +51,7 @@ router.get("/section/:sectionId",
     isTeacherOrAdminOfficeOrSchool,
     validate(sectionIdParamSchema, "params"),
     validate(studentAttendanceQuerySchema, "query"),
+    checkPermission("attendance"),
     getAttendanceBySection
 );
 
@@ -57,6 +61,7 @@ router.get(
     allowedRoles,
     validate(studentIdParamSchema, "params"),
     validate(studentAttendanceQuerySchema, "query"),
+    checkPermission("attendance"),
     getAttendanceByStudent
 );
 
