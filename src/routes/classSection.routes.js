@@ -25,7 +25,7 @@ const {
 } = require("../validators/classSection.validation");
 const { checkPermission } = require("../middlewares/permission");
 
-router.use(protect, isAdminOffice, checkPermission('classSection'));
+router.use(protect, isAdminOffice, checkPermission('classsection'));
 
 router.post(
     "/add",
