@@ -86,6 +86,7 @@ const addStaff = async (req, res) => {
             salary,
             joiningDate,
             isIncharge,
+            jobRole,
             classId,
             sectionId
         } = req.body;
@@ -131,6 +132,7 @@ const addStaff = async (req, res) => {
             role,
             salary: role === "teacher" ? salary : salary || null,
             joiningDate,
+            jobRole: jobRole || null,
             isIncharge: isIncharge || false,
             classInfo,
             sectionInfo,
@@ -213,6 +215,9 @@ const updateStaff = async (req, res) => {
         if (req.body.joiningDate && req.body.joiningDate !== existing.joiningDate) {
             changes.push(`Joining date updated`);
         }
+        if (req.body.jobRole && req.body.jobRole !== existing.jobRole) {
+            changes.push(`Job role updated`);
+        }
         if (req.body.isIncharge !== undefined && req.body.isIncharge !== existing.isIncharge) {
             changes.push(`Incharge status changed`);
         }
@@ -289,6 +294,7 @@ const updateStaff = async (req, res) => {
             cnic: req.body.cnic ?? existing.cnic,
             salary: req.body.salary ?? existing.salary,
             joiningDate: req.body.joiningDate ?? existing.joiningDate,
+            jobRole: req.body.jobRole ?? existing.jobRole,
             isIncharge: req.body.isIncharge !== undefined ? req.body.isIncharge : existing.isIncharge,
             classInfo,
             sectionInfo,

@@ -31,6 +31,9 @@ const staffValidation = {
         'date.format': 'Joining date must be in ISO format (YYYY-MM-DD)',
         'date.max': 'Joining date cannot be in the future'
       }),
+      jobRole: Joi.string()
+      .max(100)
+      .allow('', null),
     isIncharge: Joi.boolean()
       .default(false)
       .optional(),
@@ -53,6 +56,9 @@ const staffValidation = {
       .max('now')
       .allow('', null)
       .optional(),
+    jobRole: Joi.string()
+      .max(100)
+      .allow('', null),
     isIncharge: Joi.boolean()
       .optional(),
     classId: commonValidations.classIdOptional,

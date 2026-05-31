@@ -10,6 +10,7 @@ const StaffSchema = new mongoose.Schema({
     },
     salary: Number,
     joiningDate: Date,
+    jobRole: String,
     isIncharge: { type: Boolean, default: false },
     classInfo: {
         id: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection" },
