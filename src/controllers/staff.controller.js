@@ -138,6 +138,7 @@ const addStaff = async (req, res) => {
             images,
             verified: false,
             isActive: true,
+            permissions: [],
             otp: {
                 code: otpCode,
                 expiresAt: otpExpiry,
