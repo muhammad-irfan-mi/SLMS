@@ -1032,6 +1032,7 @@ const login = async (req, res, Model, userType) => {
             id: user._id,
             name: user.name,
             email: user.email,
+            permissions: user.permissions || [],
             role: user.role,
             school: user.school
         };
