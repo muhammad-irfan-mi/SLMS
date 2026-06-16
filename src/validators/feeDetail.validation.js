@@ -74,11 +74,13 @@ const updateFeeDetailSchema = Joi.object({
   });
 
 const approvePaymentSchema = Joi.object({
-  status: Joi.string().valid('approved', 'rejected').required()
-    .messages({
-      'any.only': 'Status must be either approved or rejected',
-      'any.required': 'Status is required'
-    }),
+  status: Joi.string().valid('approved', 'rejected').required(),
+  paymentMethod: Joi.string().valid('cash', 'bank').when('status', {
+    is: 'approved',
+    then: Joi.required(),
+    otherwise: Joi.optional().allow(null)
+  }),
+  remarks: Joi.string().max(500).optional().allow('', null)
 });
 
 const getAllFeeDetailsSchema = Joi.object({
@@ -95,6 +97,11 @@ const getAllFeeDetailsSchema = Joi.object({
 const getMyFeeDetailsSchema = Joi.object({
   page: Joi.number().integer().positive().default(1),
   limit: Joi.number().integer().positive().max(50).default(10),
+});
+
+
+const submitPaymentProofSchema = Joi.object({
+  amount: Joi.number().positive().required(),
 });
 
 // Bulk operation schemas
@@ -192,6 +199,7 @@ module.exports = {
   approvePaymentSchema,
   getAllFeeDetailsSchema,
   getMyFeeDetailsSchema,
+  submitPaymentProofSchema,
   bulkCreateFeeDetailsSchema,
   bulkUpdateFeeDetailsSchema
 };

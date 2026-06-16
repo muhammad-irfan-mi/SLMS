@@ -29,7 +29,7 @@ const salaryRoutes = require('./src/routes/salarySlip.routes');
 const complainRoutes = require('./src/routes/complaintFeedback.routes');
 const eventRoutes = require('./src/routes/event.routes');
 const studentDocumentRoutes = require('./src/routes/studentDocument.routes');
-const feeVoucherRoutes = require('./src/routes/feeVoucher.route');
+const feeVoucherRoutes = require('./src/routes/feeDetail.route');
 const socialMediaRoutes = require('./src/routes/socialMedia.routes');
 const islamicAttendanceRoutes = require('./src/routes/dailyIslamicAttendance.routes');
 const aiYusahRoutes = require('./src/routes/aiYusah.routes');
@@ -37,6 +37,9 @@ const imageSliderRoutes = require('./src/routes/slider.routes');
 const quizRoutes = require('./src/routes/quiz.routes');
 const bankAccount = require('./src/routes/bankAccount.routes');
 const servicePermission = require('./src/routes/servicePermission.routes');
+const feeComponentRoutes = require("./src/routes/feeComponent.routes");
+const classFeeStructureRoutes = require("./src/routes/classFeeStructure.routes");
+const studentFeeAssignmentRoutes = require("./src/routes/studentFeeAssignment.routes");
 const seedSuperAdmin = require('./src/seed/seedSuperAdmin');
 const seedServices = require('./src/seed/services.seed');
 
@@ -87,6 +90,9 @@ app.use('/api/slider', imageSliderRoutes);
 app.use('/api/quiz', quizRoutes);
 app.use('/api/bankAccount', bankAccount);
 app.use('/api/permission', servicePermission);
+app.use("/api/feeComponents", feeComponentRoutes);
+app.use("/api/classFeeStructure", classFeeStructureRoutes);
+app.use("/api/studentFeeStructure", studentFeeAssignmentRoutes);
 
 app.get('/', (req, res) => res.send('School Auth Microservice API'));
 

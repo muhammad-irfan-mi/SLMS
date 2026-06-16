@@ -1,10 +1,23 @@
 const mongoose = require("mongoose");
 
+const PaymentHistorySchema = new mongoose.Schema({
+    amount: { type: Number, required: true },
+    paymentMethod: {
+        type: String,
+        enum: ['cash', 'bank'],
+        required: true
+    },
+    paidAt: { type: Date, default: Date.now },
+    approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
+    approvedByName: { type: String },
+    remarks: { type: String }
+});
+
 const SalarySlipSchema = new mongoose.Schema(
     {
         teacherId: {
             type: mongoose.Schema.Types.ObjectId,
-            ref: "User",
+            ref: "Staff",
             required: true,
         },
         school: {
@@ -12,19 +25,26 @@ const SalarySlipSchema = new mongoose.Schema(
             ref: "School",
             required: true,
         },
-        month: { type: String, required: true }, 
+        monthYear: { type: String, required: true }, // Format: YYYY-MM
         title: { type: String, required: true },
         description: { type: String },
-        salary: { type: Number, required: true },
-
-        image: { type: String },
+        totalAmount: { type: Number, required: true },
+        paidAmount: { type: Number, default: 0 },
+        remainingAmount: { type: Number, required: true },
         status: {
             type: String,
-            enum: ["pending", "approved"],
+            enum: ["pending", "partial", "paid"],
             default: "pending",
         },
+        paymentHistory: [PaymentHistorySchema],
+        documentImage: { type: String },
+        parentSlipId: { type: mongoose.Schema.Types.ObjectId, ref: "SalarySlip" }
     },
     { timestamps: true }
 );
+
+SalarySlipSchema.index({ school: 1, teacherId: 1, monthYear: 1 });
+SalarySlipSchema.index({ school: 1, status: 1 });
+SalarySlipSchema.index({ teacherId: 1, status: 1 });
 
 module.exports = mongoose.model("SalarySlip", SalarySlipSchema);

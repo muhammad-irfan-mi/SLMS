@@ -2,37 +2,86 @@ const express = require("express");
 const router = express.Router();
 
 const {
-    sendSalarySlip,
-    approveSalarySlip,
+    createSalarySlip,
+    recordSalaryPayment,
     updateSalarySlip,
     deleteSalarySlip,
     getTeacherSlips,
+    getSalarySlipById,
     getTeachersSalaryStatus,
+    getTeacherSalaryHistory,
+    getSchoolSalarySummary
 } = require("../controllers/salarySlipController");
 
 const { protect, isAdminOffice, isTeacher } = require("../middlewares/auth");
 const { upload } = require("../utils/multer");
-const { checkPermission } = require("../middlewares/permission");
 
+// ==================== ADMIN ROUTES ====================
 router.post(
     "/send",
     protect,
     isAdminOffice,
-    checkPermission("salary"),
-    upload.fields([{ name: "slipImage", maxCount: 1 }]),
-    sendSalarySlip
+    upload.fields([{ name: "documentImage", maxCount: 1 }]),
+    createSalarySlip
 );
-router.put("/approve/:id", protect, isTeacher, checkPermission("salary"), approveSalarySlip);
+
+router.post(
+    "/:slipId/send",
+    protect,
+    isAdminOffice,
+    upload.fields([{ name: "documentImage", maxCount: 1 }]),
+    recordSalaryPayment
+);
+
 router.put(
     "/:id",
     protect,
     isAdminOffice,
-    checkPermission("salary"),
-    upload.fields([{ name: "slipImage", maxCount: 1 }]),
+    upload.fields([{ name: "documentImage", maxCount: 1 }]),
     updateSalarySlip
 );
-router.delete("/delete/:id", protect, isAdminOffice, checkPermission("salary"), deleteSalarySlip);
-router.get("/teacher", protect, isTeacher, checkPermission("salary"), getTeacherSlips);
-router.get("/teachers-status", protect, isAdminOffice, checkPermission("salary"), getTeachersSalaryStatus);
+
+router.delete(
+    "/:id",
+    protect,
+    isAdminOffice,
+    deleteSalarySlip
+);
+
+router.get(
+    "/teachers-status",
+    protect,
+    isAdminOffice,
+    getTeachersSalaryStatus
+);
+
+router.get(
+    "/teacher-history",
+    protect,
+    isAdminOffice,
+    getTeacherSalaryHistory
+);
+
+router.get(
+    "/school-summary",
+    protect,
+    isAdminOffice,
+    getSchoolSalarySummary
+);
+
+// ==================== TEACHER ROUTES ====================
+router.get(
+    "/teacher",
+    protect,
+    isTeacher,
+    getTeacherSlips
+);
+
+router.get(
+    "/my-slips/:id",
+    protect,
+    isTeacher,
+    getSalarySlipById
+);
 
 module.exports = router;
