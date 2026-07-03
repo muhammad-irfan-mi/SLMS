@@ -10,8 +10,7 @@ const {
 
 const assignFeeToStudent = async (req, res) => {
   try {
-    const { error, value } =
-      assignStudentFeeSchema.validate(req.body);
+    const { error, value } = assignStudentFeeSchema.validate(req.body);
 
     if (error) {
       return res.status(400).json({
@@ -22,14 +21,9 @@ const assignFeeToStudent = async (req, res) => {
 
     const schoolId = req.user.school;
 
-    const {
-      studentId,
-      classId,
-      fees,
-    } = value;
+    const { studentId, classId, fees } = value;
 
-    const feeComponentIds =
-      fees.map(fee => fee.feeComponent);
+    const feeComponentIds = fees.map(fee => fee.feeComponent);
 
     const components =
       await FeeComponent.find({
@@ -38,14 +32,10 @@ const assignFeeToStudent = async (req, res) => {
         status: "active",
       }).lean();
 
-    if (
-      components.length !==
-      feeComponentIds.length
-    ) {
+    if (components.length !== feeComponentIds.length) {
       return res.status(400).json({
         success: false,
-        message:
-          "One or more fee components not found or inactive",
+        message: "One or more fee components not found or inactive",
       });
     }
 
@@ -59,25 +49,14 @@ const assignFeeToStudent = async (req, res) => {
     const operations = [];
 
     for (const fee of fees) {
-      const component =
-        componentMap.get(
-          fee.feeComponent
-        );
+      const component = componentMap.get(fee.feeComponent);
 
       let finalAmount;
-
       if (component.isCustomizable) {
-        if (
-          fee.amount !== undefined &&
-          fee.amount !== null
-        ) {
+        if (fee.amount !== undefined && fee.amount !== null) {
           finalAmount = fee.amount;
-        } else if (
-          component.defaultAmount !== undefined &&
-          component.defaultAmount !== null
-        ) {
-          finalAmount =
-            component.defaultAmount;
+        } else if (component.defaultAmount !== undefined && component.defaultAmount !== null) {
+          finalAmount = component.defaultAmount;
         } else {
           return res.status(400).json({
             success: false,
@@ -85,18 +64,20 @@ const assignFeeToStudent = async (req, res) => {
           });
         }
       } else {
-        if (
-          component.defaultAmount === undefined ||
-          component.defaultAmount === null
-        ) {
+        if (fee.amount !== undefined && fee.amount !== null) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot set custom amount for non-customizable component: ${component.name}`,
+          });
+        }
+        if (component.defaultAmount === undefined || component.defaultAmount === null) {
           return res.status(400).json({
             success: false,
             message: `Default amount missing for ${component.name}`,
           });
         }
 
-        finalAmount =
-          component.defaultAmount;
+        finalAmount = component.defaultAmount;
       }
 
       operations.push({
@@ -181,6 +162,47 @@ const getStudentFees = async (req, res) => {
 };
 
 
+// const updateStudentFee = async (req, res) => {
+//   try {
+//     const { error, value } = updateStudentFeeSchema.validate(req.body);
+
+//     if (error) {
+//       return res.status(400).json({
+//         success: false,
+//         message: error.details[0].message,
+//       });
+//     }
+
+//     const record = await StudentFeeStructure.findOne({
+//       _id: req.params.id,
+//       school: req.user.school,
+//     });
+
+//     if (!record) {
+//       return res.status(404).json({
+//         success: false,
+//         message: "Student fee not found",
+//       });
+//     }
+
+//     Object.assign(record, value);
+//     await record.save();
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Student fee updated",
+//       data: record,
+//     });
+//   } catch (error) {
+//     return res.status(500).json({
+//       success: false,
+//       message: error.message,
+//     });
+//   }
+// };
+
+// controllers/studentFeeStructure.controller.js
+
 const updateStudentFee = async (req, res) => {
   try {
     const { error, value } = updateStudentFeeSchema.validate(req.body);
@@ -195,7 +217,7 @@ const updateStudentFee = async (req, res) => {
     const record = await StudentFeeStructure.findOne({
       _id: req.params.id,
       school: req.user.school,
-    });
+    }).populate("feeComponent");
 
     if (!record) {
       return res.status(404).json({
@@ -204,8 +226,30 @@ const updateStudentFee = async (req, res) => {
       });
     }
 
+    // Check if trying to update amount for non-customizable component
+    if (value.amount !== undefined && value.amount !== null) {
+      const component = record.feeComponent;
+
+      if (!component) {
+        return res.status(400).json({
+          success: false,
+          message: "Fee component not found",
+        });
+      }
+
+      if (!component.isCustomizable) {
+        return res.status(400).json({
+          success: false,
+          message: `Cannot update amount for non-customizable component: ${component.name}`,
+        });
+      }
+    }
+
     Object.assign(record, value);
     await record.save();
+
+    // Populate the record again after save
+    await record.populate("feeComponent");
 
     return res.status(200).json({
       success: true,

@@ -1,3 +1,5 @@
+const BankAccount = require("../models/BankAccount");
+const Expense = require("../models/Expense");
 const SalarySlip = require("../models/SalarySlip");
 const Staff = require("../models/Staff");
 const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
@@ -16,6 +18,93 @@ async function uploadDocumentImage(files, existingImage = null) {
     }
     return image;
 }
+
+const createSalaryExpense = async (teacherId, schoolId, amount, monthYear, actor, slipId, paymentMethod = 'bank', bankAccountId = null) => {
+    try {
+        const teacher = await Staff.findById(teacherId).select('name email');
+        if (!teacher) return null;
+
+        if (paymentMethod === 'bank') {
+            if (!bankAccountId) {
+                console.error("Bank account ID required for bank payment");
+                return null;
+            }
+
+            const bankAccount = await BankAccount.findOne({
+                _id: bankAccountId,
+                school: schoolId,
+                isActive: true
+            });
+
+            if (!bankAccount) {
+                console.error("Invalid bank account");
+                return null;
+            }
+        }
+
+        const expenseData = {
+            school: schoolId,
+            title: `Salary Payment - ${teacher.name} (${monthYear})`,
+            description: `Salary payment for ${teacher.name} for month ${monthYear}`,
+            category: 'salary',
+            amount: amount,
+            date: new Date(),
+            paymentMethod: paymentMethod,
+            bankAccountId: paymentMethod === 'bank' ? bankAccountId : null,
+            status: 'approved',
+            approvedAt: new Date()
+        };
+
+        const expense = new Expense(expenseData);
+        await expense.save();
+
+        await SalarySlip.findByIdAndUpdate(slipId, {
+            expenseId: expense._id
+        });
+
+        return expense;
+    } catch (error) {
+        console.error("Error creating salary expense:", error);
+        return null;
+    }
+};
+
+const updateSalaryExpense = async (slip, actor, additionalAmount, paymentMethod = 'bank', bankAccountId = null) => {
+    try {
+        if (!slip.expenseId) return null;
+
+        const expense = await Expense.findById(slip.expenseId);
+        if (!expense) return null;
+
+        if (paymentMethod === 'bank') {
+            if (!bankAccountId) {
+                throw new Error("Bank account ID required for bank payment");
+            }
+
+            const bankAccount = await BankAccount.findOne({
+                _id: bankAccountId,
+                school: expense.school,
+                isActive: true
+            });
+
+            if (!bankAccount) {
+                throw new Error("Invalid bank account");
+            }
+
+            expense.bankAccountId = bankAccountId;
+        }
+
+        expense.amount += additionalAmount;
+        expense.paymentMethod = paymentMethod;
+        expense.updatedAt = new Date();
+        await expense.save();
+
+        return expense;
+    } catch (error) {
+        console.error("Error updating salary expense:", error);
+        return null;
+    }
+};
 
 // Send notification to teacher
 const sendSalaryNotification = async (slip, actor, action = 'created', paymentAmount = null) => {
@@ -56,7 +145,7 @@ const sendSalaryNotification = async (slip, actor, action = 'created', paymentAm
 
 const createSalarySlip = async (req, res) => {
     try {
-        const { teacherId, monthYear, title, description, paidAmount, paymentMethod } = req.body;
+        const { teacherId, monthYear, title, description, paidAmount, paymentMethod, bankAccountId } = req.body;
         const schoolId = req.user.school;
 
         if (!teacherId || !monthYear || !title) {
@@ -80,7 +169,6 @@ const createSalarySlip = async (req, res) => {
             return res.status(400).json({ message: "Teacher salary not configured. Please set salary first." });
         }
 
-        // Check if slip already exists
         const existingSlip = await SalarySlip.findOne({
             teacherId,
             monthYear,
@@ -103,6 +191,28 @@ const createSalarySlip = async (req, res) => {
             });
         }
 
+        if (paidAmountValue > 0 && paymentMethod === 'bank') {
+            if (!bankAccountId) {
+                return res.status(400).json({
+                    message: "Bank account ID is required for bank payment"
+                });
+            }
+
+            const bankAccount = await BankAccount.findOne({
+                _id: bankAccountId,
+                school: schoolId,
+                isActive: true
+            });
+
+            if (!bankAccount) {
+                return res.status(400).json({
+                    message: "Invalid bank account."
+                });
+            }
+
+            validBankAccountId = bankAccountId;
+        }
+
         const remainingAmount = totalAmount - paidAmountValue;
         const status = remainingAmount === 0 ? 'paid' : (paidAmountValue > 0 ? 'partial' : 'pending');
 
@@ -123,14 +233,28 @@ const createSalarySlip = async (req, res) => {
             slipData.paymentHistory = [{
                 amount: paidAmountValue,
                 paymentMethod: paymentMethod || 'cash',
+                bankAccountId: validBankAccountId,
                 paidAt: new Date(),
                 approvedBy: req.user._id,
-                approvedByName: req.user.name
             }];
         }
 
         const slip = new SalarySlip(slipData);
         await slip.save();
+
+        let expense = null;
+        if (paidAmountValue > 0) {
+            expense = await createSalaryExpense(
+                teacherId,
+                schoolId,
+                paidAmountValue,
+                monthYear,
+                req.user,
+                slip._id,
+                paymentMethod || 'bank',
+                validBankAccountId
+            );
+        }
 
         await sendSalaryNotification(slip, req.user, 'created');
 
@@ -144,7 +268,8 @@ const createSalarySlip = async (req, res) => {
                 totalAmount: slip.totalAmount,
                 paidAmount: slip.paidAmount,
                 remainingAmount: slip.remainingAmount,
-                status: slip.status
+                status: slip.status,
+                expenseId: expense?._id || null
             }
         });
     } catch (err) {
@@ -157,7 +282,7 @@ const createSalarySlip = async (req, res) => {
 const recordSalaryPayment = async (req, res) => {
     try {
         const { slipId } = req.params;
-        const { amount, paymentMethod, remarks } = req.body;
+        const { amount, paymentMethod, bankAccountId, remarks } = req.body;
         const schoolId = req.user.school;
 
         if (!amount || amount <= 0) {
@@ -183,14 +308,38 @@ const recordSalaryPayment = async (req, res) => {
             });
         }
 
+        if (paymentMethod === 'bank') {
+            if (!bankAccountId) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Bank account ID is required for bank payment"
+                });
+            }
+
+            const bankAccount = await BankAccount.findOne({
+                _id: bankAccountId,
+                school: schoolId,
+                isActive: true
+            });
+
+            if (!bankAccount) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid bank account."
+                });
+            }
+
+            validBankAccountId = bankAccountId;
+        }
+
         const documentImage = await uploadDocumentImage(req.files);
 
         const paymentRecord = {
             amount: paymentAmount,
             paymentMethod: paymentMethod || 'cash',
+            bankAccountId: validBankAccountId,
             paidAt: new Date(),
             approvedBy: req.user._id,
-            approvedByName: req.user.name,
             remarks
         };
 
@@ -200,7 +349,7 @@ const recordSalaryPayment = async (req, res) => {
 
         slip.paymentHistory.push(paymentRecord);
 
-        // FIXED: Use numbers, not string concatenation
+        // Update amounts
         slip.paidAmount = currentPaidAmount + paymentAmount;
         slip.remainingAmount = currentRemainingAmount - paymentAmount;
 
@@ -213,6 +362,24 @@ const recordSalaryPayment = async (req, res) => {
         }
 
         await slip.save();
+
+        let expense = null;
+        if (slip.expenseId) {
+            expense = await updateSalaryExpense(slip, req.user, paymentAmount, paymentMethod || 'bank',
+                validBankAccountId);
+        } else {
+            expense = await createSalaryExpense(
+                slip.teacherId,
+                schoolId,
+                paymentAmount,
+                slip.monthYear,
+                req.user,
+                slip._id,
+                paymentMethod || 'bank',
+                validBankAccountId
+            );
+        }
+
         await sendSalaryNotification(slip, req.user, 'payment_approved', paymentAmount);
 
         res.status(200).json({
@@ -223,7 +390,8 @@ const recordSalaryPayment = async (req, res) => {
                 paidAmount: slip.paidAmount,
                 remainingAmount: slip.remainingAmount,
                 status: slip.status,
-                paidPercentage: ((slip.paidAmount / slip.totalAmount) * 100).toFixed(2)
+                paidPercentage: ((slip.paidAmount / slip.totalAmount) * 100).toFixed(2),
+                expenseId: expense?._id || null
             }
         });
     } catch (err) {
@@ -232,6 +400,7 @@ const recordSalaryPayment = async (req, res) => {
     }
 };
 
+// Update salary slip
 const updateSalarySlip = async (req, res) => {
     try {
         const slipId = req.params.id;
@@ -258,6 +427,7 @@ const updateSalarySlip = async (req, res) => {
     }
 };
 
+// Delete salary slip (with expense cleanup)
 const deleteSalarySlip = async (req, res) => {
     try {
         const slipId = req.params.id;
@@ -268,10 +438,22 @@ const deleteSalarySlip = async (req, res) => {
             return res.status(404).json({ message: "Salary slip not found" });
         }
 
+        // Delete associated expense if exists
+        if (slip.expenseId) {
+            const expense = await Expense.findById(slip.expenseId);
+            if (expense) {
+                // Delete receipt from S3 if exists
+                if (expense.receipt?.url) {
+                    await deleteFileFromS3(expense.receipt.url);
+                }
+                await expense.deleteOne();
+            }
+        }
+
         if (slip.documentImage) await deleteFileFromS3(slip.documentImage);
         await slip.deleteOne();
 
-        res.status(200).json({ message: "Salary slip deleted successfully" });
+        res.status(200).json({ message: "Salary slip and associated expense deleted successfully" });
     } catch (err) {
         console.error("Error deleting salary slip:", err);
         res.status(500).json({ message: err.message });
@@ -279,7 +461,6 @@ const deleteSalarySlip = async (req, res) => {
 };
 
 
-// Get teacher's own salary slips
 const getTeacherSlips = async (req, res) => {
     try {
         const teacherId = req.user._id;

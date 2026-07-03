@@ -1,19 +1,6 @@
 const Joi = require('joi');
 
 const createBankAccountSchema = Joi.object({
-    accountHolderName: Joi.string()
-        .required()
-        .trim()
-        .min(2)
-        .max(100)
-        .messages({
-            'string.base': 'Account holder name must be a string',
-            'string.empty': 'Account holder name is required',
-            'string.min': 'Account holder name must be at least 2 characters long',
-            'string.max': 'Account holder name cannot exceed 100 characters',
-            'any.required': 'Account holder name is required'
-        }),
-
     accountNumber: Joi.string()
         .required()
         .trim()
@@ -60,21 +47,16 @@ const createBankAccountSchema = Joi.object({
             'string.pattern.base': 'Invalid IBAN format. Pakistan IBAN should be 24 characters starting with PK (e.g., PK36SCBL0000001123456702)',
         }),
 
+    amount: Joi.number().positive().required().messages({
+        'number.base': 'Amount must be a number',
+        'number.positive': 'Amount must be a positive number',
+        'any.required': 'Amount is required'
+    })
+
 }).unknown(false);
 
 // Update Bank Account Schema
 const updateBankAccountSchema = Joi.object({
-    accountHolderName: Joi.string()
-        .optional()
-        .trim()
-        .min(2)
-        .max(100)
-        .messages({
-            'string.base': 'Account holder name must be a string',
-            'string.min': 'Account holder name must be at least 2 characters long',
-            'string.max': 'Account holder name cannot exceed 100 characters'
-        }),
-
     accountNumber: Joi.string()
         .optional()
         .trim()
@@ -117,6 +99,12 @@ const updateBankAccountSchema = Joi.object({
             'string.base': 'IBAN must be a string',
             'string.pattern.base': 'Invalid IBAN format. Pakistan IBAN should be 24 characters starting with PK (e.g., PK36SCBL0000001123456702)',
         }),
+
+    amount: Joi.number().positive().required().messages({
+        'number.base': 'Amount must be a number',
+        'number.positive': 'Amount must be a positive number',
+        'any.required': 'Amount is required'
+    }),
 
     isActive: Joi.boolean()
         .optional()
@@ -176,11 +164,11 @@ const getBankAccountsQuerySchema = Joi.object({
         }),
 
     sortBy: Joi.string()
-        .valid('createdAt', 'accountHolderName', 'bankName', 'accountNumber')
+        .valid('createdAt', 'accountNumber', 'bankName')
         .default('createdAt')
         .messages({
             'string.base': 'Sort by must be a string',
-            'any.only': 'Sort by must be one of: createdAt, accountHolderName, bankName, accountNumber'
+            'any.only': 'Sort by must be one of: createdAt, accountNumber, bankName'
         }),
 
     sortOrder: Joi.string()

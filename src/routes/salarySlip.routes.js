@@ -16,7 +16,6 @@ const {
 const { protect, isAdminOffice, isTeacher } = require("../middlewares/auth");
 const { upload } = require("../utils/multer");
 
-// ==================== ADMIN ROUTES ====================
 router.post(
     "/send",
     protect,

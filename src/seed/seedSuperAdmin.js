@@ -6,16 +6,36 @@ const Staff = require("../models/Staff");
 
 dotenv.config();
 
-const seedSuperAdmin = async () => {
-  await connectDB(process.env.MONGO_URL || 'mongodb://localhost:27017/schoolauth');
+// const seedSuperAdmin = async () => {
+//   await connectDB(process.env.MONGO_URL || 'mongodb://localhost:27017/schoolauth');
 
+//   const exists = await Staff.findOne({ role: "superadmin" });
+//   if (exists) {
+//     console.log("SuperAdmin already exists:", );
+//     return;
+//   }
+
+//   const hashedPassword = await bcrypt.hash(process.env.SUPERADMIN_PASSWORD, 10);
+//   await Staff.create({
+//     name: "System SuperAdmin",
+//     email: process.env.SUPERADMIN_EMAIL,
+//     password: hashedPassword,
+//     role: "superadmin",
+//   });
+
+//   console.log("SuperAdmin created successfully");
+// };
+
+const seedSuperAdmin = async () => {
   const exists = await Staff.findOne({ role: "superadmin" });
+
   if (exists) {
-    console.log("SuperAdmin already exists:", );
+    console.log("SuperAdmin already exists");
     return;
   }
 
   const hashedPassword = await bcrypt.hash(process.env.SUPERADMIN_PASSWORD, 10);
+
   await Staff.create({
     name: "System SuperAdmin",
     email: process.env.SUPERADMIN_EMAIL,
@@ -23,7 +43,8 @@ const seedSuperAdmin = async () => {
     role: "superadmin",
   });
 
-  console.log("SuperAdmin created successfully");
+  console.log("SuperAdmin created");
 };
+
 
 module.exports = seedSuperAdmin;

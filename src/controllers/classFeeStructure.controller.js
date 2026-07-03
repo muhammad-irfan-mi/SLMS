@@ -90,11 +90,7 @@ const assignFeeToClass = async (req, res) => {
             let finalAmount;
 
             if (component.isCustomizable) {
-                if (
-                    fee.amount === undefined ||
-                    fee.amount === null ||
-                    fee.amount <= 0
-                ) {
+                if (fee.amount === undefined || fee.amount === null || fee.amount <= 0) {
                     return res.status(400).json({
                         success: false,
                         message: `Amount required for customizable component: ${component.name}`,
@@ -103,11 +99,13 @@ const assignFeeToClass = async (req, res) => {
 
                 finalAmount = fee.amount;
             } else {
-                if (
-                    component.defaultAmount === undefined ||
-                    component.defaultAmount === null ||
-                    component.defaultAmount <= 0
-                ) {
+                if (fee.amount !== undefined && fee.amount !== null && fee.amount > 0) {
+                    return res.status(400).json({
+                        success: false,
+                        message: `Cannot set custom amount for non-customizable component: ${component.name}`,
+                    });
+                }
+                if (component.defaultAmount === undefined || component.defaultAmount === null || component.defaultAmount <= 0) {
                     return res.status(400).json({
                         success: false,
                         message: `Component ${component.name} has no default amount configured`,
@@ -183,13 +181,31 @@ const updateClassFee = async (req, res) => {
         const record = await ClassFeeStructure.findOne({
             _id: req.params.id,
             school: req.user.school,
-        });
+        }).populate("feeComponent");
 
         if (!record) {
             return res.status(404).json({
                 success: false,
                 message: "Fee record not found",
             });
+        }
+
+        if (value.amount !== undefined && value.amount !== null) {
+            const component = record.feeComponent;
+
+            if (!component) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Fee component not found",
+                });
+            }
+
+            if (!component.isCustomizable) {
+                return res.status(400).json({
+                    success: false,
+                    message: `Cannot update amount for non-customizable component: ${component.name}`,
+                });
+            }
         }
 
         Object.assign(record, value);

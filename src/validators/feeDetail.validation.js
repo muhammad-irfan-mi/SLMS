@@ -80,6 +80,11 @@ const approvePaymentSchema = Joi.object({
     then: Joi.required(),
     otherwise: Joi.optional().allow(null)
   }),
+  bankAccountId: Joi.string().hex().length(24).when('paymentMethod', {
+    is: 'bank',
+    then: Joi.required(),
+    otherwise: Joi.optional()
+  }),
   remarks: Joi.string().max(500).optional().allow('', null)
 });
 

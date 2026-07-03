@@ -40,6 +40,8 @@ const servicePermission = require('./src/routes/servicePermission.routes');
 const feeComponentRoutes = require("./src/routes/feeComponent.routes");
 const classFeeStructureRoutes = require("./src/routes/classFeeStructure.routes");
 const studentFeeAssignmentRoutes = require("./src/routes/studentFeeAssignment.routes");
+const expenseRoutes = require("./src/routes/expense.routes");
+const reportRoutes = require("./src/routes/profit.routes");
 const seedSuperAdmin = require('./src/seed/seedSuperAdmin');
 const seedServices = require('./src/seed/services.seed');
 
@@ -93,7 +95,8 @@ app.use('/api/permission', servicePermission);
 app.use("/api/feeComponents", feeComponentRoutes);
 app.use("/api/classFeeStructure", classFeeStructureRoutes);
 app.use("/api/studentFeeStructure", studentFeeAssignmentRoutes);
-
+app.use("/api/expenses", expenseRoutes);
+app.use("/api/reports", reportRoutes);
 app.get('/', (req, res) => res.send('School Auth Microservice API'));
 
 const port = process.env.PORT || 4000;

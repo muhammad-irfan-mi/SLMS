@@ -7,6 +7,11 @@ const PaymentHistorySchema = new mongoose.Schema({
         enum: ['cash', 'bank'],
         required: true
     },
+    bankAccountId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "BankAccount",
+        default: null
+    },
     paidAt: { type: Date, default: Date.now },
     approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "Staff" },
     approvedByName: { type: String },
@@ -38,6 +43,11 @@ const SalarySlipSchema = new mongoose.Schema(
         },
         paymentHistory: [PaymentHistorySchema],
         documentImage: { type: String },
+        expenseId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Expense",
+            default: null
+        },
         parentSlipId: { type: mongoose.Schema.Types.ObjectId, ref: "SalarySlip" }
     },
     { timestamps: true }

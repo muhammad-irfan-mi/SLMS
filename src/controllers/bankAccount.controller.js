@@ -13,7 +13,7 @@ const createBankAccount = async (req, res) => {
             });
         }
 
-        const { accountHolderName, accountNumber, bankName, branchName, iban } = req.body;
+        const { accountNumber, bankName, branchName, iban, amount } = req.body;
 
         const existingAccount = await BankAccount.findOne({
             school: schoolId,
@@ -41,13 +41,21 @@ const createBankAccount = async (req, res) => {
             }
         }
 
+        const accountAmount = parseFloat(amount) || 0;
+        if (accountAmount < 0) {
+            return res.status(400).json({
+                success: false,
+                message: "Amount cannot be negative"
+            });
+        }
+
         const bankAccount = await BankAccount.create({
             school: schoolId,
-            accountHolderName,
             accountNumber,
             bankName,
             branchName: branchName || '',
             iban: iban || '',
+            amount: accountAmount,
             createdBy: user._id
         });
 
@@ -92,7 +100,6 @@ const getBankAccounts = async (req, res) => {
 
         if (search) {
             filter.$or = [
-                { accountHolderName: { $regex: search, $options: 'i' } },
                 { accountNumber: { $regex: search, $options: 'i' } },
                 { bankName: { $regex: search, $options: 'i' } },
                 { branchName: { $regex: search, $options: 'i' } },
@@ -122,13 +129,13 @@ const getBankAccounts = async (req, res) => {
 
         res.status(200).json({
             success: true,
-            data: formattedAccounts,
             pagination: {
                 total,
                 page: Number(page),
                 limit: Number(limit),
                 totalPages: Math.ceil(total / limit),
-            }
+            },
+            data: formattedAccounts
         });
     } catch (error) {
         res.status(500).json({

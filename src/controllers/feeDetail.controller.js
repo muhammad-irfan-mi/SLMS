@@ -394,73 +394,6 @@ const bulkCreateFeeDetails = async (req, res) => {
 };
 
 // Single fee creation
-// const createFeeDetail = async (req, res) => {
-//   try {
-//     const { error } = createFeeDetailSchema.validate(req.body);
-//     if (error) return res.status(400).json({ message: error.details[0].message });
-
-//     const { studentId, month, dueDate, amount, title, description } = req.body;
-//     const schoolId = req.user.school;
-//     const actor = req.user;
-
-//     const student = await Student.findOne({
-//       _id: studentId,
-//       school: schoolId,
-//       isActive: true
-//     }).select('name email rollNo classInfo sectionInfo discount isFixed');
-
-//     if (!student) {
-//       return res.status(404).json({ message: "Student not found in your school" });
-//     }
-
-//     let feeCalculation;
-//     if (amount) {
-//       feeCalculation = await calculateStudentFee(studentId, schoolId, amount);
-//     } else {
-//       feeCalculation = await calculateStudentFee(studentId, schoolId);
-//     }
-
-//     const voucherImage = await uploadImage(req.files, "voucherImage");
-
-//     const fee = new FeeDetail({
-//       studentId,
-//       school: schoolId,
-//       month,
-//       dueDate: new Date(dueDate),
-//       originalAmount: feeCalculation.originalAmount,
-//       discountAmount: feeCalculation.discountAmount,
-//       finalAmount: feeCalculation.finalAmount,
-//       paidAmount: 0,
-//       remainingAmount: feeCalculation.finalAmount,
-//       title,
-//       description,
-//       voucherImage,
-//       discountType: feeCalculation.discountType,
-//       discountValue: feeCalculation.discountValue,
-//       status: "pending",
-//     });
-
-//     await fee.save();
-//     await updateStudentDefaulterStatus(studentId);
-//     await sendFeeNotificationToStudent(fee, actor, 'created');
-
-//     const responseFee = fee.toObject();
-//     responseFee.studentInfo = {
-//       _id: student._id,
-//       name: student.name,
-//       email: student.email,
-//       rollNo: student.rollNo,
-//       discount: student.discount,
-//     };
-
-//     res.status(201).json({
-//       message: "Fee detail created successfully",
-//       fee: responseFee,
-//     });
-//   } catch (err) {
-//     res.status(500).json({ message: err.message });
-//   }
-// };
 const createFeeDetail = async (
   req,
   res
@@ -570,81 +503,6 @@ const createFeeDetail = async (
     });
   }
 };
-
-// const createFeeDetail = async (req, res) => {
-//   try {
-//     const { error } = createFeeDetailSchema.validate(req.body);
-//     if (error) return res.status(400).json({ message: error.details[0].message });
-
-//     const { studentId, month, dueDate, amount, title, description } = req.body;
-//     const schoolId = req.user.school;
-//     const actor = req.user;
-
-//     const student = await Student.findOne({
-//       _id: studentId,
-//       school: schoolId,
-//       isActive: true
-//     });
-
-//     if (!student) {
-//       return res.status(404).json({ message: "Student not found in your school" });
-//     }
-
-//     // Use new flexible fee calculation
-//     let feeCalculation;
-//     if (amount) {
-//       feeCalculation = await FeeCalculationService.calculateStudentFee(
-//         studentId, schoolId, month, amount
-//       );
-//     } else {
-//       feeCalculation = await FeeCalculationService.calculateStudentFee(
-//         studentId, schoolId, month
-//       );
-//     }
-
-//     const voucherImage = await uploadImage(req.files, "voucherImage");
-
-//     const fee = new FeeDetail({
-//       studentId,
-//       school: schoolId,
-//       month,
-//       dueDate: new Date(dueDate),
-//       feeBreakdown: feeCalculation.feeBreakdown,
-//       subtotal: feeCalculation.subtotal,
-//       discountAmount: feeCalculation.discountAmount,
-//       finalAmount: feeCalculation.finalAmount,
-//       paidAmount: 0,
-//       remainingAmount: feeCalculation.finalAmount,
-//       title: title || `Fee for ${month}`,
-//       description,
-//       voucherImage,
-//       discountApplied: feeCalculation.discountApplied,
-//       classFeeStructureId: feeCalculation.classFeeStructureId,
-//       studentFeeAssignmentId: feeCalculation.studentFeeAssignmentId,
-//       status: "pending",
-//     });
-
-//     await fee.save();
-//     await updateStudentDefaulterStatus(studentId);
-//     await sendFeeNotificationToStudent(fee, actor, 'created');
-
-//     const responseFee = fee.toObject();
-//     responseFee.studentInfo = {
-//       _id: student._id,
-//       name: student.name,
-//       email: student.email,
-//       rollNo: student.rollNo,
-//       discount: student.discount,
-//     };
-
-//     res.status(201).json({
-//       message: "Fee detail created successfully",
-//       fee: responseFee,
-//     });
-//   } catch (err) {
-//     res.status(500).json({ message: err.message });
-//   }
-// };
 
 // Bulk update fee details (only allowed if no payments)
 const bulkUpdateFeeDetails = async (req, res) => {
@@ -900,7 +758,7 @@ const approvePayment = async (req, res) => {
 
     const paymentId = req.params.id;
     const schoolId = req.user.school;
-    const { status, paymentMethod, remarks } = req.body;
+    const { status, paymentMethod, bankAccountId, remarks } = req.body;
     const actor = req.user;
 
     const payment = await FeePayment.findOne({ _id: paymentId, school: schoolId });
@@ -920,6 +778,33 @@ const approvePayment = async (req, res) => {
       }
 
       payment.paymentMethod = paymentMethod;
+
+      payment.paymentMethod = paymentMethod;
+
+      // If payment method is bank, validate and save bank account details
+      if (paymentMethod === "bank") {
+        if (!bankAccountId) {
+          return res.status(400).json({
+            message: "Bank account ID is required for bank payment"
+          });
+        }
+
+        // Validate bank account belongs to the school
+        const bankAccount = await BankAccount.findOne({
+          _id: bankAccountId,
+          school: schoolId,
+          isActive: true
+        });
+
+        if (!bankAccount) {
+          return res.status(400).json({
+            message: "Invalid bank account."
+          });
+        }
+
+        payment.bankAccountId = bankAccount._id;
+      }
+
       payment.status = "approved";
       payment.approvedBy = actor._id;
       payment.approvedAt = new Date();
@@ -938,7 +823,6 @@ const approvePayment = async (req, res) => {
       payment.status = "rejected";
       payment.remarks = remarks || "Payment proof rejected. Please resubmit with correct details.";
 
-      // Don't update fee paid amounts for rejected payments
       fee.status = "pending"; // Reset to pending so student can submit again
     }
 
@@ -1425,6 +1309,93 @@ const getPendingPayments = async (req, res) => {
   }
 };
 
+
+const getFeeCollectionSummary = async (req, res) => {
+  try {
+    const schoolId = req.user.school;
+    const { period, startDate, endDate } = req.query;
+
+    const filter = { school: schoolId, status: "approved" };
+    let fromDate;
+    let toDate = new Date();
+
+    if (period === "today") {
+      fromDate = new Date();
+      fromDate.setHours(0, 0, 0, 0);
+    }
+    else if (period === "month") {
+      fromDate = new Date(toDate.getFullYear(), toDate.getMonth(), 1);
+    }
+    else if (period === "year") {
+      fromDate = new Date(toDate.getFullYear(), 0, 1);
+    }
+    else if (startDate && endDate) {
+      fromDate = new Date(startDate);
+      toDate = new Date(endDate);
+      toDate.setHours(23, 59, 59, 999);
+    }
+    if (fromDate) {
+      filter.approvedAt = { $gte: fromDate, $lte: toDate, };
+    }
+
+    const result =
+      await FeePayment.aggregate([
+        { $match: filter },
+        {
+          $group: {
+            _id: null,
+            totalCollection: { $sum: "$amount" },
+            cashCollection: {
+              $sum: {
+                $cond: [
+                  { $eq: ["$paymentMethod", "cash"] },
+                  "$amount",
+                  0
+                ]
+              }
+            },
+
+            bankCollection: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: ["$paymentMethod", "bank"]
+                  },
+                  "$amount",
+                  0
+                ]
+              }
+            },
+
+            totalTransactions: {
+              $sum: 1
+            }
+          }
+        }
+      ]);
+
+    const summary =
+      result[0] || {
+        totalCollection: 0,
+        cashCollection: 0,
+        bankCollection: 0,
+        totalTransactions: 0
+      };
+
+    return res.status(200).json({
+      success: true,
+      data: summary
+    });
+
+  } catch (error) {
+
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   createFeeDetail,
   uploadStudentProof,
@@ -1437,5 +1408,6 @@ module.exports = {
   bulkUpdateFeeDetails,
   getDefaulterStudents,
   getStudentFeeHistory,
-  getPendingPayments
+  getPendingPayments,
+  getFeeCollectionSummary
 };

@@ -26,6 +26,11 @@ const FeePaymentSchema = new mongoose.Schema(
       enum: ["cash", "bank", null],
       default: null
     },
+    bankAccountId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "BankAccount",
+      default: null
+    },
     proofImage: { type: String },
     transactionId: { type: String },
     status: {
@@ -47,5 +52,7 @@ const FeePaymentSchema = new mongoose.Schema(
 
 FeePaymentSchema.index({ feeId: 1, status: 1 });
 FeePaymentSchema.index({ school: 1, status: 1, createdAt: -1 });
+FeePaymentSchema.index({ bankAccountId: 1 });
+
 
 module.exports = mongoose.model("FeePayment", FeePaymentSchema);
