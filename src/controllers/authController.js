@@ -3,6 +3,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const { validationSchemas } = require("../validators/school.validator");
+const Staff = require("../models/Staff");
 
 const superAdminLogin = async (req, res) => {
   try {
@@ -11,7 +12,7 @@ const superAdminLogin = async (req, res) => {
     if (!email || !password)
       return res.status(400).json({ message: "Email and password required" });
 
-    const user = await User.findOne({
+    const user = await Staff.findOne({
       email: { $regex: new RegExp(`^${email}$`, 'i') },
       role: "superadmin"
     });
