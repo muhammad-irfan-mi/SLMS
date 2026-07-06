@@ -169,6 +169,21 @@ const staticServices = [
         dependencies: [],
         isActive: true
     },
+    {
+        key: "reports",
+        name: "Reports Management",
+        description: "Comprehensive profit and loss tracking with bank and cash account management, running balance calculation, and detailed financial reporting",
+        dependencies: ["bankAccount", "fees", "expenses"],
+        isActive: true
+    },
+
+{
+        key: "expenses",
+        name: "Expense Management",
+        description: "Complete expense tracking system supporting both bank and cash",
+        dependencies: ["bankAccount"],
+        isActive: true
+    }
 ];
 
 async function seedServices() {
