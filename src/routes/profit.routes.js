@@ -1,44 +1,26 @@
-const express = require("express");
+const express = require('express');
 const router = express.Router();
-const { protect, isAdminOffice } = require("../middlewares/auth");
-const { checkPermission } = require("../middlewares/permission");
+const { protect } = require('../middlewares/auth');
 const {
-  getNetProfit,
-  getDetailedProfitReport,
-  getProfitComparison,
-  getBankAccountRunningBalance
-} = require("../controllers/profit.controller");
+    getAccountRunningBalance,
+    getOverallSchoolRunningBalance,
+    getNetProfit,
+    getDetailedProfitReport,
+    getProfitComparison,
+    getAllAccountsSummary,
+    getDetailReporting,
+    getFinancialDetails
+} = require('../controllers/profit.controller');
 
-router.get(
-  "/:bankAccountId/running-balance",
-  protect,
-  isAdminOffice,
-  checkPermission("reports"),
-  getBankAccountRunningBalance
-);
+router.use(protect);
 
-router.get(
-  "/net-profit",
-  protect,
-  isAdminOffice,
-  checkPermission("reports"),
-  getNetProfit
-);
-
-router.get(
-  "/detailed-report",
-  protect,
-  isAdminOffice,
-  checkPermission("reports"),
-  getDetailedProfitReport
-);
-
-router.get(
-  "/comparison",
-  protect,
-  isAdminOffice,
-  checkPermission("reports"),
-  getProfitComparison
-);
+router.get('/detail-reporting', getDetailReporting);
+router.get('/complete-running-balance', getOverallSchoolRunningBalance);
+router.get('/accounts-summary', getAllAccountsSummary);
+router.get('/account/:accountId/running-balance', getAccountRunningBalance);
+router.get('/net-profit', getNetProfit);
+router.get('/detailed-report', getDetailedProfitReport);
+router.get('/comparison', getProfitComparison);
+router.get('/financial-details', getFinancialDetails);
 
 module.exports = router;

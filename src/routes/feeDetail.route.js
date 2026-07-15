@@ -15,6 +15,7 @@ const {
   getStudentFeeHistory,
   getPendingPayments,
   getFeeCollectionSummary,
+  getStudentLedgerSummary,
 } = require('../controllers/feeDetail.controller');
 const { checkPermission } = require('../middlewares/permission');
 
@@ -35,5 +36,6 @@ router.patch("/:id/approve", protect, isAdminOffice, checkPermission("fees"), ap
 router.put("/:id/student-proof", protect, isStudent, checkPermission("fees"), upload.fields([{ name: "studentProofImage" }]), uploadStudentProof);
 router.get("/student", protect, isStudent, checkPermission("fees"), getMyFeeDetails);
 router.get("/fee-collection-summary", protect, isAdminOffice, checkPermission("fees"), getFeeCollectionSummary);
+router.get("/student-ledger", protect, isAdminOffice, checkPermission("fees"), getStudentLedgerSummary);
 
 module.exports = router;

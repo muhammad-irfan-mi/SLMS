@@ -17,6 +17,8 @@ const { createNotification, NOTIFICATION_TYPES, NOTIFICATION_TARGETS } = require
 const Student = require("../models/Student");
 const Staff = require("../models/Staff");
 const { calculateStudentVoucher } = require("../services/feeVoucher.service");
+const CashAccount = require("../models/CashAccount");
+const { getClassSectionMaps, formatClassSection } = require("../utils/classHelper");
 
 
 async function uploadImage(files, fieldName, existingImage = null) {
@@ -33,6 +35,17 @@ async function uploadImage(files, fieldName, existingImage = null) {
 
   return image;
 }
+
+const generateVoucherNumber = (id) => {
+  const now = new Date();
+
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+
+  const uniquePart = id.toString().slice(-6).toUpperCase();
+
+  return `FV-${year}${month}-${uniquePart}`;
+};
 
 const getClassSectionInfo = async (classId, sectionId, schoolId) => {
   const classSection = await ClassSection.findOne({
@@ -335,6 +348,19 @@ const bulkCreateFeeDetails = async (req, res) => {
     }));
 
     const createdFees = await FeeDetail.insertMany(feeDocuments);
+    await FeeDetail.bulkWrite(
+      createdFees.map(fee => ({
+        updateOne: {
+          filter: {
+            _id: fee._id
+          },
+          update: {
+            $set: {
+              voucherNumber: generateVoucherNumber(fee._id)
+            }
+          }
+        }
+      })));
     await Promise.all(createdFees.map(fee => updateStudentDefaulterStatus(fee.studentId)));
 
     const notificationPromises = createdFees.map(async (fee) => {
@@ -394,98 +420,47 @@ const bulkCreateFeeDetails = async (req, res) => {
 };
 
 // Single fee creation
-const createFeeDetail = async (
-  req,
-  res
-) => {
+const createFeeDetail = async (req, res) => {
   try {
+    const { studentId, month, dueDate, title, description } = req.body;
 
-    const {
-      studentId,
-      month,
-      dueDate,
-      title,
-      description,
-    } = req.body;
-
-    const schoolId =
-      req.user.school;
-
+    const schoolId = req.user.school;
     const student =
-      await Student.findOne({
-        _id: studentId,
-        school: schoolId,
-        isActive: true,
-      });
+      await Student.findOne({ _id: studentId, school: schoolId, isActive: true, });
 
     if (!student) {
-      return res.status(404).json({
-        message:
-          "Student not found",
-      });
+      return res.status(404).json({ message: "Student not found", });
     }
 
-    const existing =
-      await FeeDetail.findOne({
-        school: schoolId,
-        studentId,
-        month,
-      });
+    const existing = await FeeDetail.findOne({ school: schoolId, studentId, month, });
 
     if (existing) {
-      return res.status(400).json({
-        message:
-          "Voucher already exists for this month",
-      });
+      return res.status(400).json({ message: "Voucher already exists for this month", });
     }
 
-    const voucher =
-      await calculateStudentVoucher(
-        studentId,
-        schoolId
-      );
+    const voucher = await calculateStudentVoucher(studentId, schoolId);
+    const voucherImage = await uploadImage(req.files, "voucherImage", null);
 
-    const fee =
-      await FeeDetail.create({
-        studentId,
-        school: schoolId,
 
-        month,
+    const fee = await FeeDetail.create({
+      studentId, school: schoolId, month,
+      dueDate: new Date(dueDate),
+      feeItems: voucher.feeItems,
+      originalAmount: voucher.originalAmount,
+      discountAmount: voucher.discountAmount,
+      discountType: voucher.discountType,
+      discountValue: voucher.discountValue,
+      finalAmount: voucher.finalAmount,
+      paidAmount: 0,
+      remainingAmount: voucher.finalAmount,
+      title,
+      description,
+      status: "pending",
+      voucherImage,
+    });
 
-        dueDate:
-          new Date(
-            dueDate
-          ),
-
-        feeItems:
-          voucher.feeItems,
-
-        originalAmount:
-          voucher.originalAmount,
-
-        discountAmount:
-          voucher.discountAmount,
-
-        discountType:
-          voucher.discountType,
-
-        discountValue:
-          voucher.discountValue,
-
-        finalAmount:
-          voucher.finalAmount,
-
-        paidAmount: 0,
-
-        remainingAmount:
-          voucher.finalAmount,
-
-        title,
-
-        description,
-
-        status: "pending",
-      });
+    fee.voucherNumber = generateVoucherNumber(fee._id);
+    await fee.save();
 
     return res.status(201).json({
       success: true,
@@ -657,7 +632,6 @@ const updateFeeDetail = async (req, res) => {
     const fee = await FeeDetail.findOne({ _id: feeId, school: schoolId });
     if (!fee) return res.status(404).json({ message: "Fee record not found" });
 
-    // Check if fee has any payments
     if (fee.paidAmount > 0) {
       return res.status(400).json({ message: "Cannot update fee because payments have already been made" });
     }
@@ -701,6 +675,12 @@ const uploadStudentProof = async (req, res) => {
     const studentId = req.user._id;
     const actor = req.user;
     const { amount } = req.body;
+
+    if (!req.files || !req.files.studentProofImage) {
+      return res.status(400).json({
+        message: "Proof image is required. Please upload a payment proof image."
+      });
+    }
 
     const fee = await FeeDetail.findOne({ _id: feeId, studentId });
     if (!fee) return res.status(404).json({ message: "Fee record not found" });
@@ -757,8 +737,8 @@ const approvePayment = async (req, res) => {
     if (error) return res.status(400).json({ message: error.details[0].message });
 
     const paymentId = req.params.id;
-    const schoolId = req.user.school;
-    const { status, paymentMethod, bankAccountId, remarks } = req.body;
+    const schoolId = req.user.school || req.user._id;
+    const { status, paymentMethod, bankAccountId, cashAccountId, remarks } = req.body;
     const actor = req.user;
 
     const payment = await FeePayment.findOne({ _id: paymentId, school: schoolId });
@@ -772,16 +752,12 @@ const approvePayment = async (req, res) => {
     if (!fee) return res.status(404).json({ message: "Associated fee record not found" });
 
     if (status === "approved") {
-      // Validate payment method
       if (!paymentMethod) {
         return res.status(400).json({ message: "Payment method is required for approval" });
       }
 
       payment.paymentMethod = paymentMethod;
 
-      payment.paymentMethod = paymentMethod;
-
-      // If payment method is bank, validate and save bank account details
       if (paymentMethod === "bank") {
         if (!bankAccountId) {
           return res.status(400).json({
@@ -789,7 +765,6 @@ const approvePayment = async (req, res) => {
           });
         }
 
-        // Validate bank account belongs to the school
         const bankAccount = await BankAccount.findOne({
           _id: bankAccountId,
           school: schoolId,
@@ -804,13 +779,34 @@ const approvePayment = async (req, res) => {
 
         payment.bankAccountId = bankAccount._id;
       }
+      else if (paymentMethod === "cash") {
+        if (!cashAccountId) {
+          return res.status(400).json({
+            message: "Cash account ID is required for cash payment"
+          });
+        }
+
+        const cashAccount = await CashAccount.findOne({
+          _id: cashAccountId,
+          school: schoolId,
+          isActive: true
+        });
+
+        if (!cashAccount) {
+          return res.status(400).json({
+            message: "Invalid cash account."
+          });
+        }
+
+        payment.cashAccountId = cashAccount._id;
+      }
+
 
       payment.status = "approved";
       payment.approvedBy = actor._id;
       payment.approvedAt = new Date();
       payment.remarks = remarks || null;
 
-      // Update fee with payment
       fee.paidAmount = fee.paidAmount + payment.amount;
       fee.remainingAmount = fee.finalAmount - fee.paidAmount;
 
@@ -823,7 +819,7 @@ const approvePayment = async (req, res) => {
       payment.status = "rejected";
       payment.remarks = remarks || "Payment proof rejected. Please resubmit with correct details.";
 
-      fee.status = "pending"; // Reset to pending so student can submit again
+      fee.status = "pending";
     }
 
     await payment.save();
@@ -880,11 +876,53 @@ const getAllFeeDetails = async (req, res) => {
     if (error) return res.status(400).json({ message: error.details[0].message });
 
     const schoolId = req.user.school;
-    const { page, limit, studentId, month, status } = value;
-    const filter = { school: schoolId };
+    const { page, limit, studentId, month, status, search } = value;
+    const filter = {
+      school: schoolId
+    };
+
     if (studentId) filter.studentId = studentId;
     if (month) filter.month = month;
     if (status) filter.status = status;
+
+    if (search) {
+
+      const keyword = search.trim();
+
+      // Voucher Number Search
+      if (keyword.toUpperCase().startsWith("FV-")) {
+
+        filter.voucherNumber = keyword.toUpperCase();
+
+      } else {
+
+        // Search Student Name or Roll No
+        const students = await Student.find({
+          school: schoolId,
+          isActive: true,
+          $or: [
+            {
+              name: {
+                $regex: keyword,
+                $options: "i"
+              }
+            },
+            {
+              rollNo: {
+                $regex: keyword,
+                $options: "i"
+              }
+            }
+          ]
+        })
+          .select("_id")
+          .lean();
+
+        filter.studentId = {
+          $in: students.map(student => student._id)
+        };
+      }
+    }
 
     const skip = (page - 1) * limit;
 
@@ -1396,6 +1434,234 @@ const getFeeCollectionSummary = async (req, res) => {
   }
 };
 
+const getStudentLedgerSummary = async (req, res) => {
+  try {
+    const schoolId = req.user.school;
+    const {
+      page = 1,
+      limit = 20,
+      search,
+      classId,
+      status,
+      month,
+      sortBy = 'name',
+      sortOrder = 'asc'
+    } = req.query;
+
+    const skip = (Number(page) - 1) * Number(limit);
+    const sortDirection = sortOrder === 'asc' ? 1 : -1;
+
+    const studentFilter = {
+      school: schoolId,
+      isActive: true
+    };
+
+    if (search) {
+      studentFilter.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { registrationNumber: { $regex: search, $options: 'i' } },
+        { rollNo: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    if (classId) {
+      studentFilter['classInfo.id'] = new mongoose.Types.ObjectId(classId);
+    }
+
+    const students = await Student.find(studentFilter)
+      .select('name registrationNumber rollNo classInfo sectionInfo discount isDefaulter')
+      .sort({ [sortBy]: sortDirection })
+      .skip(skip)
+      .limit(Number(limit))
+      .lean();
+
+    const { classMap, sectionMap } = await getClassSectionMaps(students, schoolId);
+
+    const totalStudents = await Student.countDocuments(studentFilter);
+
+    const studentIds = students.map(s => s._id);
+
+    const feeFilter = {
+      school: schoolId,
+      studentId: { $in: studentIds }
+    };
+
+    if (month) {
+      feeFilter.month = month;
+    }
+
+    if (status) {
+      if (status === 'overdue') {
+        feeFilter.dueDate = { $lt: new Date() };
+        feeFilter.remainingAmount = { $gt: 0 };
+      } else {
+        feeFilter.status = status;
+      }
+    }
+
+    const fees = await FeeDetail.find(feeFilter)
+      .sort({ month: -1 })
+      .lean();
+
+    const payments = await FeePayment.find({
+      school: schoolId,
+      studentId: { $in: studentIds },
+      status: { $in: ['approved', 'paid'] }
+    }).lean();
+
+    const feesByStudent = {};
+    fees.forEach(fee => {
+      const key = fee.studentId.toString();
+      if (!feesByStudent[key]) {
+        feesByStudent[key] = [];
+      }
+      feesByStudent[key].push(fee);
+    });
+
+    const paymentsByStudent = {};
+    payments.forEach(payment => {
+      const key = payment.studentId.toString();
+      if (!paymentsByStudent[key]) {
+        paymentsByStudent[key] = [];
+      }
+      paymentsByStudent[key].push(payment);
+    });
+
+    const ledgerEntries = students.map(student => {
+
+      const { classInfo, sectionInfo } = formatClassSection(student, classMap, sectionMap);
+      const studentFees = feesByStudent[student._id.toString()] || [];
+      const studentPayments = paymentsByStudent[student._id.toString()] || [];
+
+      const totalFeeAmount = studentFees.reduce((sum, f) => sum + (f.finalAmount || 0), 0);
+      const totalPaidAmount = studentFees.reduce((sum, f) => sum + (f.paidAmount || 0), 0);
+      const totalRemaining = studentFees.reduce((sum, f) => sum + (f.remainingAmount || 0), 0);
+      const paidCount = studentFees.filter(f => f.status === 'paid').length;
+      const partialCount = studentFees.filter(f => f.status === 'partially_paid').length;
+      const pendingCount = studentFees.filter(f => f.status === 'pending').length;
+      const overdueFees = studentFees.filter(f =>
+        f.remainingAmount > 0 && new Date(f.dueDate) < new Date()
+      );
+      const overdueCount = overdueFees.length;
+      const overdueAmount = overdueFees.reduce((sum, f) => sum + f.remainingAmount, 0);
+      const isDefaulter = overdueCount > 0 || student.isDefaulter;
+
+      // Get recent payments (last 5)
+      const recentPayments = studentPayments
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        .slice(0, 5)
+        .map(p => ({
+          _id: p._id,
+          amount: p.amount,
+          paymentMethod: p.paymentMethod,
+          date: p.createdAt,
+          status: p.status
+        }));
+
+      return {
+        student: {
+          _id: student._id,
+          name: student.name,
+          registrationNumber: student.registrationNumber,
+          rollNo: student.rollNo,
+          classInfo,
+          sectionInfo,
+          discount: student.discount,
+          isDefaulter: isDefaulter
+        },
+        summary: {
+          totalFeeAmount: Math.round(totalFeeAmount * 100) / 100,
+          totalPaidAmount: Math.round(totalPaidAmount * 100) / 100,
+          totalRemaining: Math.round(totalRemaining * 100) / 100,
+          paidCount,
+          partialCount,
+          pendingCount,
+          overdueCount,
+          overdueAmount: Math.round(overdueAmount * 100) / 100,
+          collectionRate: totalFeeAmount > 0
+            ? Math.round((totalPaidAmount / totalFeeAmount) * 100 * 100) / 100
+            : 0
+        },
+        recentPayments,
+        months: studentFees.map(f => ({
+          month: f.month,
+          finalAmount: f.finalAmount,
+          paidAmount: f.paidAmount,
+          remainingAmount: f.remainingAmount,
+          status: f.status,
+          dueDate: f.dueDate,
+          isOverdue: f.remainingAmount > 0 && new Date(f.dueDate) < new Date()
+        }))
+      };
+    });
+
+    // Filter by status if needed
+    let filteredEntries = ledgerEntries;
+    if (status === 'overdue') {
+      filteredEntries = ledgerEntries.filter(e => e.summary.overdueCount > 0);
+    } else if (status === 'paid') {
+      filteredEntries = ledgerEntries.filter(e => e.summary.paidCount > 0 && e.summary.remainingAmount === 0);
+    } else if (status === 'partial') {
+      filteredEntries = ledgerEntries.filter(e => e.summary.partialCount > 0 && e.summary.remainingAmount > 0);
+    } else if (status === 'pending') {
+      filteredEntries = ledgerEntries.filter(e => e.summary.pendingCount > 0);
+    }
+
+    // Paginate filtered results
+    const paginatedEntries = filteredEntries.slice(0, Number(limit));
+
+    // Calculate global summary
+    const globalSummary = filteredEntries.reduce((acc, entry) => {
+      acc.totalStudents++;
+      acc.totalFeeAmount += entry.summary.totalFeeAmount;
+      acc.totalPaidAmount += entry.summary.totalPaidAmount;
+      acc.totalRemaining += entry.summary.totalRemaining;
+      acc.totalOverdueAmount += entry.summary.overdueAmount;
+      acc.totalOverdueCount += entry.summary.overdueCount;
+      acc.fullyPaidCount += entry.summary.paidCount > 0 && entry.summary.remainingAmount === 0 ? 1 : 0;
+      acc.partialCount += entry.summary.partialCount > 0 && entry.summary.remainingAmount > 0 ? 1 : 0;
+      acc.pendingCount += entry.summary.pendingCount > 0 ? 1 : 0;
+      acc.defaulterCount += entry.student.isDefaulter ? 1 : 0;
+      return acc;
+    }, {
+      totalStudents: 0,
+      totalFeeAmount: 0,
+      totalPaidAmount: 0,
+      totalRemaining: 0,
+      totalOverdueAmount: 0,
+      totalOverdueCount: 0,
+      fullyPaidCount: 0,
+      partialCount: 0,
+      pendingCount: 0,
+      defaulterCount: 0
+    });
+
+    res.status(200).json({
+      success: true,
+      pagination: {
+        total: filteredEntries.length,
+        page: Number(page),
+        limit: Number(limit),
+        totalPages: Math.ceil(filteredEntries.length / Number(limit))
+      },
+      globalSummary: {
+        ...globalSummary,
+        collectionRate: globalSummary.totalFeeAmount > 0
+          ? Math.round((globalSummary.totalPaidAmount / globalSummary.totalFeeAmount) * 100 * 100) / 100
+          : 0
+      },
+      data: paginatedEntries
+    });
+
+  } catch (error) {
+    console.error("Error getting student ledger summary:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+};
+
 module.exports = {
   createFeeDetail,
   uploadStudentProof,
@@ -1409,5 +1675,6 @@ module.exports = {
   getDefaulterStudents,
   getStudentFeeHistory,
   getPendingPayments,
-  getFeeCollectionSummary
+  getFeeCollectionSummary,
+  getStudentLedgerSummary
 };

@@ -34,7 +34,11 @@ const FeeDetailSchema = new mongoose.Schema(
     finalAmount: { type: Number, required: true },
     paidAmount: { type: Number, default: 0 },
     remainingAmount: { type: Number, required: true },
-    
+    voucherNumber: {
+      type: String,
+      index: true,
+      trim: true
+    },
     discountApplied: {
       type: {
         type: String,
@@ -43,13 +47,13 @@ const FeeDetailSchema = new mongoose.Schema(
       value: Number,
       amount: Number
     },
-    
-    
+
+
     title: { type: String, required: true },
     description: { type: String },
     dueDate: { type: Date, required: true, index: true },
     voucherImage: { type: String },
-    
+
     status: {
       type: String,
       enum: ["pending", "submitted", "partially_paid", "paid", "rejected"],

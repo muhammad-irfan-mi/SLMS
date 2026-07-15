@@ -1,4 +1,5 @@
 const BankAccount = require("../models/BankAccount");
+const CashAccount = require("../models/CashAccount");
 const Expense = require("../models/Expense");
 const SalarySlip = require("../models/SalarySlip");
 const Staff = require("../models/Staff");
@@ -19,7 +20,7 @@ async function uploadDocumentImage(files, existingImage = null) {
     return image;
 }
 
-const createSalaryExpense = async (teacherId, schoolId, amount, monthYear, actor, slipId, paymentMethod = 'bank', bankAccountId = null) => {
+const createSalaryExpense = async (teacherId, schoolId, amount, monthYear, actor, slipId, paymentMethod = 'bank', bankAccountId = null, cashAccountId = null) => {
     try {
         const teacher = await Staff.findById(teacherId).select('name email');
         if (!teacher) return null;
@@ -41,6 +42,23 @@ const createSalaryExpense = async (teacherId, schoolId, amount, monthYear, actor
                 return null;
             }
         }
+        else if (paymentMethod === 'cash') {
+            if (!cashAccountId) {
+                console.error("Cash account ID required for cash payment");
+                return null;
+            }
+
+            const cashAccount = await CashAccount.findOne({
+                _id: cashAccountId,
+                school: schoolId,
+                isActive: true
+            });
+
+            if (!cashAccount) {
+                console.error("Invalid cash account");
+                return null;
+            }
+        }
 
         const expenseData = {
             school: schoolId,
@@ -51,6 +69,7 @@ const createSalaryExpense = async (teacherId, schoolId, amount, monthYear, actor
             date: new Date(),
             paymentMethod: paymentMethod,
             bankAccountId: paymentMethod === 'bank' ? bankAccountId : null,
+            cashAccountId: paymentMethod === 'cash' ? cashAccountId : null,
             status: 'approved',
             approvedAt: new Date()
         };
@@ -69,7 +88,7 @@ const createSalaryExpense = async (teacherId, schoolId, amount, monthYear, actor
     }
 };
 
-const updateSalaryExpense = async (slip, actor, additionalAmount, paymentMethod = 'bank', bankAccountId = null) => {
+const updateSalaryExpense = async (slip, actor, additionalAmount, paymentMethod = 'bank', bankAccountId = null, cashAccountId = null) => {
     try {
         if (!slip.expenseId) return null;
 
@@ -92,6 +111,23 @@ const updateSalaryExpense = async (slip, actor, additionalAmount, paymentMethod 
             }
 
             expense.bankAccountId = bankAccountId;
+        }
+        else if (paymentMethod === 'cash') {
+            if (!cashAccountId) {
+                throw new Error("Cash account ID required for cash payment");
+            }
+
+            const cashAccount = await CashAccount.findOne({
+                _id: cashAccountId,
+                school: expense.school,
+                isActive: true
+            });
+
+            if (!cashAccount) {
+                throw new Error("Invalid cash account");
+            }
+
+            expense.cashAccountId = cashAccountId;
         }
 
         expense.amount += additionalAmount;
@@ -145,7 +181,7 @@ const sendSalaryNotification = async (slip, actor, action = 'created', paymentAm
 
 const createSalarySlip = async (req, res) => {
     try {
-        const { teacherId, monthYear, title, description, paidAmount, paymentMethod, bankAccountId } = req.body;
+        const { teacherId, monthYear, title, description, paidAmount, paymentMethod, bankAccountId, cashAccountId } = req.body;
         const schoolId = req.user.school;
 
         if (!teacherId || !monthYear || !title) {
@@ -191,26 +227,55 @@ const createSalarySlip = async (req, res) => {
             });
         }
 
-        if (paidAmountValue > 0 && paymentMethod === 'bank') {
-            if (!bankAccountId) {
+        let validBankAccountId = null;
+        let validCashAccountId = null;
+
+        if (paidAmountValue > 0) {
+            if (paymentMethod === 'bank') {
+                if (!bankAccountId) {
+                    return res.status(400).json({
+                        message: "Bank account ID is required for bank payment"
+                    });
+                }
+
+                const bankAccount = await BankAccount.findOne({
+                    _id: bankAccountId,
+                    school: schoolId,
+                    isActive: true
+                });
+
+                if (!bankAccount) {
+                    return res.status(400).json({
+                        message: "Invalid bank account."
+                    });
+                }
+
+                validBankAccountId = bankAccountId;
+            } else if (paymentMethod === 'cash') {
+                if (!cashAccountId) {
+                    return res.status(400).json({
+                        message: "Cash account ID is required for cash payment"
+                    });
+                }
+
+                const cashAccount = await CashAccount.findOne({
+                    _id: cashAccountId,
+                    school: schoolId,
+                    isActive: true
+                });
+
+                if (!cashAccount) {
+                    return res.status(400).json({
+                        message: "Invalid cash account."
+                    });
+                }
+
+                validCashAccountId = cashAccountId;
+            } else {
                 return res.status(400).json({
-                    message: "Bank account ID is required for bank payment"
+                    message: "Invalid payment method. Must be 'bank' or 'cash'"
                 });
             }
-
-            const bankAccount = await BankAccount.findOne({
-                _id: bankAccountId,
-                school: schoolId,
-                isActive: true
-            });
-
-            if (!bankAccount) {
-                return res.status(400).json({
-                    message: "Invalid bank account."
-                });
-            }
-
-            validBankAccountId = bankAccountId;
         }
 
         const remainingAmount = totalAmount - paidAmountValue;
@@ -234,6 +299,7 @@ const createSalarySlip = async (req, res) => {
                 amount: paidAmountValue,
                 paymentMethod: paymentMethod || 'cash',
                 bankAccountId: validBankAccountId,
+                cashAccountId: validCashAccountId,
                 paidAt: new Date(),
                 approvedBy: req.user._id,
             }];
@@ -251,8 +317,9 @@ const createSalarySlip = async (req, res) => {
                 monthYear,
                 req.user,
                 slip._id,
-                paymentMethod || 'bank',
-                validBankAccountId
+                paymentMethod || 'cash',
+                validBankAccountId,
+                validCashAccountId
             );
         }
 
@@ -282,7 +349,7 @@ const createSalarySlip = async (req, res) => {
 const recordSalaryPayment = async (req, res) => {
     try {
         const { slipId } = req.params;
-        const { amount, paymentMethod, bankAccountId, remarks } = req.body;
+        const { amount, paymentMethod, bankAccountId, cashAccountId, remarks } = req.body;
         const schoolId = req.user.school;
 
         if (!amount || amount <= 0) {
@@ -331,6 +398,29 @@ const recordSalaryPayment = async (req, res) => {
 
             validBankAccountId = bankAccountId;
         }
+        else if (paymentMethod === 'cash') {
+            if (!cashAccountId) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Cash account ID is required for cash payment"
+                });
+            }
+
+            const cashAccount = await CashAccount.findOne({
+                _id: cashAccountId,
+                school: schoolId,
+                isActive: true
+            });
+
+            if (!cashAccount) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid cash account."
+                });
+            }
+
+            validCashAccountId = cashAccountId;
+        }
 
         const documentImage = await uploadDocumentImage(req.files);
 
@@ -338,6 +428,7 @@ const recordSalaryPayment = async (req, res) => {
             amount: paymentAmount,
             paymentMethod: paymentMethod || 'cash',
             bankAccountId: validBankAccountId,
+            cashAccountId: validCashAccountId,
             paidAt: new Date(),
             approvedBy: req.user._id,
             remarks
@@ -366,7 +457,7 @@ const recordSalaryPayment = async (req, res) => {
         let expense = null;
         if (slip.expenseId) {
             expense = await updateSalaryExpense(slip, req.user, paymentAmount, paymentMethod || 'bank',
-                validBankAccountId);
+                validBankAccountId, validCashAccountId);
         } else {
             expense = await createSalaryExpense(
                 slip.teacherId,
@@ -376,7 +467,8 @@ const recordSalaryPayment = async (req, res) => {
                 req.user,
                 slip._id,
                 paymentMethod || 'bank',
-                validBankAccountId
+                validBankAccountId,
+                validCashAccountId
             );
         }
 
@@ -783,7 +875,6 @@ const getTeacherSalaryHistory = async (req, res) => {
     }
 };
 
-// Get school salary summary by month
 const getSchoolSalarySummary = async (req, res) => {
     try {
         const schoolId = req.user.school;
@@ -845,6 +936,227 @@ const getSchoolSalarySummary = async (req, res) => {
     }
 };
 
+const getStaffLedgerSummary = async (req, res) => {
+    try {
+        const schoolId = req.user.school;
+        const {
+            page = 1,
+            limit = 20,
+            search,
+            role = 'teacher' | 'admin_office', 
+            status, 
+            month,
+            sortBy = 'name',
+            sortOrder = 'asc'
+        } = req.query;
+
+        const skip = (Number(page) - 1) * Number(limit);
+        const sortDirection = sortOrder === 'asc' ? 1 : -1;
+
+        const staffFilter = {
+            school: schoolId,
+            isActive: true
+        };
+
+        if (role && role !== 'all') {
+            staffFilter.role = role;
+        }
+
+        if (search) {
+            staffFilter.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } },
+                { employeeId: { $regex: search, $options: 'i' } }
+            ];
+        }
+
+        const staffMembers = await Staff.find(staffFilter)
+            .select('_id name email role employeeId joiningDate salary department')
+            .sort({ [sortBy]: sortDirection })
+            .skip(skip)
+            .limit(Number(limit))
+            .lean();
+
+        const totalStaff = await Staff.countDocuments(staffFilter);
+
+        const staffIds = staffMembers.map(s => s._id);
+
+        const slipFilter = {
+            school: schoolId,
+            teacherId: { $in: staffIds }
+        };
+
+        if (month) {
+            slipFilter.monthYear = { $regex: `^${month}`, $options: 'i' };
+        }
+
+        const slips = await SalarySlip.find(slipFilter)
+            .sort({ monthYear: -1 })
+            .lean();
+
+        const expenseFilter = {
+            school: schoolId,
+            category: 'salary'
+        };
+
+        if (month) {
+            expenseFilter.title = { $regex: month, $options: 'i' };
+        }
+
+        const expenses = await Expense.find(expenseFilter)
+            .lean();
+
+        const slipsByStaff = {};
+        slips.forEach(slip => {
+            const key = slip.teacherId.toString();
+            if (!slipsByStaff[key]) {
+                slipsByStaff[key] = [];
+            }
+            slipsByStaff[key].push(slip);
+        });
+
+        const expensesByStaff = {};
+        slips.forEach(slip => {
+            if (slip.expenseId) {
+                const expense = expenses.find(e => e._id.toString() === slip.expenseId.toString());
+                if (expense) {
+                    const key = slip.teacherId.toString();
+                    if (!expensesByStaff[key]) {
+                        expensesByStaff[key] = [];
+                    }
+                    expensesByStaff[key].push(expense);
+                }
+            }
+        });
+
+        const ledgerEntries = staffMembers.map(staff => {
+            const staffSlips = slipsByStaff[staff._id.toString()] || [];
+            const staffExpenses = expensesByStaff[staff._id.toString()] || [];
+
+            const totalSalaryAmount = staffSlips.reduce((sum, s) => sum + (s.totalAmount || 0), 0);
+            const totalPaidAmount = staffSlips.reduce((sum, s) => sum + (s.paidAmount || 0), 0);
+            const totalRemaining = staffSlips.reduce((sum, s) => sum + (s.remainingAmount || 0), 0);
+
+            let adjustedRemaining = totalRemaining;
+            let adjustedSalary = totalSalaryAmount;
+            if (staffSlips.length === 0 && staff.salary > 0) {
+                adjustedSalary = staff.salary;
+                adjustedRemaining = staff.salary;
+            }
+
+            const paidCount = staffSlips.filter(s => s.status === 'paid').length;
+            const partialCount = staffSlips.filter(s => s.status === 'partial').length;
+            const pendingCount = staffSlips.filter(s => s.status === 'pending').length;
+            const hasSlips = staffSlips.length > 0;
+
+            const recentPayments = staffExpenses
+                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                .slice(0, 5)
+                .map(e => ({
+                    _id: e._id,
+                    amount: e.amount,
+                    paymentMethod: e.paymentMethod,
+                    date: e.createdAt,
+                    status: e.status
+                }));
+
+            const months = staffSlips.map(s => ({
+                monthYear: s.monthYear,
+                totalAmount: s.totalAmount,
+                paidAmount: s.paidAmount,
+                remainingAmount: s.remainingAmount,
+                status: s.status,
+                paidPercentage: s.totalAmount > 0
+                    ? Math.round((s.paidAmount / s.totalAmount) * 100 * 100) / 100
+                    : 0
+            }));
+
+            return {
+                staff: {
+                    _id: staff._id,
+                    name: staff.name,
+                    email: staff.email,
+                    role: staff.role,
+                    employeeId: staff.employeeId,
+                    joiningDate: staff.joiningDate,
+                    department: staff.department,
+                    baseSalary: staff.salary || 0
+                },
+                summary: {
+                    totalSalary: Math.round(adjustedSalary * 100) / 100,
+                    totalPaid: Math.round(totalPaidAmount * 100) / 100,
+                    totalRemaining: Math.round(adjustedRemaining * 100) / 100,
+                    paidCount,
+                    partialCount,
+                    pendingCount,
+                    hasSlips,
+                    collectionRate: adjustedSalary > 0
+                        ? Math.round((totalPaidAmount / adjustedSalary) * 100 * 100) / 100
+                        : 0
+                },
+                recentPayments,
+                months
+            };
+        });
+
+        let filteredEntries = ledgerEntries;
+        if (status) {
+            if (status === 'paid') {
+                filteredEntries = ledgerEntries.filter(e => e.summary.paidCount > 0 && e.summary.totalRemaining === 0);
+            } else if (status === 'partial') {
+                filteredEntries = ledgerEntries.filter(e => e.summary.partialCount > 0 && e.summary.totalRemaining > 0);
+            } else if (status === 'pending') {
+                filteredEntries = ledgerEntries.filter(e => e.summary.pendingCount > 0 || !e.summary.hasSlips);
+            }
+        }
+
+        const paginatedEntries = filteredEntries.slice(0, Number(limit));
+
+        const globalSummary = filteredEntries.reduce((acc, entry) => {
+            acc.totalStaff++;
+            acc.totalSalary += entry.summary.totalSalary;
+            acc.totalPaid += entry.summary.totalPaid;
+            acc.totalRemaining += entry.summary.totalRemaining;
+            acc.fullyPaidCount += entry.summary.paidCount > 0 && entry.summary.totalRemaining === 0 ? 1 : 0;
+            acc.partialCount += entry.summary.partialCount > 0 && entry.summary.totalRemaining > 0 ? 1 : 0;
+            acc.pendingCount += entry.summary.pendingCount > 0 || !entry.summary.hasSlips ? 1 : 0;
+            return acc;
+        }, {
+            totalStaff: 0,
+            totalSalary: 0,
+            totalPaid: 0,
+            totalRemaining: 0,
+            fullyPaidCount: 0,
+            partialCount: 0,
+            pendingCount: 0
+        });
+
+        res.status(200).json({
+            success: true,
+            pagination: {
+                total: filteredEntries.length,
+                page: Number(page),
+                limit: Number(limit),
+                totalPages: Math.ceil(filteredEntries.length / Number(limit))
+            },
+            globalSummary: {
+                ...globalSummary,
+                collectionRate: globalSummary.totalSalary > 0
+                    ? Math.round((globalSummary.totalPaid / globalSummary.totalSalary) * 100 * 100) / 100
+                    : 0
+            },
+            data: paginatedEntries
+        });
+
+    } catch (error) {
+        console.error("Error getting staff ledger summary:", error);
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
+    }
+};
+
 module.exports = {
     createSalarySlip,
     recordSalaryPayment,
@@ -854,5 +1166,6 @@ module.exports = {
     getSalarySlipById,
     getTeachersSalaryStatus,
     getTeacherSalaryHistory,
-    getSchoolSalarySummary
+    getSchoolSalarySummary,
+    getStaffLedgerSummary
 };

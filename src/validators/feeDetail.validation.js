@@ -85,6 +85,11 @@ const approvePaymentSchema = Joi.object({
     then: Joi.required(),
     otherwise: Joi.optional()
   }),
+  cashAccountId: Joi.string().hex().length(24).when('paymentMethod', {
+    is: 'cash',
+    then: Joi.required(),
+    otherwise: Joi.optional()
+  }),
   remarks: Joi.string().max(500).optional().allow('', null)
 });
 
@@ -96,6 +101,8 @@ const getAllFeeDetailsSchema = Joi.object({
     .messages({
       'string.pattern.base': 'Month must be in YYYY-MM format'
     }),
+  // voucherNumber: Joi.string().trim().uppercase().optional(),
+  search: Joi.string().trim().allow(""),
   status: Joi.string().valid('pending', 'submitted', 'approved', 'rejected'),
 });
 

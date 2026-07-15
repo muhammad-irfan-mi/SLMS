@@ -1,4 +1,5 @@
 const BankAccount = require("../models/BankAccount");
+const CashAccount = require("../models/CashAccount");
 const Expense = require("../models/Expense");
 const School = require("../models/School");
 const Staff = require("../models/Staff");
@@ -113,7 +114,7 @@ const createExpense = async (req, res) => {
 
         const schoolId = req.user.school;
         const createdBy = req.user._id;
-        const { paymentMethod, bankAccountId, ...rest } = req.body;
+        const { paymentMethod, bankAccountId, cashAccountId, ...rest } = req.body;
 
         if (paymentMethod === 'bank') {
             if (!bankAccountId) {
@@ -134,6 +135,25 @@ const createExpense = async (req, res) => {
                 });
             }
         }
+        else if (paymentMethod === 'cash') {
+            if (!cashAccountId) {
+                return res.status(400).json({
+                    message: "Cash account ID is required for cash payment"
+                });
+            }
+
+            const cashAccount = await CashAccount.findOne({
+                _id: cashAccountId,
+                school: schoolId,
+                isActive: true
+            });
+
+            if (!cashAccount) {
+                return res.status(400).json({
+                    message: "Invalid cash account"
+                });
+            }
+        }
 
         const receiptUrl = await uploadReceipt(req.files);
 
@@ -142,8 +162,10 @@ const createExpense = async (req, res) => {
             school: schoolId,
             createdBy,
             paymentMethod,
+            status: 'approved', 
             receipt: receiptUrl,
             bankAccountId: paymentMethod === 'bank' ? bankAccountId : null,
+            cashAccountId: paymentMethod === 'cash' ? cashAccountId : null
         };
 
         const expense = new Expense(expenseData);

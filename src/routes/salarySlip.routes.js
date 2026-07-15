@@ -10,7 +10,8 @@ const {
     getSalarySlipById,
     getTeachersSalaryStatus,
     getTeacherSalaryHistory,
-    getSchoolSalarySummary
+    getSchoolSalarySummary,
+    getStaffLedgerSummary
 } = require("../controllers/salarySlipController");
 
 const { protect, isAdminOffice, isTeacher } = require("../middlewares/auth");
@@ -66,6 +67,13 @@ router.get(
     protect,
     isAdminOffice,
     getSchoolSalarySummary
+);
+
+router.get(
+    "/staff-ledger",
+    protect,
+    isAdminOffice,
+    getStaffLedgerSummary
 );
 
 // ==================== TEACHER ROUTES ====================

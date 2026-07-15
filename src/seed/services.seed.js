@@ -65,6 +65,13 @@ const staticServices = [
         isActive: true
     },
     {
+        key: "cash",
+        name: "Cash Account Management",
+        description: "Manage cash accounts for financial transactions",
+        dependencies: [],
+        isActive: true
+    },
+    {
         key: "complaintFeedback",
         name: "Complaint & Feedback",
         description: "Manage student and parent complaints and feedback",

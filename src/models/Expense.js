@@ -51,11 +51,16 @@ const ExpenseSchema = new mongoose.Schema(
             ref: "BankAccount",
             default: null
         },
+        cashAccountId: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "CashAccount",
+            default: null
+        },
         receipt: { type: String },
         status: {
             type: String,
             enum: ['pending', 'approved', 'paid', 'cancelled'],
-            default: 'pending'
+            default: 'approved'
         },
         approvedAt: Date
     },

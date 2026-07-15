@@ -26,6 +26,11 @@ const createExpenseSchema = Joi.object({
         then: Joi.required(),
         otherwise: Joi.optional()
     }),
+    cashAccountId: Joi.string().hex().length(24).when('paymentMethod', {
+        is: 'cash',
+        then: Joi.required(),
+        otherwise: Joi.optional()
+    }),
     status: Joi.string().valid('pending', 'approved', 'paid', 'cancelled').default('pending')
 });
 
@@ -43,6 +48,11 @@ const updateExpenseSchema = Joi.object({
     paymentMethod: Joi.string().valid('cash', 'bank').optional(),
     bankAccountId: Joi.string().hex().length(24).when('paymentMethod', {
         is: 'bank',
+        then: Joi.required(),
+        otherwise: Joi.optional()
+    }),
+    cashAccountId: Joi.string().hex().length(24).when('paymentMethod', {
+        is: 'cash',
         then: Joi.required(),
         otherwise: Joi.optional()
     }),
