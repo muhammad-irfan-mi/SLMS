@@ -97,6 +97,8 @@ const getAllFeeDetailsSchema = Joi.object({
   page: Joi.number().integer().positive().default(1),
   limit: Joi.number().integer().positive().max(100).default(10),
   studentId: objectId.optional(),
+  classId: objectId.optional(),
+  sectionId: objectId.optional(),
   month: Joi.string().pattern(/^\d{4}-\d{2}$/)
     .messages({
       'string.pattern.base': 'Month must be in YYYY-MM format'

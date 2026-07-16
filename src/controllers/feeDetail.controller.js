@@ -1,3 +1,4 @@
+const mongoose = require('mongoose')
 const BankAccount = require("../models/BankAccount");
 const ClassSection = require("../models/ClassSection");
 const FeeDetail = require("../models/FeeDetail");
@@ -18,7 +19,7 @@ const Student = require("../models/Student");
 const Staff = require("../models/Staff");
 const { calculateStudentVoucher } = require("../services/feeVoucher.service");
 const CashAccount = require("../models/CashAccount");
-const { getClassSectionMaps, formatClassSection } = require("../utils/classHelper");
+const { getClassSectionMaps, formatClassSection, getClassSectionData } = require("../utils/classHelper");
 
 
 async function uploadImage(files, fieldName, existingImage = null) {
@@ -869,59 +870,83 @@ const deleteFeeDetail = async (req, res) => {
   }
 };
 
-// Get all fee details (admin)
+// Get all fee details 
 const getAllFeeDetails = async (req, res) => {
   try {
     const { error, value } = getAllFeeDetailsSchema.validate(req.query);
     if (error) return res.status(400).json({ message: error.details[0].message });
 
     const schoolId = req.user.school;
-    const { page, limit, studentId, month, status, search } = value;
-    const filter = {
-      school: schoolId
-    };
+    const {
+      page,
+      limit,
+      studentId,
+      month,
+      status,
+      search,
+      classId,
+      sectionId
+    } = value;
+
+    const filter = { school: schoolId };
 
     if (studentId) filter.studentId = studentId;
     if (month) filter.month = month;
     if (status) filter.status = status;
 
-    if (search) {
+    const studentFilter = {
+      school: schoolId,
+      isActive: true
+    };
 
+    if (classId) {
+      const classData = await getClassSectionData(classId, schoolId, sectionId);
+      if (classData.error) {
+        return res.status(classData.error.status).json({
+          success: false,
+          message: classData.error.message
+        });
+      }
+
+      studentFilter['classInfo.id'] = new mongoose.Types.ObjectId(classId);
+
+      if (sectionId) {
+        studentFilter['sectionInfo.id'] = new mongoose.Types.ObjectId(sectionId);
+      }
+    }
+
+    if (search) {
       const keyword = search.trim();
 
-      // Voucher Number Search
       if (keyword.toUpperCase().startsWith("FV-")) {
-
         filter.voucherNumber = keyword.toUpperCase();
-
       } else {
+        studentFilter.$or = [
+          { name: { $regex: keyword, $options: "i" } },
+          { rollNo: { $regex: keyword, $options: "i" } },
+          { registrationNumber: { $regex: keyword, $options: "i" } }
+        ];
+      }
+    }
 
-        // Search Student Name or Roll No
-        const students = await Student.find({
-          school: schoolId,
-          isActive: true,
-          $or: [
-            {
-              name: {
-                $regex: keyword,
-                $options: "i"
-              }
-            },
-            {
-              rollNo: {
-                $regex: keyword,
-                $options: "i"
-              }
-            }
-          ]
-        })
-          .select("_id")
-          .lean();
+    const students = await Student.find(studentFilter)
+      .select("_id")
+      .lean();
 
+    if (students.length > 0 || filter.voucherNumber) {
+      if (!filter.voucherNumber) {
         filter.studentId = {
           $in: students.map(student => student._id)
         };
       }
+    } else if (search || classId) {
+      return res.status(200).json({
+        total: 0,
+        page,
+        limit,
+        totalPages: 0,
+        fees: []
+      });
     }
 
     const skip = (page - 1) * limit;
@@ -941,16 +966,14 @@ const getAllFeeDetails = async (req, res) => {
       let studentSchoolId = feeObj.studentId?.school || null;
 
       if (feeObj.studentId?.classInfo?.id) {
-        const classSectionInfo = await getClassSectionInfo(
+        const classData = await getClassSectionData(
           feeObj.studentId.classInfo.id,
-          feeObj.studentId.sectionInfo?.id || null,
-          studentSchoolId
+          studentSchoolId,
+          feeObj.studentId.sectionInfo?.id || null
         );
-        if (classSectionInfo.class) {
-          feeObj.classInfo = { id: classSectionInfo.class._id, name: classSectionInfo.class.name };
-        }
-        if (classSectionInfo.section) {
-          feeObj.sectionInfo = { id: classSectionInfo.section._id, name: classSectionInfo.section.name };
+        if (!classData.error && classData.data) {
+          feeObj.classInfo = classData.data.class;
+          feeObj.sectionInfo = classData.data.section;
         }
       }
 
@@ -965,7 +988,6 @@ const getAllFeeDetails = async (req, res) => {
         delete feeObj.studentId;
       }
 
-      // Get payment history for this fee
       const payments = await FeePayment.find({ feeId: fee._id, status: "approved" })
         .select("amount paymentMethod createdAt approvedBy approvedAt remarks")
         .lean();
@@ -975,6 +997,7 @@ const getAllFeeDetails = async (req, res) => {
     }));
 
     return res.status(200).json({
+      success: true,
       total,
       page,
       limit,
@@ -982,7 +1005,11 @@ const getAllFeeDetails = async (req, res) => {
       fees: formattedFees,
     });
   } catch (err) {
-    return res.status(500).json({ message: "Server error" });
+    console.error("Error in getAllFeeDetails:", err);
+    return res.status(500).json({
+      success: false,
+      message: err.message || "Server error"
+    });
   }
 };
 
@@ -1087,7 +1114,6 @@ const getDefaulterStudents = async (req, res) => {
     limit = parseInt(limit);
     const skip = (page - 1) * limit;
 
-    // Find all fees that are overdue (remaining > 0 and due date passed)
     const overdueFilter = {
       school: schoolId,
       dueDate: { $lt: now },
@@ -1191,7 +1217,7 @@ const getDefaulterStudents = async (req, res) => {
       let formattedSectionInfo = null;
 
       if (student?.classInfo?.id) {
-        const classSectionInfo = await getClassSectionInfo(
+        const classSectionInfo = await getClassSectionData(
           student.classInfo.id,
           student.sectionInfo?.id || null,
           student.school
@@ -1442,8 +1468,11 @@ const getStudentLedgerSummary = async (req, res) => {
       limit = 20,
       search,
       classId,
+      sectionId,
       status,
       month,
+      startDate,
+      endDate,
       sortBy = 'name',
       sortOrder = 'asc'
     } = req.query;
@@ -1466,6 +1495,9 @@ const getStudentLedgerSummary = async (req, res) => {
 
     if (classId) {
       studentFilter['classInfo.id'] = new mongoose.Types.ObjectId(classId);
+    }
+    if (sectionId) {
+      studentFilter['sectionInfo.id'] = new mongoose.Types.ObjectId(sectionId);
     }
 
     const students = await Student.find(studentFilter)
@@ -1490,6 +1522,23 @@ const getStudentLedgerSummary = async (req, res) => {
       feeFilter.month = month;
     }
 
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+
+      feeFilter.dueDate = { $gte: start, $lte: end };
+    } else if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      feeFilter.dueDate = { $gte: start };
+    } else if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      feeFilter.dueDate = { $lte: end };
+    }
+
     if (status) {
       if (status === 'overdue') {
         feeFilter.dueDate = { $lt: new Date() };
@@ -1506,7 +1555,13 @@ const getStudentLedgerSummary = async (req, res) => {
     const payments = await FeePayment.find({
       school: schoolId,
       studentId: { $in: studentIds },
-      status: { $in: ['approved', 'paid'] }
+      status: { $in: ['approved', 'paid'] },
+       ...(startDate && endDate ? {
+        updatedAt: {
+          $gte: new Date(startDate).setHours(0, 0, 0, 0),
+          $lte: new Date(endDate).setHours(23, 59, 59, 999)
+        }
+      } : {})
     }).lean();
 
     const feesByStudent = {};
@@ -1546,7 +1601,6 @@ const getStudentLedgerSummary = async (req, res) => {
       const overdueAmount = overdueFees.reduce((sum, f) => sum + f.remainingAmount, 0);
       const isDefaulter = overdueCount > 0 || student.isDefaulter;
 
-      // Get recent payments (last 5)
       const recentPayments = studentPayments
         .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
         .slice(0, 5)
