@@ -1,895 +1,3 @@
-// const mongoose = require("mongoose");
-// const FeeDetail = require("../models/FeeDetail");
-// const FeePayment = require("../models/FeePayment");
-// const Expense = require("../models/Expense");
-// const BankAccount = require("../models/BankAccount");
-
-
-// const getDateRange = (period, customStartDate, customEndDate) => {
-//     const now = new Date();
-//     const start = new Date();
-//     const end = new Date();
-
-//     if (customStartDate && customEndDate) {
-//         return {
-//             start: new Date(customStartDate),
-//             end: new Date(customEndDate)
-//         };
-//     }
-
-//     switch (period) {
-//         case 'today':
-//             start.setHours(0, 0, 0, 0);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'yesterday':
-//             start.setDate(start.getDate() - 1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setDate(end.getDate() - 1);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'this_week':
-//             const day = now.getDay();
-//             start.setDate(now.getDate() - day);
-//             start.setHours(0, 0, 0, 0);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'this_month':
-//             start.setDate(1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'last_month':
-//             start.setMonth(start.getMonth() - 1);
-//             start.setDate(1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setMonth(end.getMonth() - 1);
-//             end.setDate(new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate());
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'this_year':
-//             start.setMonth(0, 1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'last_year':
-//             start.setFullYear(start.getFullYear() - 1);
-//             start.setMonth(0, 1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setFullYear(end.getFullYear() - 1);
-//             end.setMonth(11, 31);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         default:
-//             start.setDate(1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setHours(23, 59, 59, 999);
-//     }
-
-//     return { start, end };
-// };
-
-
-// const getBankAccountRunningBalance = async (req, res) => {
-//     try {
-//         const schoolId = req.user.school;
-//         const { bankAccountId } = req.params;
-//         const {
-//             startDate,
-//             endDate,
-//             includeAll = 'false'
-//         } = req.query;
-
-//         const bankAccount = await BankAccount.findOne({
-//             _id: bankAccountId,
-//             school: schoolId,
-//             isActive: true
-//         });
-
-//         if (!bankAccount) {
-//             return res.status(404).json({
-//                 success: false,
-//                 message: "Bank account not found"
-//             });
-//         }
-
-//         // Set date range
-//         let start, end;
-//         if (startDate && endDate) {
-//             start = new Date(startDate);
-//             start.setHours(0, 0, 0, 0);
-//             end = new Date(endDate);
-//             end.setHours(23, 59, 59, 999);
-//         } else {
-//             const dateRange = getDateRange('this_month');
-//             start = dateRange.start;
-//             end = dateRange.end;
-//         }
-
-//         // Opening balance (the initial amount in bank account)
-//         const openingBalance = bankAccount.amount || 0;
-
-//         // Build query for transactions
-//         const transactionFilter = {
-//             school: schoolId,
-//             bankAccountId: bankAccountId,
-//             status: { $in: ['approved', 'paid'] }
-//         };
-
-//         if (includeAll === 'false') {
-//             transactionFilter.updatedAt = { $gte: start, $lte: end };
-//         }
-
-//         // Get all fee payments for this bank account (Credit transactions)
-//         const feePayments = await FeePayment.find({
-//             ...transactionFilter,
-//             status: { $in: ['approved', 'paid'] }
-//         })
-//             .populate('feeId', 'title month finalAmount discountAmount')
-//             .populate('studentId', 'name registrationNumber')
-//             .sort({ createdAt: 1 });
-
-//         // Get all expenses for this bank account (Debit transactions)
-//         const expenses = await Expense.find({
-//             ...transactionFilter,
-//             status: { $in: ['approved', 'paid'] }
-//         })
-//             .sort({ date: 1, createdAt: 1 });
-
-//         // Combine and sort transactions by date
-//         const transactions = [];
-
-//         // Add fee payments as credit transactions
-//         feePayments.forEach(payment => {
-//             transactions.push({
-//                 _id: payment._id,
-//                 type: 'fee_payment',
-//                 transactionType: 'credit',
-//                 amount: payment.amount,
-//                 date: payment.updatedAt || payment.createdAt,
-//                 description: `Fee Payment - ${payment.feeId?.title || 'Fee'}`,
-//                 studentName: payment.studentId?.name || 'Unknown Student',
-//                 feeMonth: payment.feeId?.month || '',
-//                 status: payment.status,
-//                 reference: payment._id.toString()
-//             });
-//         });
-
-//         // Add expenses as debit transactions
-//         expenses.forEach(expense => {
-//             transactions.push({
-//                 _id: expense._id,
-//                 type: 'expense',
-//                 transactionType: 'debit',
-//                 amount: expense.amount,
-//                 date: expense.date || expense.createdAt,
-//                 description: expense.title || 'Expense',
-//                 category: expense.category || 'other',
-//                 status: expense.status,
-//                 reference: expense._id.toString()
-//             });
-//         });
-
-//         // Sort by date
-//         transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
-
-//         // Calculate running balance
-//         let runningBalance = openingBalance;
-//         const transactionHistory = transactions.map(transaction => {
-//             if (transaction.transactionType === 'credit') {
-//                 runningBalance += transaction.amount;
-//             } else if (transaction.transactionType === 'debit') {
-//                 runningBalance -= transaction.amount;
-//             }
-
-//             return {
-//                 ...transaction,
-//                 runningBalance: runningBalance
-//             };
-//         });
-
-//         // Calculate summary
-//         const totalCredits = feePayments.reduce((sum, p) => sum + p.amount, 0);
-//         const totalDebits = expenses.reduce((sum, e) => sum + e.amount, 0);
-//         const currentBalance = openingBalance + totalCredits - totalDebits;
-
-//         // Get filtered transactions if date range is applied
-//         let filteredTransactions = transactionHistory;
-//         if (includeAll === 'false') {
-//             filteredTransactions = transactionHistory.filter(t => {
-//                 const tDate = new Date(t.date);
-//                 return tDate >= start && tDate <= end;
-//             });
-//         }
-
-//         res.status(200).json({
-//             success: true,
-//             bankAccount: {
-//                 _id: bankAccount._id,
-//                 bankName: bankAccount.bankName,
-//                 accountNumber: bankAccount.accountNumber,
-//                 branchName: bankAccount.branchName,
-//                 openingBalance: openingBalance
-//             },
-//             dateRange: includeAll === 'false' ? { start, end } : null,
-//             summary: {
-//                 openingBalance,
-//                 totalCredits: totalCredits,
-//                 totalDebits: totalDebits,
-//                 currentBalance: currentBalance,
-//                 totalTransactions: transactionHistory.length,
-//                 creditCount: feePayments.length,
-//                 debitCount: expenses.length
-//             },
-//             transactions: filteredTransactions,
-//             currentBalance: currentBalance
-//         });
-
-//     } catch (error) {
-//         console.error("Error getting bank account running balance:", error);
-//         res.status(500).json({
-//             success: false,
-//             message: error.message
-//         });
-//     }
-// };
-
-// const getNetProfit = async (req, res) => {
-//     try {
-//         const schoolId = req.user.school;
-//         const {
-//             period = 'this_month',
-//             startDate,
-//             endDate,
-//             category,
-//             bankAccountId,
-//         } = req.query;
-
-//         let start, end;
-
-//         if (period === 'all') {
-//             start = null;
-//             end = null;
-//         } else if (startDate && endDate) {
-//             const parseDate = (dateStr) => {
-//                 if (!dateStr) return null;
-//                 if (/^\d{4}-\d{2}$/.test(dateStr)) {
-//                     const [year, month] = dateStr.split('-').map(Number);
-//                     return new Date(year, month - 1, 1);
-//                 }
-//                 if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-//                     return new Date(dateStr);
-//                 }
-//                 const parsed = new Date(dateStr);
-//                 if (!isNaN(parsed.getTime())) {
-//                     return parsed;
-//                 }
-//                 return null;
-//             };
-
-//             const parsedStart = parseDate(startDate);
-//             const parsedEnd = parseDate(endDate);
-
-//             if (!parsedStart || !parsedEnd) {
-//                 return res.status(400).json({
-//                     success: false,
-//                     message: "Invalid date format. Use YYYY-MM-DD or YYYY-MM"
-//                 });
-//             }
-
-//             start = new Date(parsedStart);
-//             start.setHours(0, 0, 0, 0);
-
-//             end = new Date(parsedEnd);
-//             if (/^\d{4}-\d{2}$/.test(endDate)) {
-//                 const [year, month] = endDate.split('-').map(Number);
-//                 end = new Date(year, month, 0);
-//                 end.setHours(23, 59, 59, 999);
-//             } else {
-//                 end.setHours(23, 59, 59, 999);
-//             }
-//         } else {
-//             const dateRange = getDateRange(period);
-//             start = dateRange.start;
-//             end = dateRange.end;
-//         }
-
-//         const feeFilter = {
-//             school: schoolId,
-//             status: { $in: ['approved', 'paid'] }
-//         };
-
-//         if (period !== 'all' && start && end) {
-//             feeFilter.updatedAt = { $gte: start, $lte: end };
-//         }
-
-//         if (bankAccountId) {
-//             feeFilter.bankAccountId = new mongoose.Types.ObjectId(bankAccountId);
-//         }
-
-//         const expenseFilter = {
-//             school: schoolId,
-//             status: { $in: ['approved', 'paid'] }
-//         };
-
-//         if (period !== 'all' && start && end) {
-//             expenseFilter.date = { $gte: start, $lte: end };
-//         }
-
-//         if (bankAccountId) {
-//             expenseFilter.bankAccountId = new mongoose.Types.ObjectId(bankAccountId);
-//         }
-
-//         if (category) {
-//             expenseFilter.category = category;
-//         }
-
-//         const queries = [
-//             FeePayment.aggregate([
-//                 { $match: feeFilter },
-//                 {
-//                     $group: {
-//                         _id: null,
-//                         totalIncome: { $sum: "$amount" },
-//                         totalPayments: { $sum: 1 },
-//                         totalDiscount: { $sum: "$discountAmount" }
-//                     }
-//                 }
-//             ]),
-
-//             // Get expenses
-//             Expense.aggregate([
-//                 { $match: expenseFilter },
-//                 {
-//                     $group: {
-//                         _id: null,
-//                         totalExpenses: { $sum: "$amount" },
-//                         totalExpenseCount: { $sum: 1 }
-//                     }
-//                 }
-//             ]),
-
-//             // Get category-wise expenses
-//             Expense.aggregate([
-//                 { $match: expenseFilter },
-//                 {
-//                     $group: {
-//                         _id: "$category",
-//                         total: { $sum: "$amount" },
-//                         count: { $sum: 1 }
-//                     }
-//                 },
-//                 { $sort: { total: -1 } }
-//             ])
-//         ];
-
-//         if (period !== 'all') {
-//             queries.push(
-//                 FeePayment.aggregate([
-//                     { $match: feeFilter },
-//                     {
-//                         $group: {
-//                             _id: { $dateToString: { format: "%Y-%m", date: "$updatedAt" } },
-//                             total: { $sum: "$amount" },
-//                             count: { $sum: 1 }
-//                         }
-//                     },
-//                     { $sort: { _id: 1 } }
-//                 ]),
-//                 Expense.aggregate([
-//                     { $match: expenseFilter },
-//                     {
-//                         $group: {
-//                             _id: { $dateToString: { format: "%Y-%m", date: "$date" } },
-//                             total: { $sum: "$amount" },
-//                             count: { $sum: 1 }
-//                         }
-//                     },
-//                     { $sort: { _id: 1 } }
-//                 ])
-//             );
-//         }
-
-//         const results = await Promise.all(queries);
-
-//         const feeIncomeData = results[0] || [];
-//         const expenseData = results[1] || [];
-//         const categoryExpenses = results[2] || [];
-//         const monthlyFeeIncome = results[3] || [];
-//         const monthlyExpenses = results[4] || [];
-
-//         const incomeData = feeIncomeData[0] || {
-//             totalIncome: 0,
-//             totalPayments: 0,
-//             totalDiscount: 0
-//         };
-
-//         const expenses = expenseData[0] || {
-//             totalExpenses: 0,
-//             totalExpenseCount: 0
-//         };
-
-//         const totalIncome = incomeData.totalIncome || 0;
-//         const totalExpenses = expenses.totalExpenses || 0;
-//         const netProfit = totalIncome - totalExpenses;
-//         const profitMargin = totalIncome > 0 ? ((netProfit / totalIncome) * 100).toFixed(2) : 0;
-
-//         // Category breakdown
-//         const categoryBreakdown = {};
-//         categoryExpenses.forEach(item => {
-//             categoryBreakdown[item._id || 'uncategorized'] = {
-//                 total: item.total,
-//                 count: item.count,
-//                 percentage: totalExpenses > 0 ? ((item.total / totalExpenses) * 100).toFixed(2) : 0
-//             };
-//         });
-
-//         // Combine monthly data - only if not all-time
-//         let monthlyProfit = {};
-//         if (period !== 'all') {
-//             const allMonths = new Set([
-//                 ...monthlyFeeIncome.map(m => m._id),
-//                 ...monthlyExpenses.map(m => m._id)
-//             ]);
-
-//             allMonths.forEach(month => {
-//                 const feeMonth = monthlyFeeIncome.find(m => m._id === month);
-//                 const expMonth = monthlyExpenses.find(m => m._id === month);
-//                 const income = feeMonth?.total || 0;
-//                 const expense = expMonth?.total || 0;
-//                 monthlyProfit[month] = {
-//                     income,
-//                     expense,
-//                     profit: income - expense,
-//                     incomeCount: feeMonth?.count || 0,
-//                     expenseCount: expMonth?.count || 0,
-//                     margin: income > 0 ? ((income - expense) / income * 100).toFixed(2) : 0
-//                 };
-//             });
-//         }
-
-//         // Get bank account details if provided
-//         let bankAccountDetails = null;
-//         if (bankAccountId) {
-//             const bankAccount = await BankAccount.findOne({
-//                 _id: bankAccountId,
-//                 school: schoolId,
-//                 isActive: true
-//             });
-
-//             if (bankAccount) {
-//                 // Calculate running balance for this bank account (all time)
-//                 const [totalFeePayments, totalExpensesForBank] = await Promise.all([
-//                     FeePayment.aggregate([
-//                         {
-//                             $match: {
-//                                 school: schoolId,
-//                                 bankAccountId: new mongoose.Types.ObjectId(bankAccountId),
-//                                 status: { $in: ['approved', 'paid'] }
-//                             }
-//                         },
-//                         { $group: { _id: null, total: { $sum: "$amount" } } }
-//                     ]),
-//                     Expense.aggregate([
-//                         {
-//                             $match: {
-//                                 school: schoolId,
-//                                 bankAccountId: new mongoose.Types.ObjectId(bankAccountId),
-//                                 status: { $in: ['approved', 'paid'] }
-//                             }
-//                         },
-//                         { $group: { _id: null, total: { $sum: "$amount" } } }
-//                     ])
-//                 ]);
-
-//                 const totalFees = totalFeePayments[0]?.total || 0;
-//                 const totalExps = totalExpensesForBank[0]?.total || 0;
-
-//                 bankAccountDetails = {
-//                     _id: bankAccount._id,
-//                     bankName: bankAccount.bankName,
-//                     accountNumber: bankAccount.accountNumber,
-//                     openingBalance: bankAccount.amount || 0,
-//                     totalFeeReceived: totalFees,
-//                     totalExpenses: totalExps,
-//                     currentBalance: (bankAccount.amount || 0) + totalFees - totalExps
-//                 };
-//             }
-//         }
-
-//         // Prepare response
-//         const response = {
-//             success: true,
-//             period,
-//             dateRange: period === 'all' ? null : { start, end },
-//             isAllTime: period === 'all',
-//             bankAccount: bankAccountDetails,
-//             summary: {
-//                 totalIncome,
-//                 totalExpenses,
-//                 netProfit,
-//                 profitMargin: parseFloat(profitMargin),
-//                 totalPaymentsMade: incomeData.totalPayments || 0,
-//                 totalExpenseCount: expenses.totalExpenseCount || 0,
-//                 totalDiscount: incomeData.totalDiscount || 0
-//             },
-//             expenseBreakdown: {
-//                 byCategory: categoryBreakdown,
-//                 topCategories: categoryExpenses.slice(0, 5),
-//                 totalExpenses
-//             },
-//             incomeBreakdown: {
-//                 totalPayments: incomeData.totalPayments || 0,
-//                 totalDiscount: incomeData.totalDiscount || 0
-//             }
-//         };
-
-//         if (period !== 'all') {
-//             response.monthlyProfit = monthlyProfit;
-//         }
-
-//         res.status(200).json(response);
-
-//     } catch (error) {
-//         console.error("Error calculating net profit:", error);
-//         res.status(500).json({
-//             success: false,
-//             message: error.message
-//         });
-//     }
-// };
-// const getDetailedProfitReport = async (req, res) => {
-//     try {
-//         const schoolId = req.user.school;
-//         const {
-//             period = 'this_month',
-//             year = new Date().getFullYear(),
-//             month,
-//             category,
-//             bankAccountId
-//         } = req.query;
-
-//         // Get date range
-//         let startDate, endDate;
-
-//         if (period === 'today') {
-//             startDate = new Date();
-//             startDate.setHours(0, 0, 0, 0);
-//             endDate = new Date();
-//             endDate.setHours(23, 59, 59, 999);
-//         } else if (period === 'this_month') {
-//             startDate = new Date(year, new Date().getMonth(), 1);
-//             startDate.setHours(0, 0, 0, 0);
-//             endDate = new Date(year, new Date().getMonth() + 1, 0);
-//             endDate.setHours(23, 59, 59, 999);
-//         } else if (period === 'last_month') {
-//             startDate = new Date(year, new Date().getMonth() - 1, 1);
-//             startDate.setHours(0, 0, 0, 0);
-//             endDate = new Date(year, new Date().getMonth(), 0);
-//             endDate.setHours(23, 59, 59, 999);
-//         } else if (period === 'this_year') {
-//             startDate = new Date(year, 0, 1);
-//             startDate.setHours(0, 0, 0, 0);
-//             endDate = new Date(year, 11, 31);
-//             endDate.setHours(23, 59, 59, 999);
-//         } else if (period === 'last_year') {
-//             startDate = new Date(year - 1, 0, 1);
-//             startDate.setHours(0, 0, 0, 0);
-//             endDate = new Date(year - 1, 11, 31);
-//             endDate.setHours(23, 59, 59, 999);
-//         } else if (month) {
-//             startDate = new Date(year, month - 1, 1);
-//             startDate.setHours(0, 0, 0, 0);
-//             endDate = new Date(year, month, 0);
-//             endDate.setHours(23, 59, 59, 999);
-//         } else {
-//             startDate = new Date(year, new Date().getMonth(), 1);
-//             startDate.setHours(0, 0, 0, 0);
-//             endDate = new Date(year, new Date().getMonth() + 1, 0);
-//             endDate.setHours(23, 59, 59, 999);
-//         }
-
-//         // Build fee filter
-//         const feeFilter = {
-//             school: schoolId,
-//             status: { $in: ['approved', 'paid'] },
-//             updatedAt: { $gte: startDate, $lte: endDate }
-//         };
-
-//         if (bankAccountId) {
-//             feeFilter.bankAccountId = new mongoose.Types.ObjectId(bankAccountId);
-//         }
-
-//         // Build expense filter
-//         const expenseFilter = {
-//             school: schoolId,
-//             status: { $in: ['approved', 'paid'] },
-//             date: { $gte: startDate, $lte: endDate }
-//         };
-
-//         if (bankAccountId) {
-//             expenseFilter.bankAccountId = new mongoose.Types.ObjectId(bankAccountId);
-//         }
-
-//         if (category) {
-//             expenseFilter.category = category;
-//         }
-
-//         // Get daily fee income
-//         const dailyFees = await FeePayment.aggregate([
-//             { $match: feeFilter },
-//             {
-//                 $group: {
-//                     _id: { $dateToString: { format: "%Y-%m-%d", date: "$updatedAt" } },
-//                     total: { $sum: "$amount" },
-//                     count: { $sum: 1 },
-//                     totalDiscount: { $sum: "$discountAmount" }
-//                 }
-//             },
-//             { $sort: { _id: 1 } }
-//         ]);
-
-//         // Get daily expenses
-//         const dailyExpenses = await Expense.aggregate([
-//             { $match: expenseFilter },
-//             {
-//                 $group: {
-//                     _id: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
-//                     total: { $sum: "$amount" },
-//                     count: { $sum: 1 }
-//                 }
-//             },
-//             { $sort: { _id: 1 } }
-//         ]);
-
-//         // Create maps
-//         const feeMap = {};
-//         dailyFees.forEach(d => {
-//             feeMap[d._id] = {
-//                 total: d.total,
-//                 count: d.count,
-//                 totalDiscount: d.totalDiscount || 0
-//             };
-//         });
-
-//         const expenseMap = {};
-//         dailyExpenses.forEach(d => {
-//             expenseMap[d._id] = {
-//                 total: d.total,
-//                 count: d.count
-//             };
-//         });
-
-//         // Get all unique dates
-//         const allDates = new Set([
-//             ...Object.keys(feeMap),
-//             ...Object.keys(expenseMap)
-//         ]);
-
-//         const sortedDates = Array.from(allDates).sort();
-
-//         // Build daily profit
-//         const dailyProfit = {};
-//         let totalIncome = 0;
-//         let totalExpenses = 0;
-//         let totalDiscount = 0;
-
-//         sortedDates.forEach(date => {
-//             const income = feeMap[date]?.total || 0;
-//             const expense = expenseMap[date]?.total || 0;
-//             const discount = feeMap[date]?.totalDiscount || 0;
-
-//             totalIncome += income;
-//             totalExpenses += expense;
-//             totalDiscount += discount;
-
-//             dailyProfit[date] = {
-//                 income,
-//                 expense,
-//                 profit: income - expense,
-//                 incomeCount: feeMap[date]?.count || 0,
-//                 expenseCount: expenseMap[date]?.count || 0,
-//                 discount
-//             };
-//         });
-
-//         const netProfit = totalIncome - totalExpenses;
-//         const profitMargin = totalIncome > 0 ? ((netProfit / totalIncome) * 100).toFixed(2) : 0;
-
-//         // Category breakdown
-//         const categoryExpenses = await Expense.aggregate([
-//             { $match: expenseFilter },
-//             {
-//                 $group: {
-//                     _id: "$category",
-//                     total: { $sum: "$amount" },
-//                     count: { $sum: 1 }
-//                 }
-//             },
-//             { $sort: { total: -1 } }
-//         ]);
-
-//         const categoryBreakdown = {};
-//         categoryExpenses.forEach(item => {
-//             categoryBreakdown[item._id || 'uncategorized'] = {
-//                 total: item.total,
-//                 count: item.count,
-//                 percentage: totalExpenses > 0 ? ((item.total / totalExpenses) * 100).toFixed(2) : 0
-//             };
-//         });
-
-//         // Get recent transactions
-//         const recentFeePayments = await FeePayment.find(feeFilter)
-//             .populate('studentId', 'name registrationNumber')
-//             .populate('feeId', 'title month')
-//             .sort({ updatedAt: -1 })
-//             .limit(10);
-
-//         const recentExpenses = await Expense.find(expenseFilter)
-//             .sort({ date: -1, createdAt: -1 })
-//             .limit(10);
-
-//         res.status(200).json({
-//             success: true,
-//             period,
-//             year: parseInt(year),
-//             month: month ? parseInt(month) : null,
-//             dateRange: { startDate, endDate },
-//             summary: {
-//                 totalIncome,
-//                 totalExpenses,
-//                 netProfit,
-//                 profitMargin: parseFloat(profitMargin),
-//                 totalDiscount,
-//                 totalIncomeCount: dailyFees.reduce((sum, d) => sum + d.count, 0),
-//                 totalExpenseCount: dailyExpenses.reduce((sum, d) => sum + d.count, 0),
-//                 totalDays: sortedDates.length
-//             },
-//             dailyProfit,
-//             expenseBreakdown: {
-//                 byCategory: categoryBreakdown,
-//                 topCategories: categoryExpenses.slice(0, 5),
-//                 totalExpenses
-//             },
-//             incomeBreakdown: {
-//                 totalDiscount,
-//                 collectionRate: 100 // Since we're using approved/paid payments only
-//             },
-//             recentTransactions: {
-//                 feePayments: recentFeePayments,
-//                 expenses: recentExpenses
-//             }
-//         });
-
-//     } catch (error) {
-//         console.error("Error getting detailed profit report:", error);
-//         res.status(500).json({
-//             success: false,
-//             message: error.message
-//         });
-//     }
-// };
-
-// const getProfitComparison = async (req, res) => {
-//     try {
-//         const schoolId = req.user.school;
-//         const {
-//             year = new Date().getFullYear(),
-//             compareWith = 'previous_year',
-//             bankAccountId
-//         } = req.query;
-
-//         const years = [];
-
-//         if (compareWith === 'previous_year') {
-//             years.push(year - 1, parseInt(year));
-//         } else if (compareWith === 'same_month_last_year') {
-//             const currentMonth = new Date().getMonth() + 1;
-//             years.push({
-//                 year: year - 1,
-//                 month: currentMonth
-//             });
-//             years.push({
-//                 year: parseInt(year),
-//                 month: currentMonth
-//             });
-//         }
-
-//         const results = await Promise.all(years.map(async (yr) => {
-//             let startDate, endDate;
-
-//             if (typeof yr === 'number') {
-//                 startDate = new Date(`${yr}-01-01`);
-//                 startDate.setHours(0, 0, 0, 0);
-//                 endDate = new Date(`${yr}-12-31`);
-//                 endDate.setHours(23, 59, 59, 999);
-//             } else {
-//                 startDate = new Date(`${yr.year}-${String(yr.month).padStart(2, '0')}-01`);
-//                 startDate.setHours(0, 0, 0, 0);
-//                 endDate = new Date(startDate);
-//                 endDate.setMonth(endDate.getMonth() + 1);
-//                 endDate.setDate(endDate.getDate() - 1);
-//                 endDate.setHours(23, 59, 59, 999);
-//             }
-
-//             const feeMatch = {
-//                 school: schoolId,
-//                 status: { $in: ['approved', 'paid'] },
-//                 updatedAt: { $gte: startDate, $lte: endDate }
-//             };
-
-//             const expenseMatch = {
-//                 school: schoolId,
-//                 status: { $in: ['approved', 'paid'] },
-//                 date: { $gte: startDate, $lte: endDate }
-//             };
-
-//             if (bankAccountId) {
-//                 feeMatch.bankAccountId = new mongoose.Types.ObjectId(bankAccountId);
-//                 expenseMatch.bankAccountId = new mongoose.Types.ObjectId(bankAccountId);
-//             }
-
-//             const [incomeData, expenseData] = await Promise.all([
-//                 FeePayment.aggregate([
-//                     { $match: feeMatch },
-//                     { $group: { _id: null, total: { $sum: "$amount" } } }
-//                 ]),
-//                 Expense.aggregate([
-//                     { $match: expenseMatch },
-//                     { $group: { _id: null, total: { $sum: "$amount" } } }
-//                 ])
-//             ]);
-
-//             const income = incomeData[0]?.total || 0;
-//             const expense = expenseData[0]?.total || 0;
-//             const profit = income - expense;
-
-//             return {
-//                 label: typeof yr === 'number' ? `Year ${yr}` : `${yr.month}/${yr.year}`,
-//                 year: typeof yr === 'number' ? yr : yr.year,
-//                 month: typeof yr === 'number' ? null : yr.month,
-//                 income,
-//                 expense,
-//                 profit,
-//                 margin: income > 0 ? ((profit / income) * 100).toFixed(2) : 0
-//             };
-//         }));
-
-//         const [current, previous] = results;
-//         const growth = current && previous ? {
-//             income: current.income - previous.income,
-//             expense: current.expense - previous.expense,
-//             profit: current.profit - previous.profit,
-//             incomeGrowthPercentage: previous.income > 0 ? ((current.income - previous.income) / previous.income * 100).toFixed(2) : 0,
-//             profitGrowthPercentage: previous.profit > 0 ? ((current.profit - previous.profit) / previous.profit * 100).toFixed(2) : 0
-//         } : null;
-
-//         res.status(200).json({
-//             success: true,
-//             comparison: results,
-//             growth,
-//             compareWith
-//         });
-
-//     } catch (error) {
-//         console.error("Error getting profit comparison:", error);
-//         res.status(500).json({
-//             success: false,
-//             message: error.message
-//         });
-//     }
-// };
-
-// module.exports = {
-//     getBankAccountRunningBalance,
-//     getNetProfit,
-//     getDetailedProfitReport,
-//     getProfitComparison
-// };
-
-
-
-
 const mongoose = require("mongoose");
 const FeePayment = require("../models/FeePayment");
 const Expense = require("../models/Expense");
@@ -897,71 +5,6 @@ const BankAccount = require("../models/BankAccount");
 const CashAccount = require("../models/CashAccount");
 const FeeDetail = require("../models/FeeDetail");
 const SalarySlip = require("../models/SalarySlip");
-
-
-// const getDateRange = (period, customStartDate, customEndDate) => {
-//     const now = new Date();
-//     const start = new Date();
-//     const end = new Date();
-
-//     if (customStartDate && customEndDate) {
-//         return {
-//             start: new Date(customStartDate),
-//             end: new Date(customEndDate)
-//         };
-//     }
-
-//     switch (period) {
-//         case 'today':
-//             start.setHours(0, 0, 0, 0);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'yesterday':
-//             start.setDate(start.getDate() - 1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setDate(end.getDate() - 1);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'this_week':
-//             const day = now.getDay();
-//             start.setDate(now.getDate() - day);
-//             start.setHours(0, 0, 0, 0);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'this_month':
-//             start.setDate(1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'last_month':
-//             start.setMonth(start.getMonth() - 1);
-//             start.setDate(1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setMonth(end.getMonth() - 1);
-//             end.setDate(new Date(end.getFullYear(), end.getMonth() + 1, 0).getDate());
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'this_year':
-//             start.setMonth(0, 1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         case 'last_year':
-//             start.setFullYear(start.getFullYear() - 1);
-//             start.setMonth(0, 1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setFullYear(end.getFullYear() - 1);
-//             end.setMonth(11, 31);
-//             end.setHours(23, 59, 59, 999);
-//             break;
-//         default:
-//             start.setDate(1);
-//             start.setHours(0, 0, 0, 0);
-//             end.setHours(23, 59, 59, 999);
-//     }
-
-//     return { start, end };
-// };
 
 const getDateRange = (period, startDate, endDate, year, month) => {
     const now = new Date();
@@ -1062,17 +105,29 @@ const getDateRange = (period, startDate, endDate, year, month) => {
 
 const parseDateString = (dateStr) => {
     if (!dateStr) return null;
+
+    // Format: YYYY (e.g., 2027)
+    if (/^\d{4}$/.test(dateStr)) {
+        return new Date(parseInt(dateStr), 0, 1);
+    }
+
+    // Format: YYYY-MM (e.g., 2027-09)
     if (/^\d{4}-\d{2}$/.test(dateStr)) {
         const [year, month] = dateStr.split('-').map(Number);
         return new Date(year, month - 1, 1);
     }
+
+    // Format: YYYY-MM-DD (e.g., 2027-09-15)
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
         return new Date(dateStr);
     }
+
+    // Try direct parsing
     const parsed = new Date(dateStr);
     if (!isNaN(parsed.getTime())) {
         return parsed;
     }
+
     return null;
 };
 
@@ -1100,6 +155,56 @@ const getDetailReporting = async (req, res) => {
             expenseDateFilter.date = { $gte: start, $lte: end };
         }
 
+        let openingBalance = 0;
+        let previousCollections = 0;
+        let previousExpenses = 0;
+
+        const bankAccounts = await BankAccount.find({
+            school: schoolId,
+            isActive: true
+        }).lean();
+
+        const cashAccount = await CashAccount.findOne({
+            school: schoolId,
+            isActive: true
+        }).lean();
+
+        bankAccounts.forEach(acc => {
+            openingBalance += acc.amount || 0;
+        });
+        if (cashAccount) {
+            openingBalance += cashAccount.amount || 0;
+        }
+
+        if (start) {
+            const previousFeeMatch = {
+                school: schoolId,
+                status: { $in: ['approved', 'paid'] },
+                updatedAt: { $lt: start }
+            };
+
+            const previousExpenseMatch = {
+                school: schoolId,
+                status: { $in: ['approved', 'paid'] },
+                date: { $lt: start }
+            };
+
+            const [prevCollections, prevExpenses] = await Promise.all([
+                FeePayment.aggregate([
+                    { $match: previousFeeMatch },
+                    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+                ]),
+                Expense.aggregate([
+                    { $match: previousExpenseMatch },
+                    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+                ])
+            ]);
+
+            previousCollections = prevCollections[0]?.total || 0;
+            previousExpenses = prevExpenses[0]?.total || 0;
+        }
+
+        const midOpeningBalance = openingBalance + previousCollections - previousExpenses;
 
         const feeVouchers = await FeeDetail.find({
             school: schoolId,
@@ -1115,7 +220,6 @@ const getDetailReporting = async (req, res) => {
         const totalVoucherAmount = feeVouchers.reduce((sum, v) => sum + (v.finalAmount || 0), 0);
         const totalFeePaid = feePayments.reduce((sum, p) => sum + (p.amount || 0), 0);
         const totalFeeRemaining = totalVoucherAmount - totalFeePaid;
-
 
         let totalSalariesPaid = 0;
         let totalSalariesPending = 0;
@@ -1149,7 +253,6 @@ const getDetailReporting = async (req, res) => {
             console.error("Error occurred while fetching salary data:", error);
         }
 
-
         const expenseData = await Expense.aggregate([
             {
                 $match: {
@@ -1164,22 +267,6 @@ const getDetailReporting = async (req, res) => {
         const totalExpenses = expenseData[0]?.total || 0;
         const totalExpenseCount = expenseData[0]?.count || 0;
 
-        // ============================================================
-        // 4. BANK & CASH BALANCES
-        // ============================================================
-
-        // Get all bank accounts
-        const bankAccounts = await BankAccount.find({
-            school: schoolId,
-            isActive: true
-        }).lean();
-
-        const cashAccount = await CashAccount.findOne({
-            school: schoolId,
-            isActive: true
-        }).lean();
-
-        // Calculate total bank balance
         let totalBankBalance = 0;
         const bankDetails = [];
 
@@ -1220,7 +307,6 @@ const getDetailReporting = async (req, res) => {
             });
         }
 
-        // Calculate cash balance
         let totalCashBalance = 0;
         let cashDetails = null;
 
@@ -1259,22 +345,22 @@ const getDetailReporting = async (req, res) => {
             };
         }
 
-        // ============================================================
-        // 5. NET PROFIT
-        // ============================================================
-
         const totalRevenue = totalFeePaid;
         const totalCost = totalExpenses + totalSalariesPaid;
         const netProfit = totalRevenue - totalCost;
-
-        // ============================================================
-        // 6. BUILD RESPONSE
-        // ============================================================
 
         const response = {
             success: true,
             period: label,
             dateRange: start && end ? { start, end } : null,
+
+            openingBalanceSummary: {
+                accountOpeningBalance: Math.round(openingBalance * 100) / 100,
+                previousCollections: Math.round(previousCollections * 100) / 100,
+                previousExpenses: Math.round(previousExpenses * 100) / 100,
+                previousNet: Math.round((previousCollections - previousExpenses) * 100) / 100,
+                midOpeningBalance: Math.round(midOpeningBalance * 100) / 100
+            },
 
             totals: {
                 totalVoucherAmount: Math.round(totalVoucherAmount * 100) / 100,
@@ -1296,12 +382,23 @@ const getDetailReporting = async (req, res) => {
                 totalRevenue: Math.round(totalRevenue * 100) / 100,
                 totalCost: Math.round(totalCost * 100) / 100,
                 netProfit: Math.round(netProfit * 100) / 100,
+
+                collectionRate: totalVoucherAmount > 0
+                    ? Math.round((totalFeePaid / totalVoucherAmount) * 100 * 100) / 100
+                    : 0,
+                profitMargin: totalRevenue > 0
+                    ? Math.round((netProfit / totalRevenue) * 100 * 100) / 100
+                    : 0,
+                expenseRatio: totalRevenue > 0
+                    ? Math.round((totalExpenses / totalRevenue) * 100 * 100) / 100
+                    : 0,
+                salaryRatio: totalRevenue > 0
+                    ? Math.round((totalSalariesPaid / totalRevenue) * 100 * 100) / 100
+                    : 0
             }
         };
 
-        // Add breakdown if requested
         if (breakdown === 'true') {
-            // Fee status breakdown
             const feeStatusBreakdown = await FeeDetail.aggregate([
                 {
                     $match: {
@@ -1318,7 +415,6 @@ const getDetailReporting = async (req, res) => {
                 }
             ]);
 
-            // Expense category breakdown
             const expenseCategoryBreakdown = await Expense.aggregate([
                 {
                     $match: {
@@ -1337,7 +433,6 @@ const getDetailReporting = async (req, res) => {
                 { $sort: { total: -1 } }
             ]);
 
-            // Payment method breakdown
             const paymentMethodBreakdown = await FeePayment.aggregate([
                 {
                     $match: {
@@ -1381,9 +476,7 @@ const getDetailReporting = async (req, res) => {
                 cashAccount: cashDetails
             };
 
-            // Add monthly breakdown for year/date range
             if (period === 'this_year' || period === 'last_year' || (start && end)) {
-                // Monthly fee payments
                 const monthlyFees = await FeePayment.aggregate([
                     {
                         $match: {
@@ -1402,7 +495,6 @@ const getDetailReporting = async (req, res) => {
                     { $sort: { _id: 1 } }
                 ]);
 
-                // Monthly expenses
                 const monthlyExpenses = await Expense.aggregate([
                     {
                         $match: {
@@ -1421,11 +513,9 @@ const getDetailReporting = async (req, res) => {
                     { $sort: { _id: 1 } }
                 ]);
 
-                // Monthly salaries
                 let monthlySalaries = [];
                 try {
-                    const Salary = require("../models/Salary");
-                    monthlySalaries = await Salary.aggregate([
+                    monthlySalaries = await SalarySlip.aggregate([
                         {
                             $match: {
                                 school: schoolId,
@@ -1444,7 +534,6 @@ const getDetailReporting = async (req, res) => {
                     ]);
                 } catch (error) { }
 
-                // Combine monthly data
                 const allMonths = new Set([
                     ...monthlyFees.map(m => m._id),
                     ...monthlyExpenses.map(m => m._id),
@@ -1508,9 +597,7 @@ const getAccountRunningBalance = async (req, res) => {
         let openingBalance;
         let accountDetails = { type: accountType };
 
-        // Get account based on type
         if (accountType === 'bank') {
-            console.log(accountId, schoolId)
             account = await BankAccount.findOne({
                 _id: accountId,
                 school: schoolId,
@@ -1553,63 +640,154 @@ const getAccountRunningBalance = async (req, res) => {
             };
         }
 
-        // Set date range
         let start, end;
-        if (startDate && endDate) {
-            const parsedStart = parseDateString(startDate);
-            const parsedEnd = parseDateString(endDate);
+        let filterStartDate = null;
+        let filterEndDate = null;
 
-            if (!parsedStart || !parsedEnd) {
+        if (startDate) {
+            const parsedStart = parseDateString(startDate);
+            if (!parsedStart) {
                 return res.status(400).json({
                     success: false,
-                    message: "Invalid date format. Use YYYY-MM-DD or YYYY-MM"
+                    message: "Invalid start date format. Use YYYY, YYYY-MM, or YYYY-MM-DD"
                 });
             }
-
             start = new Date(parsedStart);
             start.setHours(0, 0, 0, 0);
+            filterStartDate = start;
+        }
 
+        if (endDate) {
+            const parsedEnd = parseDateString(endDate);
+            if (!parsedEnd) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid end date format. Use YYYY, YYYY-MM, or YYYY-MM-DD"
+                });
+            }
             end = new Date(parsedEnd);
-            if (/^\d{4}-\d{2}$/.test(endDate)) {
+            if (/^\d{4}$/.test(endDate)) {
+                end = new Date(parseInt(endDate), 11, 31);
+                end.setHours(23, 59, 59, 999);
+            } else if (/^\d{4}-\d{2}$/.test(endDate)) {
                 const [year, month] = endDate.split('-').map(Number);
                 end = new Date(year, month, 0);
                 end.setHours(23, 59, 59, 999);
             } else {
                 end.setHours(23, 59, 59, 999);
             }
-        } else {
+            filterEndDate = end;
+        }
+
+        if (!startDate && !endDate) {
             const dateRange = getDateRange('this_month');
             start = dateRange.start;
             end = dateRange.end;
+            filterStartDate = start;
+            filterEndDate = end;
         }
 
-        // Build query for transactions
-        const transactionFilter = {
+        if (startDate && !endDate) {
+            if (/^\d{4}$/.test(startDate)) {
+                end = new Date(parseInt(startDate), 11, 31);
+                end.setHours(23, 59, 59, 999);
+            } else if (/^\d{4}-\d{2}$/.test(startDate)) {
+                const [year, month] = startDate.split('-').map(Number);
+                end = new Date(year, month, 0);
+                end.setHours(23, 59, 59, 999);
+            } else {
+                end = new Date(start);
+                end.setHours(23, 59, 59, 999);
+            }
+            filterEndDate = end;
+        }
+
+        const baseFilter = {
             school: schoolId,
             status: { $in: ['approved', 'paid'] }
         };
 
         if (accountType === 'bank') {
-            transactionFilter.bankAccountId = new mongoose.Types.ObjectId(accountId);
-            transactionFilter.paymentMethod = 'bank';
+            baseFilter.bankAccountId = new mongoose.Types.ObjectId(accountId);
+            baseFilter.paymentMethod = 'bank';
         } else {
-            transactionFilter.cashAccountId = new mongoose.Types.ObjectId(accountId);
-            transactionFilter.paymentMethod = 'cash';
+            baseFilter.cashAccountId = new mongoose.Types.ObjectId(accountId);
+            baseFilter.paymentMethod = 'cash';
         }
 
-        // Get all fee payments (Credit transactions)
-        const feePayments = await FeePayment.find(transactionFilter)
-            .populate('feeId', 'title month finalAmount discountAmount')
-            .populate('studentId', 'name registrationNumber')
-            .lean()
-            .sort({ createdAt: 1 });
+        let previousCredits = 0;
+        let previousDebits = 0;
 
-        // Get all expenses (Debit transactions)
-        const expenses = await Expense.find(transactionFilter)
-            .lean()
-            .sort({ date: 1, createdAt: 1 });
+        if (filterStartDate && includeAll === 'false') {
+            const previousFilter = {
+                ...baseFilter,
+                updatedAt: { $lt: filterStartDate }
+            };
 
-        // Combine and sort transactions by date
+            const [prevFeePayments, prevExpenses] = await Promise.all([
+                FeePayment.find(previousFilter)
+                    .lean()
+                    .sort({ createdAt: 1 }),
+                Expense.find({
+                    ...baseFilter,
+                    date: { $lt: filterStartDate }
+                })
+                    .lean()
+                    .sort({ date: 1, createdAt: 1 })
+            ]);
+
+            previousCredits = prevFeePayments.reduce((sum, p) => sum + p.amount, 0);
+            previousDebits = prevExpenses.reduce((sum, e) => sum + e.amount, 0);
+        }
+
+        const midOpeningBalance = openingBalance + previousCredits - previousDebits;
+
+        let feePayments = [];
+        let expenses = [];
+
+        if (includeAll === 'true') {
+            [feePayments, expenses] = await Promise.all([
+                FeePayment.find(baseFilter)
+                    .populate('feeId', 'title month finalAmount discountAmount')
+                    .populate('studentId', 'name registrationNumber')
+                    .lean()
+                    .sort({ createdAt: 1 }),
+                Expense.find(baseFilter)
+                    .lean()
+                    .sort({ date: 1, createdAt: 1 })
+            ]);
+        } else if (filterStartDate && filterEndDate) {
+            // Get transactions within date range
+            [feePayments, expenses] = await Promise.all([
+                FeePayment.find({
+                    ...baseFilter,
+                    updatedAt: { $gte: filterStartDate, $lte: filterEndDate }
+                })
+                    .populate('feeId', 'title month finalAmount discountAmount')
+                    .populate('studentId', 'name registrationNumber')
+                    .lean()
+                    .sort({ createdAt: 1 }),
+                Expense.find({
+                    ...baseFilter,
+                    date: { $gte: filterStartDate, $lte: filterEndDate }
+                })
+                    .lean()
+                    .sort({ date: 1, createdAt: 1 })
+            ]);
+        } else {
+            // No date filter - get all
+            [feePayments, expenses] = await Promise.all([
+                FeePayment.find(baseFilter)
+                    .populate('feeId', 'title month finalAmount discountAmount')
+                    .populate('studentId', 'name registrationNumber')
+                    .lean()
+                    .sort({ createdAt: 1 }),
+                Expense.find(baseFilter)
+                    .lean()
+                    .sort({ date: 1, createdAt: 1 })
+            ]);
+        }
+
         const transactions = [];
 
         // Add fee payments as credit transactions
@@ -1652,8 +830,7 @@ const getAccountRunningBalance = async (req, res) => {
         // Sort by date
         transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-        // Calculate running balance for ALL transactions
-        let runningBalance = openingBalance;
+        let runningBalance = midOpeningBalance;
         const allTransactionHistory = transactions.map(transaction => {
             if (transaction.transactionType === 'credit') {
                 runningBalance += transaction.amount;
@@ -1667,36 +844,35 @@ const getAccountRunningBalance = async (req, res) => {
             };
         });
 
-        // Calculate summary for ALL transactions
         const totalCredits = feePayments.reduce((sum, p) => sum + p.amount, 0);
         const totalDebits = expenses.reduce((sum, e) => sum + e.amount, 0);
-        const currentBalance = openingBalance + totalCredits - totalDebits;
-
-        // Filter transactions by date range if not allTime
-        let filteredTransactions = allTransactionHistory;
-        if (includeAll === 'false' && start && end) {
-            filteredTransactions = allTransactionHistory.filter(t => {
-                const tDate = new Date(t.date);
-                return tDate >= start && tDate <= end;
-            });
-        }
+        const currentBalance = midOpeningBalance + totalCredits - totalDebits;
 
         res.status(200).json({
             success: true,
             account: accountDetails,
-            dateRange: includeAll === 'false' ? { start, end } : null,
+            dateRange: includeAll === 'false' && filterStartDate && filterEndDate ? { start, end } : null,
             isAllTime: includeAll === 'true',
+
+            openingBalanceSummary: {
+                accountOpeningBalance: openingBalance,
+                previousCredits: previousCredits,
+                previousDebits: previousDebits,
+                midOpeningBalance: midOpeningBalance
+            },
+
             summary: {
-                openingBalance,
+                openingBalance: openingBalance,
+                midOpeningBalance: midOpeningBalance,
                 totalCredits: totalCredits,
                 totalDebits: totalDebits,
                 currentBalance: currentBalance,
                 totalTransactions: allTransactionHistory.length,
                 creditCount: feePayments.length,
                 debitCount: expenses.length,
-                filteredTransactionsCount: filteredTransactions.length
+                netChange: totalCredits - totalDebits
             },
-            transactions: filteredTransactions,
+            transactions: allTransactionHistory,
             currentBalance: currentBalance
         });
 
@@ -1718,70 +894,107 @@ const getOverallSchoolRunningBalance = async (req, res) => {
             includeAll = 'false'
         } = req.query;
 
-        let start, end;
-        if (startDate && endDate) {
-            const parseDate = (dateStr) => {
-                if (!dateStr) return null;
-                if (/^\d{4}-\d{2}$/.test(dateStr)) {
-                    const [year, month] = dateStr.split('-').map(Number);
-                    return new Date(year, month - 1, 1);
-                }
-                if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
-                    return new Date(dateStr);
-                }
-                const parsed = new Date(dateStr);
-                if (!isNaN(parsed.getTime())) {
-                    return parsed;
-                }
-                return null;
-            };
+          let start, end;
+        let filterStartDate = null;
+        let filterEndDate = null;
 
-            const parsedStart = parseDate(startDate);
-            const parsedEnd = parseDate(endDate);
+        const parseDateEnhanced = (dateStr) => {
+            if (!dateStr) return null;
 
-            if (!parsedStart || !parsedEnd) {
-                return res.status(400).json({
-                    success: false,
-                    message: "Invalid date format. Use YYYY-MM-DD or YYYY-MM"
-                });
+            if (/^\d{4}$/.test(dateStr)) {
+                return new Date(parseInt(dateStr), 0, 1);
             }
 
+            if (/^\d{4}-\d{2}$/.test(dateStr)) {
+                const [year, month] = dateStr.split('-').map(Number);
+                return new Date(year, month - 1, 1);
+            }
+
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                return new Date(dateStr);
+            }
+
+            const parsed = new Date(dateStr);
+            if (!isNaN(parsed.getTime())) {
+                return parsed;
+            }
+
+            return null;
+        };
+
+        if (startDate) {
+            const parsedStart = parseDateEnhanced(startDate);
+            if (!parsedStart) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid start date format. Use YYYY, YYYY-MM, or YYYY-MM-DD"
+                });
+            }
             start = new Date(parsedStart);
             start.setHours(0, 0, 0, 0);
+            filterStartDate = start;
+        }
 
+        if (endDate) {
+            const parsedEnd = parseDateEnhanced(endDate);
+            if (!parsedEnd) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid end date format. Use YYYY, YYYY-MM, or YYYY-MM-DD"
+                });
+            }
             end = new Date(parsedEnd);
-            if (/^\d{4}-\d{2}$/.test(endDate)) {
+            if (/^\d{4}$/.test(endDate)) {
+                end = new Date(parseInt(endDate), 11, 31);
+                end.setHours(23, 59, 59, 999);
+            } else if (/^\d{4}-\d{2}$/.test(endDate)) {
                 const [year, month] = endDate.split('-').map(Number);
                 end = new Date(year, month, 0);
                 end.setHours(23, 59, 59, 999);
             } else {
                 end.setHours(23, 59, 59, 999);
             }
-        } else {
+            filterEndDate = end;
+        }
+
+        if (!startDate && !endDate) {
             const dateRange = getDateRange('this_month');
             start = dateRange.start;
             end = dateRange.end;
+            filterStartDate = start;
+            filterEndDate = end;
         }
 
-        // Get all bank accounts
+        if (startDate && !endDate) {
+            if (/^\d{4}$/.test(startDate)) {
+                end = new Date(parseInt(startDate), 11, 31);
+                end.setHours(23, 59, 59, 999);
+            } else if (/^\d{4}-\d{2}$/.test(startDate)) {
+                const [year, month] = startDate.split('-').map(Number);
+                end = new Date(year, month, 0);
+                end.setHours(23, 59, 59, 999);
+            } else {
+                end = new Date(start);
+                end.setHours(23, 59, 59, 999);
+            }
+            filterEndDate = end;
+        }
+
         const bankAccounts = await BankAccount.find({
             school: schoolId,
             isActive: true
         }).lean();
 
-        // Get cash account
         const cashAccount = await CashAccount.findOne({
             school: schoolId,
             isActive: true
         }).lean();
 
-        // Collect all account IDs
         const accountIds = {
             bank: bankAccounts.map(acc => acc._id),
             cash: cashAccount ? [cashAccount._id] : []
         };
 
-        // Build transaction filters for each account type
         const bankFilters = accountIds.bank.map(id => ({
             bankAccountId: new mongoose.Types.ObjectId(id),
             paymentMethod: 'bank'
@@ -1794,47 +1007,9 @@ const getOverallSchoolRunningBalance = async (req, res) => {
 
         const allFilters = [...bankFilters, ...cashFilters];
 
-        // Get all fee payments (Credit transactions)
-        const feeMatch = {
-            school: schoolId,
-            status: { $in: ['approved', 'paid'] },
-            $or: allFilters.length > 0 ? allFilters : [{ _id: null }]
-        };
-
-        // Get all expenses (Debit transactions)
-        const expenseMatch = {
-            school: schoolId,
-            status: { $in: ['approved', 'paid'] },
-            $or: allFilters.length > 0 ? allFilters : [{ _id: null }]
-        };
-
-        // Add date filters if not all time
-        if (includeAll === 'false' && start && end) {
-            feeMatch.updatedAt = { $gte: start, $lte: end };
-            expenseMatch.date = { $gte: start, $lte: end };
-        }
-
-        // Get all fee payments
-        const feePayments = await FeePayment.find(feeMatch)
-            .populate('feeId', 'title month finalAmount discountAmount')
-            .populate('studentId', 'name registrationNumber')
-            .populate('bankAccountId', 'bankName accountNumber')
-            .populate('cashAccountId', 'title')
-            .lean()
-            .sort({ updatedAt: 1, createdAt: 1 });
-
-        // Get all expenses
-        const expenses = await Expense.find(expenseMatch)
-            .populate('bankAccountId', 'bankName accountNumber')
-            .populate('cashAccountId', 'title')
-            .lean()
-            .sort({ date: 1, createdAt: 1 });
-
-        // Calculate total opening balance across all accounts
         let totalOpeningBalance = 0;
         const accountDetails = [];
 
-        // Process bank accounts
         for (const account of bankAccounts) {
             const balance = account.amount || 0;
             totalOpeningBalance += balance;
@@ -1848,7 +1023,6 @@ const getOverallSchoolRunningBalance = async (req, res) => {
             });
         }
 
-        // Process cash account
         if (cashAccount) {
             const balance = cashAccount.amount || 0;
             totalOpeningBalance += balance;
@@ -1861,10 +1035,68 @@ const getOverallSchoolRunningBalance = async (req, res) => {
             });
         }
 
-        // Combine and sort transactions by date
+        let previousCredits = 0;
+        let previousDebits = 0;
+
+        if (filterStartDate && includeAll === 'false') {
+            const previousFeeMatch = {
+                school: schoolId,
+                status: { $in: ['approved', 'paid'] },
+                $or: allFilters.length > 0 ? allFilters : [{ _id: null }],
+                updatedAt: { $lt: filterStartDate }
+            };
+
+            const previousExpenseMatch = {
+                school: schoolId,
+                status: { $in: ['approved', 'paid'] },
+                $or: allFilters.length > 0 ? allFilters : [{ _id: null }],
+                date: { $lt: filterStartDate }
+            };
+
+            const [prevFeePayments, prevExpenses] = await Promise.all([
+                FeePayment.find(previousFeeMatch).lean(),
+                Expense.find(previousExpenseMatch).lean()
+            ]);
+
+            previousCredits = prevFeePayments.reduce((sum, p) => sum + p.amount, 0);
+            previousDebits = prevExpenses.reduce((sum, e) => sum + e.amount, 0);
+        }
+
+        const midOpeningBalance = totalOpeningBalance + previousCredits - previousDebits;
+
+        const feeMatch = {
+            school: schoolId,
+            status: { $in: ['approved', 'paid'] },
+            $or: allFilters.length > 0 ? allFilters : [{ _id: null }]
+        };
+
+        const expenseMatch = {
+            school: schoolId,
+            status: { $in: ['approved', 'paid'] },
+            $or: allFilters.length > 0 ? allFilters : [{ _id: null }]
+        };
+
+        if (includeAll === 'false' && filterStartDate && filterEndDate) {
+            feeMatch.updatedAt = { $gte: filterStartDate, $lte: filterEndDate };
+            expenseMatch.date = { $gte: filterStartDate, $lte: filterEndDate };
+        }
+
+        const feePayments = await FeePayment.find(feeMatch)
+            .populate('feeId', 'title month finalAmount discountAmount')
+            .populate('studentId', 'name registrationNumber')
+            .populate('bankAccountId', 'bankName accountNumber')
+            .populate('cashAccountId', 'title')
+            .lean()
+            .sort({ updatedAt: 1, createdAt: 1 });
+
+        const expenses = await Expense.find(expenseMatch)
+            .populate('bankAccountId', 'bankName accountNumber')
+            .populate('cashAccountId', 'title')
+            .lean()
+            .sort({ date: 1, createdAt: 1 });
+
         const transactions = [];
 
-        // Add fee payments as credit transactions
         feePayments.forEach(payment => {
             const paymentDate = payment.updatedAt || payment.createdAt;
             const accountInfo = payment.bankAccountId
@@ -1889,7 +1121,6 @@ const getOverallSchoolRunningBalance = async (req, res) => {
             });
         });
 
-        // Add expenses as debit transactions
         expenses.forEach(expense => {
             const expenseDate = expense.date || expense.createdAt;
             const accountInfo = expense.bankAccountId
@@ -1913,11 +1144,9 @@ const getOverallSchoolRunningBalance = async (req, res) => {
             });
         });
 
-        // Sort by date
         transactions.sort((a, b) => new Date(a.date) - new Date(b.date));
 
-        // Calculate running balance
-        let runningBalance = totalOpeningBalance;
+        let runningBalance = midOpeningBalance;
         const transactionHistory = transactions.map(transaction => {
             if (transaction.transactionType === 'credit') {
                 runningBalance += transaction.amount;
@@ -1931,12 +1160,10 @@ const getOverallSchoolRunningBalance = async (req, res) => {
             };
         });
 
-        // Calculate summary
         const totalCredits = feePayments.reduce((sum, p) => sum + p.amount, 0);
         const totalDebits = expenses.reduce((sum, e) => sum + e.amount, 0);
-        const currentBalance = totalOpeningBalance + totalCredits - totalDebits;
+        const currentBalance = midOpeningBalance + totalCredits - totalDebits;
 
-        // Group by account type for summary
         const accountTypeSummary = {
             bank: {
                 accounts: bankAccounts.length,
@@ -1954,7 +1181,6 @@ const getOverallSchoolRunningBalance = async (req, res) => {
             }
         };
 
-        // Calculate per account type totals
         const bankFeePayments = feePayments.filter(p => p.paymentMethod === 'bank');
         const cashFeePayments = feePayments.filter(p => p.paymentMethod === 'cash');
         const bankExpenses = expenses.filter(e => e.paymentMethod === 'bank');
@@ -1970,27 +1196,37 @@ const getOverallSchoolRunningBalance = async (req, res) => {
         accountTypeSummary.cash.currentBalance = accountTypeSummary.cash.openingBalance +
             accountTypeSummary.cash.totalReceived - accountTypeSummary.cash.totalPaid;
 
-        // Prepare response
-        res.status(200).json({
+       res.status(200).json({
             success: true,
-            dateRange: includeAll === 'false' ? { start, end } : null,
+            dateRange: includeAll === 'false' && filterStartDate && filterEndDate ? { start, end } : null,
             isAllTime: includeAll === 'true',
+
             accounts: accountDetails,
+
+            openingBalanceSummary: {
+                totalOpeningBalance: totalOpeningBalance,
+                previousCredits: previousCredits,
+                previousDebits: previousDebits,
+                midOpeningBalance: midOpeningBalance
+            },
+
             summary: {
                 totalAccounts: accountDetails.length,
                 totalBankAccounts: bankAccounts.length,
                 hasCashAccount: !!cashAccount,
-                totalOpeningBalance,
-                totalCredits,
-                totalDebits,
-                currentBalance,
+                totalOpeningBalance: totalOpeningBalance,
+                midOpeningBalance: midOpeningBalance,
+                totalCredits: totalCredits,
+                totalDebits: totalDebits,
+                currentBalance: currentBalance,
                 totalTransactions: transactionHistory.length,
                 creditCount: feePayments.length,
-                debitCount: expenses.length
+                debitCount: expenses.length,
+                netChange: totalCredits - totalDebits
             },
             accountTypeSummary,
             transactions: transactionHistory,
-            currentBalance
+            currentBalance: currentBalance
         });
 
     } catch (error) {
@@ -2014,19 +1250,52 @@ const getNetProfit = async (req, res) => {
             accountId,
         } = req.query;
 
+        // ============================================================
+        // 1. ENHANCED DATE PARSING
+        // ============================================================
         let start, end;
+        let filterStartDate = null;
+        let filterEndDate = null;
+
+        const parseDateEnhanced = (dateStr) => {
+            if (!dateStr) return null;
+            
+            // Format: YYYY (e.g., 2027)
+            if (/^\d{4}$/.test(dateStr)) {
+                return new Date(parseInt(dateStr), 0, 1);
+            }
+            
+            // Format: YYYY-MM (e.g., 2027-09)
+            if (/^\d{4}-\d{2}$/.test(dateStr)) {
+                const [year, month] = dateStr.split('-').map(Number);
+                return new Date(year, month - 1, 1);
+            }
+            
+            // Format: YYYY-MM-DD (e.g., 2027-09-15)
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+                return new Date(dateStr);
+            }
+            
+            // Try direct parsing
+            const parsed = new Date(dateStr);
+            if (!isNaN(parsed.getTime())) {
+                return parsed;
+            }
+            
+            return null;
+        };
 
         if (period === 'all') {
             start = null;
             end = null;
         } else if (startDate && endDate) {
-            const parsedStart = parseDateString(startDate);
-            const parsedEnd = parseDateString(endDate);
+            const parsedStart = parseDateEnhanced(startDate);
+            const parsedEnd = parseDateEnhanced(endDate);
 
             if (!parsedStart || !parsedEnd) {
                 return res.status(400).json({
                     success: false,
-                    message: "Invalid date format. Use YYYY-MM-DD or YYYY-MM"
+                    message: "Invalid date format. Use YYYY, YYYY-MM, or YYYY-MM-DD"
                 });
             }
 
@@ -2034,11 +1303,43 @@ const getNetProfit = async (req, res) => {
             start.setHours(0, 0, 0, 0);
 
             end = new Date(parsedEnd);
-            if (/^\d{4}-\d{2}$/.test(endDate)) {
+            if (/^\d{4}$/.test(endDate)) {
+                // Year only - set to December 31
+                end = new Date(parseInt(endDate), 11, 31);
+                end.setHours(23, 59, 59, 999);
+            } else if (/^\d{4}-\d{2}$/.test(endDate)) {
+                // Month only - set to last day of month
                 const [year, month] = endDate.split('-').map(Number);
                 end = new Date(year, month, 0);
                 end.setHours(23, 59, 59, 999);
             } else {
+                end.setHours(23, 59, 59, 999);
+            }
+        } else if (startDate && !endDate) {
+            // Only start date provided
+            const parsedStart = parseDateEnhanced(startDate);
+            if (!parsedStart) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Invalid start date format. Use YYYY, YYYY-MM, or YYYY-MM-DD"
+                });
+            }
+            start = new Date(parsedStart);
+            start.setHours(0, 0, 0, 0);
+
+            // Auto-set end date to end of period
+            if (/^\d{4}$/.test(startDate)) {
+                // Year only - end at December 31
+                end = new Date(parseInt(startDate), 11, 31);
+                end.setHours(23, 59, 59, 999);
+            } else if (/^\d{4}-\d{2}$/.test(startDate)) {
+                // Month only - end at last day of month
+                const [year, month] = startDate.split('-').map(Number);
+                end = new Date(year, month, 0);
+                end.setHours(23, 59, 59, 999);
+            } else {
+                // Full date - end at same day
+                end = new Date(start);
                 end.setHours(23, 59, 59, 999);
             }
         } else {
@@ -2047,7 +1348,12 @@ const getNetProfit = async (req, res) => {
             end = dateRange.end;
         }
 
-        // Build fee payment filter
+        filterStartDate = start;
+        filterEndDate = end;
+
+        // ============================================================
+        // 2. BUILD FEE PAYMENT FILTER
+        // ============================================================
         const feeFilter = {
             school: schoolId,
             status: { $in: ['approved', 'paid'] }
@@ -2070,7 +1376,6 @@ const getNetProfit = async (req, res) => {
                 if (accountId) {
                     feeFilter.cashAccountId = new mongoose.Types.ObjectId(accountId);
                 } else {
-                    // Get the school's cash account
                     const cashAccount = await CashAccount.findOne({
                         school: schoolId,
                         isActive: true
@@ -2085,7 +1390,9 @@ const getNetProfit = async (req, res) => {
             }
         }
 
-        // Build expense filter
+        // ============================================================
+        // 3. BUILD EXPENSE FILTER
+        // ============================================================
         const expenseFilter = {
             school: schoolId,
             status: { $in: ['approved', 'paid'] }
@@ -2126,7 +1433,78 @@ const getNetProfit = async (req, res) => {
             expenseFilter.category = category;
         }
 
-        // Build queries
+        // ============================================================
+        // 4. GET PREVIOUS PERIOD TRANSACTIONS (For opening balance)
+        // ============================================================
+        let previousIncome = 0;
+        let previousExpenses = 0;
+
+        if (filterStartDate && period !== 'all') {
+            const previousFeeFilter = {
+                school: schoolId,
+                status: { $in: ['approved', 'paid'] },
+                updatedAt: { $lt: filterStartDate }
+            };
+
+            const previousExpenseFilter = {
+                school: schoolId,
+                status: { $in: ['approved', 'paid'] },
+                date: { $lt: filterStartDate }
+            };
+
+            // Add account filtering for previous period
+            if (accountType) {
+                if (accountType === 'bank') {
+                    if (accountId) {
+                        previousFeeFilter.bankAccountId = new mongoose.Types.ObjectId(accountId);
+                        previousExpenseFilter.bankAccountId = new mongoose.Types.ObjectId(accountId);
+                    } else {
+                        previousFeeFilter.bankAccountId = { $ne: null };
+                        previousExpenseFilter.bankAccountId = { $ne: null };
+                    }
+                    previousFeeFilter.paymentMethod = 'bank';
+                    previousExpenseFilter.paymentMethod = 'bank';
+                } else if (accountType === 'cash') {
+                    if (accountId) {
+                        previousFeeFilter.cashAccountId = new mongoose.Types.ObjectId(accountId);
+                        previousExpenseFilter.cashAccountId = new mongoose.Types.ObjectId(accountId);
+                    } else {
+                        const cashAccount = await CashAccount.findOne({
+                            school: schoolId,
+                            isActive: true
+                        });
+                        if (cashAccount) {
+                            previousFeeFilter.cashAccountId = cashAccount._id;
+                            previousExpenseFilter.cashAccountId = cashAccount._id;
+                        }
+                    }
+                    previousFeeFilter.paymentMethod = 'cash';
+                    previousExpenseFilter.paymentMethod = 'cash';
+                }
+            }
+
+            if (category) {
+                previousExpenseFilter.category = category;
+            }
+
+            const [prevFeeData, prevExpenseData] = await Promise.all([
+                FeePayment.aggregate([
+                    { $match: previousFeeFilter },
+                    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+                ]),
+                Expense.aggregate([
+                    { $match: previousExpenseFilter },
+                    { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+                ])
+            ]);
+
+            previousIncome = prevFeeData[0]?.total || 0;
+            previousExpenses = prevExpenseData[0]?.total || 0;
+        }
+
+        // ============================================================
+        // 5. BUILD QUERIES FOR CURRENT PERIOD
+        // ============================================================
         const queries = [
             // Fee income
             FeePayment.aggregate([
@@ -2229,7 +1607,9 @@ const getNetProfit = async (req, res) => {
         const monthlyFeeIncome = results[5] || [];
         const monthlyExpenses = results[6] || [];
 
-        // Process data
+        // ============================================================
+        // 6. PROCESS DATA
+        // ============================================================
         const incomeData = feeIncomeData[0] || {
             totalIncome: 0,
             totalPayments: 0,
@@ -2241,12 +1621,18 @@ const getNetProfit = async (req, res) => {
             totalExpenseCount: 0
         };
 
-        const totalIncome = incomeData.totalIncome || 0;
-        const totalExpenses = expenses.totalExpenses || 0;
+        const currentIncome = incomeData.totalIncome || 0;
+        const currentExpenses = expenses.totalExpenses || 0;
+
+        // Total income = previous + current
+        const totalIncome = previousIncome + currentIncome;
+        const totalExpenses = previousExpenses + currentExpenses;
         const netProfit = totalIncome - totalExpenses;
         const profitMargin = totalIncome > 0 ? ((netProfit / totalIncome) * 100).toFixed(2) : 0;
 
-        // Category breakdown
+        // ============================================================
+        // 7. CATEGORY BREAKDOWN
+        // ============================================================
         const categoryBreakdown = {};
         categoryExpenses.forEach(item => {
             categoryBreakdown[item._id || 'uncategorized'] = {
@@ -2256,7 +1642,9 @@ const getNetProfit = async (req, res) => {
             };
         });
 
-        // Payment method breakdown
+        // ============================================================
+        // 8. PAYMENT METHOD BREAKDOWN
+        // ============================================================
         const feePaymentMethods = {};
         paymentMethodFees.forEach(item => {
             feePaymentMethods[item._id || 'unknown'] = {
@@ -2275,7 +1663,9 @@ const getNetProfit = async (req, res) => {
             };
         });
 
-        // Monthly profit
+        // ============================================================
+        // 9. MONTHLY PROFIT
+        // ============================================================
         let monthlyProfit = {};
         if (period !== 'all') {
             const allMonths = new Set([
@@ -2299,7 +1689,9 @@ const getNetProfit = async (req, res) => {
             });
         }
 
-        // Get account details if specific account
+        // ============================================================
+        // 10. ACCOUNT DETAILS
+        // ============================================================
         let accountDetails = null;
         if (accountId && accountType) {
             if (accountType === 'bank') {
@@ -2334,7 +1726,9 @@ const getNetProfit = async (req, res) => {
             }
         }
 
-        // Prepare response
+        // ============================================================
+        // 11. RESPONSE
+        // ============================================================
         const response = {
             success: true,
             period,
@@ -2346,14 +1740,22 @@ const getNetProfit = async (req, res) => {
                 accountId: accountId || null,
                 category: category || null
             },
+            previousPeriodSummary: {
+                previousIncome: Math.round(previousIncome * 100) / 100,
+                previousExpenses: Math.round(previousExpenses * 100) / 100,
+                previousNet: Math.round((previousIncome - previousExpenses) * 100) / 100
+            },
             summary: {
-                totalIncome,
-                totalExpenses,
-                netProfit,
+                totalIncome: Math.round(totalIncome * 100) / 100,
+                totalExpenses: Math.round(totalExpenses * 100) / 100,
+                netProfit: Math.round(netProfit * 100) / 100,
                 profitMargin: parseFloat(profitMargin),
                 totalPaymentsMade: incomeData.totalPayments || 0,
                 totalExpenseCount: expenses.totalExpenseCount || 0,
-                totalDiscount: incomeData.totalDiscount || 0
+                totalDiscount: incomeData.totalDiscount || 0,
+                currentPeriodIncome: Math.round(currentIncome * 100) / 100,
+                currentPeriodExpenses: Math.round(currentExpenses * 100) / 100,
+                currentPeriodNet: Math.round((currentIncome - currentExpenses) * 100) / 100
             },
             paymentMethodBreakdown: {
                 income: feePaymentMethods,
@@ -2362,7 +1764,7 @@ const getNetProfit = async (req, res) => {
             expenseBreakdown: {
                 byCategory: categoryBreakdown,
                 topCategories: categoryExpenses.slice(0, 5),
-                totalExpenses
+                totalExpenses: Math.round(totalExpenses * 100) / 100
             },
             incomeBreakdown: {
                 totalPayments: incomeData.totalPayments || 0,
@@ -2808,7 +2210,6 @@ const getProfitComparison = async (req, res) => {
     }
 };
 
-
 const getAllAccountsSummary = async (req, res) => {
     try {
         const schoolId = req.user.school;
@@ -2962,36 +2363,48 @@ const getFinancialDetails = async (req, res) => {
             transactionType
         } = req.query;
 
+        let filterStartDate = null;
+        let filterEndDate = null;
         let dateFilter = {};
         let dateRange = {};
 
         if (period === 'today') {
             const today = new Date();
-            const startOfDay = new Date(today.setHours(0, 0, 0, 0));
-            const endOfDay = new Date(today.setHours(23, 59, 59, 999));
-            dateFilter = { $gte: startOfDay, $lte: endOfDay };
-            dateRange = { start: startOfDay, end: endOfDay };
+            filterStartDate = new Date(today.setHours(0, 0, 0, 0));
+            filterEndDate = new Date(today.setHours(23, 59, 59, 999));
+            dateFilter = { $gte: filterStartDate, $lte: filterEndDate };
+            dateRange = { start: filterStartDate, end: filterEndDate };
         } else if (period === 'this_month') {
             const now = new Date();
-            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-            endOfMonth.setHours(23, 59, 59, 999);
-            dateFilter = { $gte: startOfMonth, $lte: endOfMonth };
-            dateRange = { start: startOfMonth, end: endOfMonth };
+            filterStartDate = new Date(now.getFullYear(), now.getMonth(), 1);
+            filterEndDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+            filterEndDate.setHours(23, 59, 59, 999);
+            dateFilter = { $gte: filterStartDate, $lte: filterEndDate };
+            dateRange = { start: filterStartDate, end: filterEndDate };
         } else if (period === 'this_year') {
             const now = new Date();
-            const startOfYear = new Date(now.getFullYear(), 0, 1);
-            const endOfYear = new Date(now.getFullYear(), 11, 31);
-            endOfYear.setHours(23, 59, 59, 999);
-            dateFilter = { $gte: startOfYear, $lte: endOfYear };
-            dateRange = { start: startOfYear, end: endOfYear };
+            filterStartDate = new Date(now.getFullYear(), 0, 1);
+            filterEndDate = new Date(now.getFullYear(), 11, 31);
+            filterEndDate.setHours(23, 59, 59, 999);
+            dateFilter = { $gte: filterStartDate, $lte: filterEndDate };
+            dateRange = { start: filterStartDate, end: filterEndDate };
         } else if (startDate && endDate) {
-            const start = new Date(startDate);
-            start.setHours(0, 0, 0, 0);
-            const end = new Date(endDate);
-            end.setHours(23, 59, 59, 999);
-            dateFilter = { $gte: start, $lte: end };
-            dateRange = { start, end };
+            filterStartDate = new Date(startDate);
+            filterStartDate.setHours(0, 0, 0, 0);
+            filterEndDate = new Date(endDate);
+            filterEndDate.setHours(23, 59, 59, 999);
+            dateFilter = { $gte: filterStartDate, $lte: filterEndDate };
+            dateRange = { start: filterStartDate, end: filterEndDate };
+        } else if (startDate) {
+            filterStartDate = new Date(startDate);
+            filterStartDate.setHours(0, 0, 0, 0);
+            dateFilter = { $gte: filterStartDate };
+            dateRange = { start: filterStartDate, end: null };
+        } else if (endDate) {
+            filterEndDate = new Date(endDate);
+            filterEndDate.setHours(23, 59, 59, 999);
+            dateFilter = { $lte: filterEndDate };
+            dateRange = { start: null, end: filterEndDate };
         }
 
         let bankAccountIds = [];
@@ -3035,10 +2448,92 @@ const getFinancialDetails = async (req, res) => {
             }
         }
 
+        let openingBalance = 0;
+        let accountDetails = [];
+
+        if (bankAccountIds.length > 0) {
+            const bankAccounts = await BankAccount.find({
+                _id: { $in: bankAccountIds },
+                school: schoolId,
+                isActive: true
+            }).lean();
+
+            bankAccounts.forEach(acc => {
+                accountDetails.push({
+                    _id: acc._id,
+                    type: 'bank',
+                    name: acc.bankName,
+                    accountNumber: acc.accountNumber,
+                    openingBalance: acc.amount || 0
+                });
+                openingBalance += acc.amount || 0;
+            });
+        }
+
+        if (cashAccountIds.length > 0) {
+            const cashAccounts = await CashAccount.find({
+                _id: { $in: cashAccountIds },
+                school: schoolId,
+                isActive: true
+            }).lean();
+
+            cashAccounts.forEach(acc => {
+                accountDetails.push({
+                    _id: acc._id,
+                    type: 'cash',
+                    name: acc.title,
+                    description: acc.description,
+                    openingBalance: acc.amount || 0
+                });
+                openingBalance += acc.amount || 0;
+            });
+        }
+
         const baseMatch = {
             school: schoolId,
-            status: { $in: ['approved', 'paid', 'partially_paid'] }
+            status: { $in: ['approved', 'paid'] }
         };
+
+        let previousPeriodFilter = {};
+        if (filterStartDate) {
+            previousPeriodFilter = {
+                $lt: filterStartDate
+            };
+        }
+
+        const previousFeeMatch = {
+            ...baseMatch,
+            $or: [
+                { bankAccountId: { $in: bankAccountIds } },
+                { cashAccountId: { $in: cashAccountIds } }
+            ],
+            ...(Object.keys(previousPeriodFilter).length > 0 ? { updatedAt: previousPeriodFilter } : {})
+        };
+
+        const previousExpenseMatch = {
+            ...baseMatch,
+            $or: [
+                { bankAccountId: { $in: bankAccountIds } },
+                { cashAccountId: { $in: cashAccountIds } }
+            ],
+            ...(Object.keys(previousPeriodFilter).length > 0 ? { date: previousPeriodFilter } : {})
+        };
+
+        const [previousCollections, previousExpenses] = await Promise.all([
+            FeePayment.aggregate([
+                { $match: previousFeeMatch },
+                { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+            ]),
+            Expense.aggregate([
+                { $match: previousExpenseMatch },
+                { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } }
+            ])
+        ]);
+
+        const previousTotalReceived = previousCollections[0]?.total || 0;
+        const previousTotalPaid = previousExpenses[0]?.total || 0;
+
+        const midOpeningBalance = openingBalance + previousTotalReceived - previousTotalPaid;
 
         const feeMatch = {
             ...baseMatch,
@@ -3048,8 +2543,12 @@ const getFinancialDetails = async (req, res) => {
             ]
         };
 
-        if (period !== 'all' && Object.keys(dateFilter).length > 0) {
-            feeMatch.updatedAt = dateFilter;
+        if (filterStartDate && filterEndDate) {
+            feeMatch.updatedAt = { $gte: filterStartDate, $lte: filterEndDate };
+        } else if (filterStartDate) {
+            feeMatch.updatedAt = { $gte: filterStartDate };
+        } else if (filterEndDate) {
+            feeMatch.updatedAt = { $lte: filterEndDate };
         }
 
         const expenseMatch = {
@@ -3060,8 +2559,12 @@ const getFinancialDetails = async (req, res) => {
             ]
         };
 
-        if (period !== 'all' && Object.keys(dateFilter).length > 0) {
-            expenseMatch.date = dateFilter;
+        if (filterStartDate && filterEndDate) {
+            expenseMatch.date = { $gte: filterStartDate, $lte: filterEndDate };
+        } else if (filterStartDate) {
+            expenseMatch.date = { $gte: filterStartDate };
+        } else if (filterEndDate) {
+            expenseMatch.date = { $lte: filterEndDate };
         }
 
         const shouldGetCollections = !transactionType || transactionType === 'all' || transactionType === 'collection';
@@ -3141,24 +2644,7 @@ const getFinancialDetails = async (req, res) => {
         const receivedCount = feePayments[0]?.count || 0;
         const paidCount = expenses[0]?.count || 0;
 
-        let openingBalance = 0;
-
-        if (accountType === 'bank' && bankAccountIds.length === 1) {
-            const bankAccount = await BankAccount.findById(bankAccountIds[0]);
-            openingBalance = bankAccount?.amount || 0;
-        } else if (accountType === 'cash' && cashAccountIds.length === 1) {
-            const cashAccount = await CashAccount.findById(cashAccountIds[0]);
-            openingBalance = cashAccount?.amount || 0;
-        } else {
-            const [bankAccounts, cashAccounts] = await Promise.all([
-                BankAccount.find({ _id: { $in: bankAccountIds }, school: schoolId }).lean(),
-                CashAccount.find({ _id: { $in: cashAccountIds }, school: schoolId }).lean()
-            ]);
-            openingBalance = bankAccounts.reduce((sum, acc) => sum + (acc.amount || 0), 0) +
-                cashAccounts.reduce((sum, acc) => sum + (acc.amount || 0), 0);
-        }
-
-        const currentBalance = openingBalance + totalReceived - totalPaid;
+        const currentBalance = midOpeningBalance + totalReceived - totalPaid;
 
         const monthlyBreakdown = {};
         const allMonths = new Set([
@@ -3188,13 +2674,20 @@ const getFinancialDetails = async (req, res) => {
                 title: accountType === 'cash' ? 'Cash Account' :
                     accountType === 'bank' ? 'Bank Accounts' : 'All Accounts',
                 description: `${accountType || 'All'} financial transactions`,
-                openingBalance: openingBalance,
+                accounts: accountDetails,
+                previousPeriodBalance: {
+                    collections: previousTotalReceived,
+                    expenses: previousTotalPaid,
+                    net: previousTotalReceived - previousTotalPaid
+                },
+                midOpeningBalance: midOpeningBalance,
                 isActive: true,
                 createdAt: new Date(),
                 updatedAt: new Date(),
 
                 summary: {
                     openingBalance: openingBalance,
+                    midOpeningBalance: midOpeningBalance,
                     totalCollection: {
                         amount: totalReceived,
                         count: receivedCount
@@ -3204,7 +2697,8 @@ const getFinancialDetails = async (req, res) => {
                         count: paidCount
                     },
                     currentBalance: currentBalance,
-                    totalTransactions: receivedCount + paidCount
+                    totalTransactions: receivedCount + paidCount,
+                    netChange: totalReceived - totalPaid
                 },
 
                 monthlyBreakdown: monthlyBreakdown,
@@ -3213,7 +2707,7 @@ const getFinancialDetails = async (req, res) => {
                     collections: recentCollections.map(c => ({
                         _id: c._id,
                         amount: c.amount,
-                        // studentName: c.studentId?.name || 'Unknown',
+                        studentName: c.studentId?.name || 'Unknown',
                         feeTitle: c.feeId?.title || 'Fee Payment',
                         date: c.updatedAt,
                         status: c.status
@@ -3227,6 +2721,15 @@ const getFinancialDetails = async (req, res) => {
                         status: e.status
                     }))
                 },
+
+                filter: {
+                    period: period || 'all',
+                    startDate: filterStartDate || null,
+                    endDate: filterEndDate || null,
+                    accountType: accountType || 'all',
+                    accountId: accountId || null,
+                    transactionType: transactionType || 'all'
+                }
             }
         });
 
@@ -3238,7 +2741,6 @@ const getFinancialDetails = async (req, res) => {
         });
     }
 };
-
 
 module.exports = {
     getDetailReporting,
