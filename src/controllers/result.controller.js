@@ -1,527 +1,902 @@
-const ClassSection = require("../models/ClassSection");
 const Result = require("../models/Result");
-const Staff = require("../models/Staff");
 const Student = require("../models/Student");
-const User = require("../models/User");
-const { deleteFileFromS3, uploadFileToS3 } = require("../services/s3.service");
-const { sendResultNotification } = require("../utils/notificationService");
+const Subject = require("../models/Subject");
+const ExamSchedule = require("../models/ExamSchedule");
+const { addResultSchema, updateResultSchema, getResultsSchema } = require("../validators/result.vakidation");
+const { getClassSectionMaps, formatClassSection } = require("../utils/classHelper");
+const Staff = require("../models/Staff");
 
-// Get class and section info
-const getClassSectionInfo = async (classId, sectionId, schoolId) => {
-    const classSection = await ClassSection.findOne({
-        _id: classId,
-        school: schoolId
+const calculateGrade = (percentage) => {
+    if (percentage >= 90) return "A+";
+    if (percentage >= 80) return "A";
+    if (percentage >= 70) return "B";
+    if (percentage >= 60) return "C";
+    if (percentage >= 50) return "D";
+    return "F";
+};
+
+const getExamScheduleTotalMarks = async (subjectId, classId, sectionId, examType, year, schoolId) => {
+    const examSchedule = await ExamSchedule.findOne({
+        school: schoolId,
+        subjectId,
+        classId,
+        sectionId,
+        type: examType,
+        year: year,
+        status: 'scheduled'
     }).lean();
 
-    if (!classSection) {
-        return { class: null, section: null };
+    if (!examSchedule) {
+        return null;
     }
 
-    const classInfo = {
-        _id: classSection._id,
-        name: classSection.class
-    };
-
-    let sectionInfo = null;
-    if (sectionId && classSection.sections) {
-        const section = classSection.sections.find(
-            sec => sec._id.toString() === sectionId.toString()
-        );
-        if (section) {
-            sectionInfo = {
-                _id: section._id,
-                name: section.name
-            };
-        }
-    }
-
-    return { class: classInfo, section: sectionInfo };
+    // You can set total marks per subject in exam schedule or use a default
+    // For now, we'll use 100 as default or you can add a totalMarks field to ExamSchedule
+    return examSchedule.totalMarks || 100;
 };
 
-// Check if user is section incharge
-const isSectionIncharge = async (userId, sectionId, schoolId) => {
-    const user = await Staff.findOne({
-        _id: userId,
+const validateExamSchedule = async (subjectId, classId, sectionId, examType, year, schoolId) => {
+    const examSchedule = await ExamSchedule.findOne({
         school: schoolId,
-        role: 'teacher'
-    }).select('sectionInfo');
+        subjectId,
+        classId,
+        sectionId,
+        type: examType,
+        year: year,
+        status: 'scheduled'
+    }).lean();
 
-    if (!user || !user.sectionInfo) return false;
-
-    if (Array.isArray(user.sectionInfo)) {
-        return user.sectionInfo.some(s => s.id?.toString() === sectionId.toString());
-    } else {
-        return user.sectionInfo.id?.toString() === sectionId.toString();
+    if (!examSchedule) {
+        return {
+            valid: false,
+            message: `No exam schedule found for subject. Please create exam schedule first.`
+        };
     }
-};
-
-const handleResultImageUpload = async (file, oldImage = null) => {
-    if (!file) return oldImage;
-
-    const allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedMimeTypes.includes(file.mimetype)) {
-        throw new Error("Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed");
-    }
-
-    if (file.size > 5 * 1024 * 1024) {
-        throw new Error("File size too large. Maximum size is 5MB");
-    }
-
-    if (oldImage) {
-        await deleteFileFromS3(oldImage);
-    }
-
-    return await uploadFileToS3({
-        fileBuffer: file.buffer,
-        fileName: file.originalname,
-        mimeType: file.mimetype,
-    });
-};
-
-// Transform result with class/section info
-const transformResult = async (result, schoolId) => {
-    const classSectionInfo = await getClassSectionInfo(result.classId, result.sectionId, schoolId);
 
     return {
-        _id: result._id,
-        school: result.school,
-        studentId: result.studentId,
-        class: classSectionInfo.class,
-        section: classSectionInfo.section,
-        examType: result.examType,
-        year: result.year,
-        marksObtained: result.marksObtained,
-        totalMarks: result.totalMarks,
-        percentage: result.percentage,
-        position: result.position,
-        image: result.image,
-        createdAt: result.createdAt,
-        updatedAt: result.updatedAt
+        valid: true,
+        examSchedule
     };
 };
 
-// Batch transform results
-const transformResults = async (results, schoolId) => {
-    const classIds = [...new Set(
-        results.map(r => r.classId?.toString()).filter(Boolean)
-    )];
+const canManageResult = async (user, studentId, schoolId) => {
+    console.log("Checking if user can manage result", user.role, studentId, schoolId)
 
-    const classSections = await ClassSection.find({
-        _id: { $in: classIds },
-        school: schoolId
-    }).lean();
+    // Check if user is admin (schoolId exists in user or role is admin_office)
+    const isAdmin = user.schoolId || user.role === 'admin_office';
+    console.log("Is admin:", isAdmin)
 
-    const classSectionMap = new Map();
-    classSections.forEach(cs => {
-        classSectionMap.set(cs._id.toString(), cs);
-    });
-
-    return results.map(result => {
-        const classSection = classSectionMap.get(result.classId?.toString());
-
-        const transformed = {
-            _id: result._id,
-            school: result.school,
-            studentInfo: result.studentId,
-            examType: result.examType,
-            year: result.year,
-            marksObtained: result.marksObtained,
-            totalMarks: result.totalMarks,
-            percentage: result.percentage,
-            position: result.position,
-            image: result.image,
-            createdAt: result.createdAt,
-            updatedAt: result.updatedAt
-        };
-
-        if (classSection) {
-            transformed.classInfo = {
-                _id: classSection._id,
-                name: classSection.class
-            };
-
-            if (result.sectionId && classSection.sections) {
-                const section = classSection.sections.find(
-                    sec => sec._id.toString() === result.sectionId.toString()
-                );
-                if (section) {
-                    transformed.sectionInfo = {
-                        _id: section._id,
-                        name: section.name
-                    };
-                }
-            }
-        }
-
-        return transformed;
-    });
-};
-
-const addResult = async (req, res) => {
-    try {
-        const { studentId, classId, sectionId, marksObtained, totalMarks, position, examType, year } = req.body;
-        const schoolId = req.user.school;
-        const userId = req.user._id;
-        const userRole = req.user.role;
-
-        if (userRole === 'teacher') {
-            const isIncharge = await isSectionIncharge(userId, sectionId, schoolId);
-            if (!isIncharge) return res.status(403).json({ message: "You can only add results for your assigned section" });
-        }
-
+    if (isAdmin) {
         const student = await Student.findOne({
             _id: studentId,
             school: schoolId,
-            // role: "student"
-        });
+            isActive: true
+        }).lean();
+        console.log("Admin - Student found:", student)
 
-        if (!student) return res.status(404).json({ message: "Student not found in your school" });
+        if (!student) {
+            return { allowed: false, message: "Student not found", student: null };
+        }
 
-        const studentClassId = student.classInfo?.id?.toString();
-        const studentSectionId = student.sectionInfo?.id?.toString();
+        return { allowed: true, student: student };
+    }
 
-        if (!studentClassId || !studentSectionId) return res.status(400).json({ message: "Student is not assigned to any class or section" });
-        if (studentClassId !== classId) return res.status(400).json({ message: "Student is not enrolled in the specified class" });
-        if (studentSectionId !== sectionId) return res.status(400).json({ message: "Student is not in the specified section" });
+    const student = await Student.findOne({
+        _id: studentId,
+        school: schoolId,
+        isActive: true
+    }).lean();
+    console.log("Teacher - Student:", student)
 
-        const classSection = await ClassSection.findOne({
-            _id: classId,
-            school: schoolId,
-            'sections._id': sectionId
-        });
+    if (!student) {
+        return { allowed: false, message: "Student not found", student: null };
+    }
 
-        if (!classSection) return res.status(404).json({ message: "Class or section not found in your school" });
+    const teacher = await Staff.findOne({
+        _id: user._id,
+        school: schoolId,
+        isActive: true,
+        isIncharge: true,
+        'classInfo.id': student.classInfo.id,
+        'sectionInfo.id': student.sectionInfo.id
+    }).lean();
 
-        const existingResult = await Result.findOne({
-            school: schoolId,
+    if (!teacher) {
+        return {
+            allowed: false,
+            message: "You are not authorized to manage results for this student. You can only manage your section students.",
+            student: null
+        };
+    }
+
+    return { allowed: true, student: student };
+};
+
+const getAccessibleStudentIds = async (user, schoolId) => {
+    const isAdmin = user.role === 'admin' || user.role === 'superadmin' || user.role === 'admin_office';
+
+    if (isAdmin) {
+        return null; 
+    }
+
+    const teacher = await Staff.findOne({
+        _id: user._id,
+        school: schoolId,
+        isActive: true,
+        isIncharge: true
+    }).lean();
+
+    if (!teacher || !teacher.classInfo?.id || !teacher.sectionInfo?.id) {
+        return []; 
+    }
+
+    const students = await Student.find({
+        school: schoolId,
+        isActive: true,
+        'classInfo.id': teacher.classInfo.id,
+        'sectionInfo.id': teacher.sectionInfo.id
+    }).select('_id').lean();
+
+    return students.map(s => s._id);
+};
+
+const createResult = async (req, res) => {
+    console.log("createResult", req.user)
+    try {
+        const { error } = addResultSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                message: error.details[0].message
+            });
+        }
+
+        const schoolId = req.user.school;
+        const user = req.user;
+        const {
             studentId,
             classId,
             sectionId,
+            examType,
+            year,
+            subjects,
+            remarks
+        } = req.body;
+
+        const accessCheck = await canManageResult(user, studentId, schoolId);
+        console.log("Access check result:", accessCheck)
+        if (!accessCheck.allowed) {
+            return res.status(403).json({
+                success: false,
+                message: accessCheck.message || "You are not authorized to create result for this student."
+            });
+        }
+
+        const student = accessCheck.student;
+        console.log("Student found:", student)
+
+        if (
+            student.classInfo.id.toString() !== classId ||
+            student.sectionInfo.id.toString() !== sectionId
+        ) {
+            return res.status(400).json({
+                success: false,
+                message: "Student does not belong to selected class/section."
+            });
+        }
+
+        const alreadyExists = await Result.exists({
+            school: schoolId,
+            studentId,
             examType,
             year
         });
 
-        if (existingResult) return res.status(400).json({ message: "Result already exists for this student for the selected exam and year" });
-
-        let image = null;
-        if (req.file) {
-            image = await handleResultImageUpload(req.file);
+        if (alreadyExists) {
+            return res.status(400).json({
+                success: false,
+                message: "Result already exists for this student and exam."
+            });
         }
 
-        const percentage = ((marksObtained / totalMarks) * 100).toFixed(2);
+        const subjectIds = subjects.map(item => item.subjectId);
+        const dbSubjects = await Subject.find({
+            _id: { $in: subjectIds },
+            school: schoolId,
+            isActive: true
+        }).select("name code totalMarks").lean();
 
-        const newResult = await Result.create({
+        if (dbSubjects.length !== subjects.length) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid subject selected."
+            });
+        }
+
+        const subjectMap = new Map();
+        dbSubjects.forEach(subject => {
+            subjectMap.set(subject._id.toString(), subject);
+        });
+
+        let totalMarks = 0;
+        let obtainedMarks = 0;
+        const subjectResult = [];
+
+        for (const item of subjects) {
+            const subject = subjectMap.get(item.subjectId);
+            if (!subject) continue;
+
+            const examValidation = await validateExamSchedule(
+                item.subjectId,
+                classId,
+                sectionId,
+                examType,
+                year,
+                schoolId
+            );
+
+            if (!examValidation.valid) {
+                return res.status(400).json({
+                    success: false,
+                    message: `${subject.name}: ${examValidation.message}`
+                });
+            }
+
+            const examTotalMarks = examValidation.examSchedule.totalMarks || subject.totalMarks || 100;
+
+            if (item.obtainedMarks > examTotalMarks) {
+                return res.status(400).json({
+                    success: false,
+                    message: `${subject.name} obtained marks (${item.obtainedMarks}) cannot exceed total marks (${examTotalMarks})`
+                });
+            }
+
+            totalMarks += examTotalMarks;
+            obtainedMarks += item.obtainedMarks;
+
+            subjectResult.push({
+                subjectId: subject._id,
+                subjectName: subject.name,
+                totalMarks: examTotalMarks,
+                obtainedMarks: item.obtainedMarks,
+                remarks: item.remarks || "",
+                examScheduleId: examValidation.examSchedule._id
+            });
+        }
+
+        const percentage = totalMarks > 0
+            ? Number(((obtainedMarks / totalMarks) * 100).toFixed(2))
+            : 0;
+
+        const grade = calculateGrade(percentage);
+
+        const result = await Result.create({
             school: schoolId,
             studentId,
             classId,
             sectionId,
-            marksObtained,
-            totalMarks,
-            percentage: parseFloat(percentage),
-            position,
             examType,
             year,
-            image
+            subjects: subjectResult,
+            totalMarks,
+            obtainedMarks,
+            percentage,
+            grade,
+            remarks,
+            createdBy: req.user._id
         });
 
-        const notification = await sendResultNotification({
-            result: newResult,
-            actor: req.user,
-            action: 'creation'
+        return res.status(201).json({
+            success: true,
+            message: "Result created successfully.",
+            data: result
         });
 
-        const populatedResult = await Result.findById(newResult._id).populate({
-            path: 'studentId',
-            select: 'name email rollNo admissionNo'
-        });
-
-        const transformedResult = await transformResult(populatedResult, schoolId);
-
-        res.status(201).json({
-            message: "Result added successfully",
-            result: transformedResult
-        });
     } catch (err) {
-        console.error("Add Result Error:", err);
-        if (err.message.includes("Invalid file type") || err.message.includes("File size too large")) {
-            return res.status(400).json({ message: err.message });
-        }
-        res.status(500).json({ message: "Server error" });
+        console.error("Error creating result:", err);
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
     }
 };
 
 const updateResult = async (req, res) => {
     try {
-        const { resultId } = req.params;
-        const updateData = { ...req.body };
+        const { error } = updateResultSchema.validate(req.body);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                message: error.details[0].message
+            });
+        }
+
         const schoolId = req.user.school;
-        const userId = req.user._id;
-        const userRole = req.user.role;
+        const user = req.user;
 
-        const result = await Result.findById(resultId);
-        if (!result) return res.status(404).json({ message: "Result not found" });
-        if (result.school.toString() !== schoolId.toString()) return res.status(403).json({ message: "You can only update results from your school" });
+        const result = await Result.findOne({
+            _id: req.params.resultId,
+            school: schoolId
+        }).lean();
 
-        if (userRole === 'teacher') {
-            const isIncharge = await isSectionIncharge(userId, result.sectionId.toString(), schoolId);
-            if (!isIncharge) return res.status(403).json({ message: "You can only update results for your assigned section" });
+        if (!result) {
+            return res.status(404).json({
+                success: false,
+                message: "Result not found."
+            });
         }
 
-        if (req.body.marksObtained !== undefined || req.body.totalMarks !== undefined) {
-            const marksObtained = req.body.marksObtained !== undefined ? req.body.marksObtained : result.marksObtained;
-            const totalMarks = req.body.totalMarks !== undefined ? req.body.totalMarks : result.totalMarks;
-            updateData.percentage = ((marksObtained / totalMarks) * 100).toFixed(2);
+        const accessCheck = await canManageResult(user, result.studentId, schoolId);
+        if (!accessCheck.allowed) {
+            return res.status(403).json({
+                success: false,
+                message: accessCheck.message || "You are not authorized to update result for this student."
+            });
         }
 
-        if (req.file) {
-            updateData.image = await handleResultImageUpload(req.file, result.image);
+        const subjectIds = req.body.subjects.map(item => item.subjectId);
+        const dbSubjects = await Subject.find({
+            _id: { $in: subjectIds },
+            school: schoolId,
+            isActive: true
+        }).select("name code totalMarks").lean();
+
+        if (dbSubjects.length !== subjectIds.length) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid subject selected."
+            });
         }
+
+        const subjectMap = new Map();
+        dbSubjects.forEach(subject => {
+            subjectMap.set(subject._id.toString(), subject);
+        });
+
+        let totalMarks = 0;
+        let obtainedMarks = 0;
+        const subjects = [];
+
+        for (const item of req.body.subjects) {
+            const subject = subjectMap.get(item.subjectId);
+            if (!subject) continue;
+
+            console.log(item.subjectId,
+                result.classId,
+                result.sectionId,
+                result.examType,
+                result.year,
+                schoolId)
+            const examValidation = await validateExamSchedule(
+                item.subjectId,
+                result.classId,
+                result.sectionId,
+                result.examType,
+                result.year,
+                schoolId
+            );
+
+            if (!examValidation.valid) {
+                return res.status(400).json({
+                    success: false,
+                    message: `${subject.name}: ${examValidation.message}`
+                });
+            }
+
+            const examTotalMarks = examValidation.examSchedule.totalMarks || subject.totalMarks || 100;
+
+            if (item.obtainedMarks > examTotalMarks) {
+                return res.status(400).json({
+                    success: false,
+                    message: `${subject.name} obtained marks (${item.obtainedMarks}) cannot exceed total marks (${examTotalMarks})`
+                });
+            }
+
+            totalMarks += examTotalMarks;
+            obtainedMarks += item.obtainedMarks;
+
+            subjects.push({
+                subjectId: subject._id,
+                subjectName: subject.name,
+                totalMarks: examTotalMarks,
+                obtainedMarks: item.obtainedMarks,
+                remarks: item.remarks || "",
+                examScheduleId: examValidation.examSchedule._id
+            });
+        }
+
+        const percentage = totalMarks > 0
+            ? Number(((obtainedMarks / totalMarks) * 100).toFixed(2))
+            : 0;
 
         const updatedResult = await Result.findByIdAndUpdate(
-            resultId,
-            updateData,
-            { new: true, runValidators: true }
-        ).populate({
-            path: 'studentId',
-            select: 'name email rollNo admissionNo'
-        });
-
-        const notification = await sendResultNotification({
-            result: updatedResult,
-            actor: req.user,
-            action: 'update'
-        });
-
-        const transformedResult = await transformResult(updatedResult, schoolId);
-
-        res.status(200).json({
-            message: "Result updated successfully",
-            result: transformedResult
-        });
-    } catch (err) {
-        console.error("Update Result Error:", err);
-        if (err.message.includes("Invalid file type") || err.message.includes("File size too large")) {
-            return res.status(400).json({ message: err.message });
-        }
-        res.status(500).json({ message: "Server error" });
-    }
-};
-
-const getResults = async (req, res) => {
-    try {
-        const { studentId, classId, sectionId, examType, year, position, page = 1, limit = 10 } = req.query;
-        const schoolId = req.user.school;
-        const userId = req.user._id;
-        const userRole = req.user.role;
-
-        const filter = { school: schoolId };
-
-        if (userRole === 'teacher') {
-            const teacher = await Staff.findById(userId).select('sectionInfo classInfo isIncharge');
-            if (!teacher || !teacher.sectionInfo?.id || !teacher.isIncharge) return res.status(403).json({ message: "You are not authorized to view results" });
-
-            const assignedSectionId = teacher.sectionInfo.id.toString();
-            filter.sectionId = assignedSectionId;
-
-            if (teacher.classInfo?.id && !classId) filter.classId = teacher.classInfo.id;
-            if (sectionId && sectionId.toString() !== assignedSectionId) return res.status(403).json({ message: "You are not authorized to view results from this section" });
-            if (classId && teacher.classInfo?.id && classId.toString() !== teacher.classInfo.id.toString()) {
-                return res.status(403).json({ message: "You are not authorized to view results from this class" });
-            }
-        }
-
-        if (studentId) filter.studentId = studentId;
-        if (classId) filter.classId = classId;
-        if (sectionId) filter.sectionId = sectionId;
-        if (examType) filter.examType = examType;
-        if (year) filter.year = year;
-        if (position) filter.position = position;
-
-        const skip = (page - 1) * limit;
-
-        const results = await Result.find(filter)
-            .populate({
-                path: 'studentId',
-                select: 'name email rollNo',
-                model: "Student"
-            })
-            .skip(skip)
-            .limit(Number(limit))
-            .sort({ year: -1, examType: 1, marksObtained: -1 })
-            .lean();
-
-        const transformedResults = await transformResults(results, schoolId);
-        const total = await Result.countDocuments(filter);
-
-        res.status(200).json({
-            total,
-            page: Number(page),
-            totalPages: Math.ceil(total / limit),
-            limit: Number(limit),
-            results: transformedResults
-        });
-    } catch (err) {
-        console.error("Get Results Error:", err);
-        res.status(500).json({ message: "Server error" });
-    }
-};
-
-const getStudentResults = async (req, res) => {
-    try {
-        const studentId = req.user._id;
-        const schoolId = req.user.school;
-
-        const results = await Result.find({
-            studentId: studentId,
-            school: schoolId
-        })
-            .populate({
-                path: 'studentId',
-                select: 'name email rollNo'
-            })
-            .sort({ year: -1, examType: 1 })
-            .lean();
-
-        const transformedResults = await transformResults(results, schoolId);
-
-        const stats = {
-            totalExams: transformedResults.length,
-            averagePercentage: 0,
-            highestScore: 0,
-            totalMarksObtained: 0,
-            totalPossibleMarks: 0
-        };
-
-        if (transformedResults.length > 0) {
-            transformedResults.forEach(result => {
-                stats.totalMarksObtained += result.marksObtained;
-                stats.totalPossibleMarks += result.totalMarks;
-                if (result.marksObtained > stats.highestScore) {
-                    stats.highestScore = result.marksObtained;
-                }
-            });
-            stats.averagePercentage = ((stats.totalMarksObtained / stats.totalPossibleMarks) * 100).toFixed(2);
-        }
-
-        res.status(200).json({
-            total: transformedResults.length,
-            statistics: stats,
-            results: transformedResults
-        });
-    } catch (err) {
-        console.error("Student Results Error:", err);
-        res.status(500).json({ message: "Server error" });
-    }
-};
-
-const getResultsByPosition = async (req, res) => {
-    try {
-        const { examType, year, classId, sectionId } = req.query;
-        const schoolId = req.user.school;
-        const userId = req.user._id;
-        const userRole = req.user.role;
-
-        const filter = { school: schoolId };
-
-        if (examType) filter.examType = examType;
-        if (year) filter.year = year;
-        if (classId) filter.classId = classId;
-        if (sectionId) filter.sectionId = sectionId;
-
-        if (userRole === 'teacher') {
-            const teacher = await Staff.findById(userId).select('sectionInfo');
-            if (!teacher || !teacher.sectionInfo) return res.status(403).json({ message: "You are not assigned to any section" });
-
-            const assignedSectionIds = teacher.sectionInfo.map(s => s.id.toString());
-            filter.sectionId = { $in: assignedSectionIds };
-        }
-
-        const resultsByPosition = await Result.aggregate([
-            { $match: filter },
+            req.params.resultId,
             {
-                $group: {
-                    _id: "$position",
-                    count: { $sum: 1 },
-                    averagePercentage: { $avg: "$percentage" },
-                    results: {
-                        $push: {
-                            studentId: "$studentId",
-                            marksObtained: "$marksObtained",
-                            totalMarks: "$totalMarks",
-                            percentage: "$percentage",
-                            examType: "$examType",
-                            year: "$year"
-                        }
-                    }
-                }
+                subjects: subjects,
+                totalMarks: totalMarks,
+                obtainedMarks: obtainedMarks,
+                percentage: percentage,
+                grade: calculateGrade(percentage),
+                remarks: req.body.remarks || "",
+                updatedBy: req.user._id
             },
-            { $sort: { count: -1 } }
-        ]);
+            { new: true }
+        );
 
-        const topPerformers = await Result.find(filter)
-            .sort({ percentage: -1 })
-            .limit(10)
-            .populate({
-                path: 'studentId',
-                select: 'name rollNo'
-            })
-            .select('marksObtained totalMarks percentage position examType year');
-
-        const transformedTopPerformers = await transformResults(topPerformers, schoolId);
-
-        res.status(200).json({
-            resultsByPosition,
-            topPerformers: transformedTopPerformers,
-            filterApplied: { examType, year, classId, sectionId }
+        return res.status(200).json({
+            success: true,
+            message: "Result updated successfully.",
+            data: updatedResult
         });
+
     } catch (err) {
-        console.error("Get Results By Position Error:", err);
-        res.status(500).json({ message: "Server error" });
+        console.error("Error updating result:", err);
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
     }
 };
 
 const deleteResult = async (req, res) => {
     try {
-        const { resultId } = req.params;
         const schoolId = req.user.school;
-        const userId = req.user._id;
-        const userRole = req.user.role;
+        const user = req.user;
 
-        const result = await Result.findById(resultId);
-        if (!result) return res.status(404).json({ message: "Result not found" });
-        if (result.school.toString() !== schoolId.toString()) return res.status(403).json({ message: "You can only delete results from your school" });
+        const result = await Result.findOne({
+            _id: req.params.resultId,
+            school: schoolId
+        });
 
-        if (userRole === 'teacher') {
-            const isIncharge = await isSectionIncharge(userId, result.sectionId.toString(), schoolId);
-            if (!isIncharge) return res.status(403).json({ message: "You can only delete results for your assigned section" });
+        if (!result) {
+            return res.status(404).json({
+                success: false,
+                message: "Result not found."
+            });
         }
 
-        if (result.image) {
-            await deleteFileFromS3(result.image);
+        //----------------------------------------------------
+        // Check if user can manage this student
+        //----------------------------------------------------
+        const accessCheck = await canManageResult(user, result.studentId, schoolId);
+        if (!accessCheck.allowed) {
+            return res.status(403).json({
+                success: false,
+                message: accessCheck.message || "You are not authorized to delete result for this student."
+            });
         }
 
         await result.deleteOne();
 
-        res.status(200).json({
-            message: "Result deleted successfully",
-            deletedResult: {
-                id: result._id,
-                studentId: result.studentId,
-                examType: result.examType,
-                year: result.year
+        return res.status(200).json({
+            success: true,
+            message: "Result deleted successfully."
+        });
+
+    } catch (err) {
+        console.error("Error deleting result:", err);
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
+    }
+};
+
+const getResultById = async (req, res) => {
+    try {
+        const schoolId = req.user.school;
+
+        const result = await Result.findOne({
+            _id: req.params.resultId,
+            school: schoolId
+        })
+            .populate(
+                "studentId",
+                "name email rollNo registrationNumber classInfo sectionInfo"
+            )
+            .lean();
+
+        if (!result) {
+            return res.status(404).json({
+                success: false,
+                message: "Result not found."
+            });
+        }
+
+        const { classMap, sectionMap } = await getClassSectionMaps(
+            [result.studentId],
+            schoolId
+        );
+
+        const { classInfo, sectionInfo } = formatClassSection(
+            result.studentId,
+            classMap,
+            sectionMap
+        );
+
+        const {
+            studentId,
+            classId,
+            sectionId,
+            ...resultData
+        } = result;
+
+        return res.status(200).json({
+            success: true,
+            data: {
+                ...resultData,
+                studentInfo: {
+                    _id: studentId._id,
+                    name: studentId.name,
+                    email: studentId.email,
+                    rollNo: studentId.rollNo,
+                    registrationNumber: studentId.registrationNumber
+                },
+                classInfo: classInfo ? {
+                    _id: classInfo.id,
+                    name: classInfo.name
+                } : null,
+                sectionInfo: sectionInfo ? {
+                    _id: sectionInfo.id,
+                    name: sectionInfo.name
+                } : null
             }
         });
+
     } catch (err) {
-        console.error("Delete Result Error:", err);
-        res.status(500).json({ message: "Server error" });
+        console.error("Error getting result:", err);
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
+    }
+};
+
+const getResults = async (req, res) => {
+    try {
+        const { error, value } = getResultsSchema.validate(req.query);
+        if (error) {
+            return res.status(400).json({
+                success: false,
+                message: error.details[0].message
+            });
+        }
+
+        const schoolId = req.user.school;
+        const user = req.user;
+
+        const {
+            page = 1,
+            limit = 10,
+            classId,
+            sectionId,
+            examType,
+            year,
+            search
+        } = value;
+
+        const isAdmin = user.schoolId || user.role === 'admin' || user.role === 'superadmin' || user.role === 'admin_office';
+
+        let accessibleStudentIds = null;
+
+        if (!isAdmin) {
+            const teacher = await Staff.findOne({
+                _id: user._id,
+                school: schoolId,
+                isActive: true,
+                isIncharge: true
+            }).lean();
+
+            if (!teacher || !teacher.classInfo?.id || !teacher.sectionInfo?.id) {
+                return res.status(200).json({
+                    success: true,
+                    pagination: {
+                        total: 0,
+                        page,
+                        limit,
+                        totalPages: 0
+                    },
+                    data: []
+                });
+            }
+
+            const students = await Student.find({
+                school: schoolId,
+                isActive: true,
+                'classInfo.id': teacher.classInfo.id,
+                'sectionInfo.id': teacher.sectionInfo.id
+            }).select('_id').lean();
+
+            accessibleStudentIds = students.map(s => s._id);
+
+            if (accessibleStudentIds.length === 0) {
+                return res.status(200).json({
+                    success: true,
+                    pagination: {
+                        total: 0,
+                        page,
+                        limit,
+                        totalPages: 0
+                    },
+                    data: []
+                });
+            }
+        }
+
+        let studentFilter = {
+            school: schoolId,
+            isActive: true
+        };
+
+        if (accessibleStudentIds !== null) {
+            studentFilter._id = { $in: accessibleStudentIds };
+        }
+
+        if (classId) {
+            studentFilter['classInfo.id'] = classId;
+        }
+        if (sectionId) {
+            studentFilter['sectionInfo.id'] = sectionId;
+        }
+
+        if (search) {
+            studentFilter.$or = [
+                { name: { $regex: search, $options: "i" } },
+                { rollNo: { $regex: search, $options: "i" } },
+                { registrationNumber: { $regex: search, $options: "i" } }
+            ];
+        }
+
+        const skip = (page - 1) * limit;
+
+        const [students, totalStudents] = await Promise.all([
+            Student.find(studentFilter)
+                .select('_id name email rollNo registrationNumber classInfo sectionInfo')
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Student.countDocuments(studentFilter)
+        ]);
+
+        if (!students.length) {
+            return res.status(200).json({
+                success: true,
+                pagination: {
+                    total: 0,
+                    page,
+                    limit,
+                    totalPages: 0
+                },
+                data: []
+            });
+        }
+
+        const studentIds = students.map(s => s._id);
+
+        const resultFilter = {
+            school: schoolId,
+            studentId: { $in: studentIds }
+        };
+
+        if (examType) resultFilter.examType = examType;
+        if (year) resultFilter.year = year;
+
+        const results = await Result.find(resultFilter)
+            .populate("studentId", "name email rollNo registrationNumber classInfo sectionInfo")
+            .sort({ year: -1, createdAt: -1 })
+            .lean();
+
+        const { classMap, sectionMap } = await getClassSectionMaps(
+            results.map(r => r.studentId),
+            schoolId
+        );
+
+        const groupedResults = students.map(student => {
+            const studentResults = results.filter(
+                r => r.studentId._id.toString() === student._id.toString()
+            );
+
+            const formattedResults = studentResults.map(result => {
+                const { studentId, classId, sectionId, ...resultData } = result;
+                return resultData;
+            });
+
+            const { classInfo, sectionInfo } = formatClassSection(
+                student,
+                classMap,
+                sectionMap
+            );
+
+            return {
+                studentInfo: {
+                    _id: student._id,
+                    name: student.name,
+                    email: student.email,
+                    rollNo: student.rollNo,
+                    registrationNumber: student.registrationNumber
+                },
+                classInfo: classInfo ? {
+                    _id: classInfo.id,
+                    name: classInfo.name
+                } : null,
+                sectionInfo: sectionInfo ? {
+                    _id: sectionInfo.id,
+                    name: sectionInfo.name
+                } : null,
+                totalResults: formattedResults.length,
+                results: formattedResults
+            };
+        });
+
+        return res.status(200).json({
+            success: true,
+            pagination: {
+                total: totalStudents,
+                page,
+                limit,
+                totalPages: Math.ceil(totalStudents / limit)
+            },
+            data: groupedResults
+        });
+
+    } catch (err) {
+        console.error(err);
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
+    }
+};
+
+const getStudentResults = async (req, res) => {
+    try {
+        const schoolId = req.user.school;
+        const user = req.user;
+        const { studentId } = req.params;
+
+        const accessCheck = await canManageResult(user, studentId, schoolId);
+        if (!accessCheck.allowed) {
+            return res.status(403).json({
+                success: false,
+                message: accessCheck.message || "You are not authorized to view results for this student."
+            });
+        }
+
+        const results = await Result.find({
+            school: schoolId,
+            studentId: studentId
+        })
+            .populate(
+                "studentId",
+                "name email rollNo registrationNumber classInfo sectionInfo"
+            )
+            .sort({ year: -1, createdAt: -1 })
+            .lean();
+
+        if (!results.length) {
+            return res.status(200).json({
+                success: true,
+                total: 0,
+                studentInfo: null,
+                classInfo: null,
+                sectionInfo: null,
+                results: []
+            });
+        }
+
+        const student = results[0].studentId;
+
+        const { classMap, sectionMap } = await getClassSectionMaps(
+            [student],
+            schoolId
+        );
+
+        const { classInfo, sectionInfo } = formatClassSection(
+            student,
+            classMap,
+            sectionMap
+        );
+
+        const formattedResults = results.map(result => {
+            const {
+                studentId,
+                classId,
+                sectionId,
+                ...resultData
+            } = result;
+            return resultData;
+        });
+
+        return res.status(200).json({
+            success: true,
+            studentInfo: {
+                _id: student._id,
+                name: student.name,
+                email: student.email,
+                rollNo: student.rollNo,
+                registrationNumber: student.registrationNumber
+            },
+            classInfo: classInfo ? {
+                _id: classInfo.id,
+                name: classInfo.name
+            } : null,
+            sectionInfo: sectionInfo ? {
+                _id: sectionInfo.id,
+                name: sectionInfo.name
+            } : null,
+            total: formattedResults.length,
+            results: formattedResults
+        });
+
+    } catch (err) {
+        console.error("Error getting student results:", err);
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
+    }
+};
+
+const getClassResults = async (req, res) => {
+    try {
+        const schoolId = req.user.school;
+        const page = Number(req.query.page) || 1;
+        const limit = Number(req.query.limit) || 20;
+        const skip = (page - 1) * limit;
+
+        const filter = {
+            school: schoolId,
+            classId: req.params.classId
+        };
+
+        if (req.query.sectionId) {
+            filter.sectionId = req.query.sectionId;
+        }
+
+        if (req.query.examType) {
+            filter.examType = req.query.examType;
+        }
+
+        if (req.query.year) {
+            filter.year = Number(req.query.year);
+        }
+
+        const [results, total] = await Promise.all([
+            Result.find(filter)
+                .populate("studentId", "name rollNo registrationNumber")
+                .sort({ obtainedMarks: -1 })
+                .skip(skip)
+                .limit(limit)
+                .lean(),
+            Result.countDocuments(filter)
+        ]);
+
+        return res.status(200).json({
+            success: true,
+            pagination: {
+                total,
+                page,
+                limit,
+                totalPages: Math.ceil(total / limit)
+            },
+            data: results
+        });
+
+    } catch (err) {
+        console.error("Error getting class results:", err);
+        return res.status(500).json({
+            success: false,
+            message: err.message
+        });
     }
 };
 
 module.exports = {
-    addResult,
+    createResult,
     updateResult,
-    getResults,
-    getStudentResults,
     deleteResult,
-    getResultsByPosition
+    getResults,
+    getResultById,
+    getStudentResults,
+    getClassResults,
 };

@@ -13,7 +13,8 @@ const {
   getScheduleByTeacher, 
   getScheduleByStudent,
   updateSchedule, 
-  deleteSchedule 
+  deleteSchedule, 
+  getSubjectBySectionSchedule
 } = require("../controllers/schedule.Controller");
 const validate = require("../middlewares/validate");
 const {
@@ -47,12 +48,12 @@ router.get(
 );
 
 router.get(
-  "/section",
+  "/section-subject",
   protect,
-  isAdminOffice,
+  isTeacherOrAdminOfficeOrSchool,
   validate(getScheduleBySectionValidation, 'query'),
   checkPermission('schedule'),
-  getScheduleBySection
+  getSubjectBySectionSchedule
 );
 
 router.put(

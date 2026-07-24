@@ -1,75 +1,73 @@
 const express = require("express");
+
 const router = express.Router();
 
-const { upload } = require("../utils/multer");
-const { 
-  protect, 
-  isTeacherOrAdminOfficeOrSchool, 
-  isStudent, 
-  isAdminOffice
-} = require("../middlewares/auth");
-const { 
-  addResult, 
-  updateResult, 
-  getResults, 
-  getStudentResults, 
+const {
+  createResult,
+  updateResult,
   deleteResult,
-  getResultsByPosition 
+  getResults,
+  getStudentResults,
+  getClassResults,
+  getResultById
 } = require("../controllers/result.controller");
-const validate = require("../middlewares/validate");
-const { addResultSchema, updateResultSchema, resultIdParamSchema, getResultsQuerySchema, getResultsByPositionQuerySchema } = require("../validators/result.vakidation");
 const { checkPermission } = require("../middlewares/permission");
+const { isTeacherOrAdminOfficeOrSchool, allowedRoles, protect } = require("../middlewares/auth");
 
-// Admin/Teacher routes
-router.post("/", 
-  protect, 
-  isTeacherOrAdminOfficeOrSchool, 
+router.post(
+  "/",
+  protect,
+  isTeacherOrAdminOfficeOrSchool,
   checkPermission("result"),
-  upload.single("image"), 
-  validate(addResultSchema),
-  addResult
+  createResult
 );
 
-router.put("/:resultId", 
-  protect, 
-  isTeacherOrAdminOfficeOrSchool, 
+router.put(
+  "/:resultId",
+  protect,
+  isTeacherOrAdminOfficeOrSchool,
   checkPermission("result"),
-  upload.single("image"), 
-  validate(resultIdParamSchema, "params"),
-  validate(updateResultSchema),
   updateResult
 );
 
-router.delete("/:resultId", 
-  protect, 
-  isTeacherOrAdminOfficeOrSchool, 
+router.delete(
+  "/:resultId",
+  protect,
+  isTeacherOrAdminOfficeOrSchool,
   checkPermission("result"),
-  validate(resultIdParamSchema, "params"),
   deleteResult
 );
 
-router.get("/", 
-  protect, 
-  isTeacherOrAdminOfficeOrSchool, 
+router.get(
+  "/",
+  protect,
+  isTeacherOrAdminOfficeOrSchool,
   checkPermission("result"),
-  validate(getResultsQuerySchema, "query"),
   getResults
 );
 
-router.get("/by-position", 
-  protect, 
-  isTeacherOrAdminOfficeOrSchool, 
+router.get(
+  "/:resultId",
+  protect,
+  isTeacherOrAdminOfficeOrSchool,
   checkPermission("result"),
-  validate(getResultsByPositionQuerySchema, "query"),
-  getResultsByPosition
+  getResultById
 );
 
-// Student routes
-router.get("/student", 
-  protect, 
-  isStudent, 
+router.get(
+  "/student/:studentId",
+  protect,
+  allowedRoles,
   checkPermission("result"),
   getStudentResults
+);
+
+router.get(
+  "/class/:classId",
+  protect,
+  isTeacherOrAdminOfficeOrSchool,
+  checkPermission("result"),
+  getClassResults
 );
 
 module.exports = router;

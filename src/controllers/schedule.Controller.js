@@ -58,7 +58,8 @@ const formatScheduleResponse = (schedule) => {
     response.subjectInfo = {
       _id: response.subjectId._id,
       name: response.subjectId.name,
-      code: response.subjectId.code
+      code: response.subjectId.code,
+      description: response.subjectId.description
     };
   }
 
@@ -236,7 +237,7 @@ const getSchedule = async (req, res) => {
     if (teacherId) filter.teacherId = teacherId;
     if (day) filter.day = day;
 
-    const total = await Schedule.countDocuments(filter);
+    // const total = await Schedule.countDocuments(filter);
 
     const schedules = await Schedule.find(filter)
       .populate({
@@ -253,6 +254,7 @@ const getSchedule = async (req, res) => {
     const validSchedules = schedules.filter(schedule =>
       schedule.type !== 'subject' || schedule.subjectId !== null
     );
+    const total = validSchedules.length;
 
     const formattedSchedules = validSchedules.map(schedule =>
       formatScheduleResponse(schedule)
@@ -276,12 +278,47 @@ const getSchedule = async (req, res) => {
 };
 
 // Get schedule by specific section
-const getScheduleBySection = async (req, res) => {
+const getSubjectBySectionSchedule = async (req, res) => {
   try {
     const schoolId = req.user.school;
-    const { classId, sectionId, day, page = 1, limit = 10 } = req.query;
+    const user = req.user;
+
+    let { classId, sectionId, day, page = 1, limit = 10 } = req.query;
+
+    page = Number(page);
+    limit = Number(limit);
+
+    if (user.role === "teacher") {
+      if (user.isIncharge) {
+        const teacherClassId = user.classInfo?.id?.toString();
+        const teacherSectionId = user.sectionInfo?.id?.toString();
+
+        if (!teacherClassId || !teacherSectionId) {
+          return res.status(400).json({
+            message: "Class incharge information not found."
+          });
+        }
+
+        if (
+          (classId && classId !== teacherClassId) ||
+          (sectionId && sectionId !== teacherSectionId)
+        ) {
+          return res.status(403).json({
+            message: "You can only view your assigned class/section schedule."
+          });
+        }
+
+        classId = teacherClassId;
+        sectionId = teacherSectionId;
+      } else {
+        return res.status(403).json({
+          message: "Only class incharge teachers can access section schedules."
+        });
+      }
+    }
 
     const classResult = await getClassSectionData(classId, schoolId, sectionId);
+
     if (classResult.error) {
       return res.status(classResult.error.status).json({
         message: classResult.error.message
@@ -294,43 +331,81 @@ const getScheduleBySection = async (req, res) => {
       sectionId,
       isActive: true
     };
-    if (day) filter.day = day;
 
-    const total = await Schedule.countDocuments(filter);
+    if (day) filter.day = day;
 
     const schedules = await Schedule.find(filter)
       .populate({
         path: "subjectId",
-        select: "name code",
-        // match: { isActive: true }
+        select: "name code description"
       })
-      .populate({ path: "teacherId", select: "name email", model: "Staff" })
+      .populate({
+        path: "teacherId",
+        select: "name email",
+        model: "Staff"
+      })
       .populate("classId", "class sections")
-      .skip((page - 1) * limit)
-      .limit(limit)
       .sort({ day: 1, startTime: 1 });
 
-    const validSchedules = schedules.filter(schedule =>
-      schedule.type !== 'subject' || schedule.subjectId !== null
+    const validSchedules = schedules.filter(schedule => {
+
+      if (
+        schedule.type === "subject" &&
+        !schedule.subjectId
+      ) {
+        return false;
+      }
+
+      const sectionExists = schedule.classId?.sections?.some(
+        sec =>
+          sec._id.toString() === schedule.sectionId.toString()
+      );
+
+      if (!sectionExists) {
+        return false;
+      }
+
+      return true;
+    });
+
+    const paginatedSchedules = validSchedules.slice(
+      (page - 1) * limit,
+      page * limit
     );
 
-    const formattedSchedules = validSchedules.map(schedule =>
+    const formattedSchedules = paginatedSchedules.map(schedule =>
       formatScheduleResponse(schedule)
     );
 
-    res.status(200).json({
-      page: Number(page),
-      limit: Number(limit),
+    const subjectInfo = [
+      ...new Map(
+        formattedSchedules
+          .filter(schedule => schedule.subjectInfo)
+          .map(schedule => [
+            schedule.subjectInfo._id.toString(),
+            schedule.subjectInfo
+          ])
+      ).values()
+    ];
+
+    const total = subjectInfo.length;
+
+    return res.status(200).json({
+      page,
+      limit,
       total,
       totalPages: Math.ceil(total / limit),
-      count: formattedSchedules.length,
+      count: subjectInfo.length,
       class: classResult.data.class,
       section: classResult.data.section,
-      schedules: formattedSchedules,
+      subjectInfo: subjectInfo,
+      // schedules: formattedSchedules
     });
+
   } catch (error) {
-    console.error("Get schedule by section error:", error);
-    res.status(500).json({
+    console.error(error);
+
+    return res.status(500).json({
       message: "Server error",
       error: error.message
     });
@@ -354,7 +429,7 @@ const getScheduleByTeacher = async (req, res) => {
     };
     if (day) filter.day = day;
 
-    const total = await Schedule.countDocuments(filter);
+    // const total = await Schedule.countDocuments(filter);
 
     const schedules = await Schedule.find(filter)
       .populate({
@@ -371,6 +446,7 @@ const getScheduleByTeacher = async (req, res) => {
     const validSchedules = schedules.filter(schedule =>
       schedule.type !== 'subject' || schedule.subjectId !== null
     );
+    const total = validSchedules.length;
 
     const formattedSchedules = validSchedules.map(schedule => {
       const formatted = formatScheduleResponse(schedule);
@@ -430,7 +506,7 @@ const getScheduleByStudent = async (req, res) => {
     };
     if (day) filter.day = day;
 
-    const total = await Schedule.countDocuments(filter);
+    // const total = await Schedule.countDocuments(filter);
 
     const schedules = await Schedule.find(filter)
       .populate({
@@ -447,6 +523,7 @@ const getScheduleByStudent = async (req, res) => {
     const validSchedules = schedules.filter(schedule =>
       schedule.type !== 'subject' || schedule.subjectId !== null
     );
+    const total = validSchedules.length;
 
     const formattedSchedules = validSchedules.map(schedule => {
       const formatted = formatScheduleResponse(schedule);
@@ -703,7 +780,7 @@ const deleteSchedule = async (req, res) => {
 module.exports = {
   addSchedule,
   getSchedule,
-  getScheduleBySection,
+  getSubjectBySectionSchedule,
   getScheduleByTeacher,
   getScheduleByStudent,
   updateSchedule,

@@ -289,12 +289,9 @@ const addExamSchedule = async (req, res) => {
         }
 
 
-        console.log(subjectId, classId)
         const subject = await Subject.findOne({
           _id: subjectId,
-          classId: classId,
           isActive: true,
-          sectionId: sectionId
         });
         if (!subject) {
           errors.push({ item, error: "Subject not found for this class/section" });

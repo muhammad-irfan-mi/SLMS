@@ -1,5 +1,7 @@
 const Joi = require('joi');
 
+const currentYear = new Date().getFullYear();
+
 const validateTimeFormat = (value, helpers) => {
     const timeRegex = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
     if (!timeRegex.test(value)) {
@@ -22,14 +24,14 @@ const getPakistanDate = () => {
 const validateTimeRange = (value, helpers) => {
     const { startTime } = helpers.state.ancestors[0];
     if (!startTime) return value;
-    
+
     const start = convertToMinutes(startTime);
     const end = convertToMinutes(value);
-    
+
     if (end <= start) {
         return helpers.error('any.invalid');
     }
-    
+
     return value;
 };
 
@@ -38,11 +40,11 @@ const validateExamDate = (value, helpers) => {
     const today = getPakistanDate();
     today.setHours(0, 0, 0, 0);
     examDate.setHours(0, 0, 0, 0);
-    
+
     if (examDate < today) {
         return helpers.error('any.invalid');
     }
-    
+
     return value;
 };
 
@@ -57,13 +59,14 @@ const createExamScheduleSchema = Joi.object({
 
     year: Joi.number()
         .integer()
-        .min(2020)
-        .max(2100)
+        .min(currentYear)
+        .max(currentYear + 1)
         .required()
         .messages({
-            'number.min': 'Year must be at least 2020',
-            'number.max': 'Year cannot exceed 2100',
+            'number.base': 'Year must be a number',
             'number.integer': 'Year must be an integer',
+            'number.min': `Year cannot be less than ${currentYear}`,
+            'number.max': `Year cannot be greater than ${currentYear + 1}`,
             'any.required': 'Year is required'
         }),
 
@@ -335,39 +338,39 @@ const getScheduleQuerySchema = Joi.object({
 });
 
 const validateBody = (schema) => (req, res, next) => {
-    const { error, value } = schema.validate(req.body, { 
+    const { error, value } = schema.validate(req.body, {
         abortEarly: false,
-        stripUnknown: true 
+        stripUnknown: true
     });
-    
+
     if (error) {
         const errorMessages = error.details.map(detail => detail.message);
-        return res.status(400).json({ 
+        return res.status(400).json({
             success: false,
             message: 'Validation error',
-            errors: errorMessages 
+            errors: errorMessages
         });
     }
-    
+
     req.body = value;
     next();
 };
 
 const validateQuery = (schema) => (req, res, next) => {
-    const { error, value } = schema.validate(req.query, { 
+    const { error, value } = schema.validate(req.query, {
         abortEarly: false,
-        stripUnknown: true 
+        stripUnknown: true
     });
-    
+
     if (error) {
         const errorMessages = error.details.map(detail => detail.message);
-        return res.status(400).json({ 
+        return res.status(400).json({
             success: false,
             message: 'Validation error',
-            errors: errorMessages 
+            errors: errorMessages
         });
     }
-    
+
     req.query = value;
     next();
 };
