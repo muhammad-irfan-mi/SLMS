@@ -60,11 +60,29 @@ const validateExamSchedule = async (subjectId, classId, sectionId, examType, yea
 };
 
 const canManageResult = async (user, studentId, schoolId) => {
-    console.log("Checking if user can manage result", user.role, studentId, schoolId)
-
-    // Check if user is admin (schoolId exists in user or role is admin_office)
     const isAdmin = user.schoolId || user.role === 'admin_office';
-    console.log("Is admin:", isAdmin)
+
+    if (user.role === 'student') {
+        const student = await Student.findOne({
+            _id: user._id,
+            school: schoolId,
+            isActive: true
+        }).lean();
+
+        if (!student) {
+            return { allowed: false, message: "Student not found", student: null };
+        }
+
+        if (student._id.toString() !== studentId.toString()) {
+            return {
+                allowed: false,
+                message: "You are not authorized to view results for this student.",
+                student: null
+            };
+        }
+
+        return { allowed: true, student: student };
+    }
 
     if (isAdmin) {
         const student = await Student.findOne({
@@ -72,7 +90,6 @@ const canManageResult = async (user, studentId, schoolId) => {
             school: schoolId,
             isActive: true
         }).lean();
-        console.log("Admin - Student found:", student)
 
         if (!student) {
             return { allowed: false, message: "Student not found", student: null };
@@ -112,33 +129,33 @@ const canManageResult = async (user, studentId, schoolId) => {
     return { allowed: true, student: student };
 };
 
-const getAccessibleStudentIds = async (user, schoolId) => {
-    const isAdmin = user.role === 'admin' || user.role === 'superadmin' || user.role === 'admin_office';
+// const getAccessibleStudentIds = async (user, schoolId) => {
+//     const isAdmin = user.role === 'admin' || user.role === 'superadmin' || user.role === 'admin_office';
 
-    if (isAdmin) {
-        return null; 
-    }
+//     if (isAdmin) {
+//         return null; 
+//     }
 
-    const teacher = await Staff.findOne({
-        _id: user._id,
-        school: schoolId,
-        isActive: true,
-        isIncharge: true
-    }).lean();
+//     const teacher = await Staff.findOne({
+//         _id: user._id,
+//         school: schoolId,
+//         isActive: true,
+//         isIncharge: true
+//     }).lean();
 
-    if (!teacher || !teacher.classInfo?.id || !teacher.sectionInfo?.id) {
-        return []; 
-    }
+//     if (!teacher || !teacher.classInfo?.id || !teacher.sectionInfo?.id) {
+//         return []; 
+//     }
 
-    const students = await Student.find({
-        school: schoolId,
-        isActive: true,
-        'classInfo.id': teacher.classInfo.id,
-        'sectionInfo.id': teacher.sectionInfo.id
-    }).select('_id').lean();
+//     const students = await Student.find({
+//         school: schoolId,
+//         isActive: true,
+//         'classInfo.id': teacher.classInfo.id,
+//         'sectionInfo.id': teacher.sectionInfo.id
+//     }).select('_id').lean();
 
-    return students.map(s => s._id);
-};
+//     return students.map(s => s._id);
+// };
 
 const createResult = async (req, res) => {
     console.log("createResult", req.user)
