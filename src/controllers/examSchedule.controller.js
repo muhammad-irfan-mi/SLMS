@@ -5,6 +5,7 @@ const User = require("../models/User");
 const Notice = require("../models/Notice");
 const Staff = require("../models/Staff");
 const Student = require("../models/Student");
+const { getClassSectionData } = require("../utils/classHelper");
 
 const toMinutes = (t) => {
   if (!t) return 0;
@@ -948,11 +949,11 @@ const updateExamSchedule = async (req, res) => {
     // Handle teacher update - with null check
     if (updateData.teacherId) {
       const existingTeacherId = existingSchedule.teacherId ? existingSchedule.teacherId.toString() : null;
-      
+
       if (updateData.teacherId !== existingTeacherId) {
         const oldTeacher = existingSchedule.teacherId ? await Staff.findById(existingSchedule.teacherId) : null;
         const newTeacher = await Staff.findById(updateData.teacherId);
-        
+
         if (newTeacher) {
           if (newTeacher.school.toString() !== schoolId.toString() || newTeacher.role !== 'teacher') {
             return res.status(400).json({
@@ -1027,7 +1028,7 @@ const updateExamSchedule = async (req, res) => {
 
       const subject = await Subject.findOne({
         _id: updateData.subjectId,
-        classId: classId,  
+        classId: classId,
         $or: [
           { sectionId: sectionId },
           { sectionId: null }
@@ -1192,7 +1193,6 @@ const updateExamSchedule = async (req, res) => {
   }
 };
 
-
 // DELETE EXAM SCHEDULE
 const deleteSchedule = async (req, res) => {
   try {
@@ -1255,6 +1255,98 @@ const deleteSchedule = async (req, res) => {
   }
 };
 
+const getExamSubjects = async (req, res) => {
+  try {
+    const schoolId = req.user.school;
+    const user = req.user;
+
+    let { classId, sectionId, examType, year, page = 1, limit = 10 } = req.query;
+
+    page = Number(page);
+    limit = Number(limit);
+
+    if (user.role === "teacher") {
+      if (!user.isIncharge) {
+        return res.status(403).json({
+          message: "Only class incharge teachers can access exam subjects."
+        });
+      }
+
+      const teacherClassId = user.classInfo?.id?.toString();
+      const teacherSectionId = user.sectionInfo?.id?.toString();
+
+      if (
+        (classId && classId !== teacherClassId) ||
+        (sectionId && sectionId !== teacherSectionId)
+      ) {
+        return res.status(403).json({
+          message: "You can only access your assigned class/section."
+        });
+      }
+
+      classId = teacherClassId;
+      sectionId = teacherSectionId;
+    }
+
+    const classResult = await getClassSectionData(
+      classId,
+      schoolId,
+      sectionId
+    );
+
+    if (classResult.error) {
+      return res.status(classResult.error.status).json({
+        message: classResult.error.message
+      });
+    }
+
+    const filter = { school: schoolId, classId, sectionId };
+    if (examType) filter.type = examType;
+    if (year) filter.year = Number(year);
+
+    const schedules = await ExamSchedule.find(filter)
+      .populate({
+        path: "subjectId",
+        select: "name code description"
+      })
+      .sort({ examDate: 1 });
+
+    const subjects = [
+      ...new Map(
+        schedules
+          .filter(s => s.subjectId)
+          .map(s => [
+            s.subjectId._id.toString(),
+            s.subjectId
+          ])
+      ).values()
+    ];
+
+    const total = subjects.length;
+    const subjectInfo = subjects.slice(
+      (page - 1) * limit,
+      page * limit
+    );
+
+    return res.status(200).json({
+      page,
+      limit,
+      total,
+      totalPages: Math.ceil(total / limit),
+      count: subjectInfo.length,
+      class: classResult.data.class,
+      section: classResult.data.section,
+      examType: examType || null,
+      year: year ? Number(year) : null,
+      subjectInfo
+    });
+
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ message: err.message });
+  }
+};
+
 module.exports = {
   addExamSchedule,
   getSchedule,
@@ -1262,4 +1354,5 @@ module.exports = {
   getScheduleByStudent,
   updateExamSchedule,
   deleteSchedule,
+  getExamSubjects
 };

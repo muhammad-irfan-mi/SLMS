@@ -105,9 +105,9 @@ const ResultSchema = new mongoose.Schema(
       default: ""
     },
 
-    image: {
-      type: String
-    },
+    // image: {
+    //   type: String
+    // },
 
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

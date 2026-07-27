@@ -814,6 +814,29 @@ const getStudentResults = async (req, res) => {
             sectionMap
         );
 
+        const allSubjectIds = [];
+        results.forEach(result => {
+            result.subjects.forEach(sub => {
+                if (sub.subjectId) {
+                    allSubjectIds.push(sub.subjectId);
+                }
+            });
+        });
+
+        const uniqueSubjectIds = [...new Set(allSubjectIds.map(id => id.toString()))];
+        const subjects = await Subject.find({
+            _id: { $in: uniqueSubjectIds },
+            school: schoolId
+        }).select('_id name code').lean();
+
+        const subjectMap = new Map();
+        subjects.forEach(sub => {
+            subjectMap.set(sub._id.toString(), {
+                name: sub.name,
+                code: sub.code || ''
+            });
+        });
+
         const formattedResults = results.map(result => {
             const {
                 studentId,
@@ -821,8 +844,21 @@ const getStudentResults = async (req, res) => {
                 sectionId,
                 ...resultData
             } = result;
-            return resultData;
+            const subjectsWithNames = result.subjects.map(sub => {
+                const subjectInfo = subjectMap.get(sub.subjectId.toString());
+                return {
+                    ...sub,
+                    subjectName: subjectInfo?.name || 'Unknown',
+                    subjectCode: subjectInfo?.code || ''
+                };
+            });
+
+            return {
+                ...resultData,
+                subjects: subjectsWithNames
+            };
         });
+
 
         return res.status(200).json({
             success: true,

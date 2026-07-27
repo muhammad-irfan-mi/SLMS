@@ -107,7 +107,7 @@ const addSchedule = async (req, res) => {
       }
 
       if (s.type === 'subject') {
-        const subject = await Subject.findOne({ _id: s.subjectId, school: schoolId });
+        const subject = await Subject.findOne({ _id: s.subjectId, school: schoolId, isActive: true });
         if (!subject) return res.status(400).json({ message: "Subject not found" });
 
         const teacher = await Staff.findOne({

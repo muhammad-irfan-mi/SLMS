@@ -13,7 +13,8 @@ const {
     deleteSchedule, 
     getScheduleByTeacher, 
     getScheduleByStudent, 
-    updateExamSchedule 
+    updateExamSchedule, 
+    getExamSubjects
 } = require("../controllers/examSchedule.controller");
 
 const {
@@ -77,6 +78,14 @@ router.get(
     validateQuery(getScheduleQuerySchema), 
     checkPermission("examschedule"),
     getScheduleByStudent
+);
+
+router.get(
+    "/subjects", 
+    protect, 
+    isTeacherOrAdminOfficeOrSchool, 
+    checkPermission("examschedule"),
+    getExamSubjects
 );
 
 module.exports = router;
