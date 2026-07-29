@@ -792,161 +792,7 @@ const resetPassword = async (req, res, Model, userType) => {
     }
 };
 
-// Toggle user status
-// const toggleUserStatus = async (req, res, Model) => {
-//     try {
-//         const { id } = req.params;
-//         const schoolId = req.user.school;
 
-//         const user = await Model.findOne({
-//             _id: id,
-//             school: schoolId
-//         });
-
-//         if (!user) {
-//             return res.status(404).json({
-//                 success: false,
-//                 message: "User not found in your school"
-//             });
-//         }
-
-//         const newStatus = !user.isActive;
-//         user.isActive = newStatus;
-
-//         if (!newStatus) {
-//             user.deactivatedAt = new Date();
-//         } else {
-//             user.deactivatedAt = null;
-//         }
-
-//         user.tokenVersion = (user.tokenVersion || 0) + 1;
-//         await user.save();
-
-//         return res.status(200).json({
-//             success: true,
-//             message: `User ${newStatus ? 'activated' : 'deleted'} successfully`,
-//             user: {
-//                 id: user._id,
-//                 name: user.name,
-//                 email: user.email,
-//                 role: user.role,
-//                 isActive: user.isActive,
-//                 tokenVersion: user.tokenVersion
-//             }
-//         });
-
-//     } catch (err) {
-//         return res.status(500).json({
-//             success: false,
-//             message: "Server error",
-//         });
-//     }
-// };
-
-const toggleUserStatus = async (req, res, Model, isSelfDelete = false) => {
-    try {
-        const { id } = req.params;
-        const schoolId = req.user.school;
-        const userId = req.user._id;
-
-        const targetId = isSelfDelete ? userId : id;
-
-        if (isSelfDelete && targetId.toString() !== userId.toString()) {
-            return res.status(403).json({
-                success: false,
-                message: "You can only delete your own account"
-            });
-        }
-
-        const user = await Model.findOne({
-            _id: targetId,
-            school: schoolId
-        });
-
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: "User not found in your school"
-            });
-        }
-
-        const isAdminOfficeDelete = !isSelfDelete && req.user.role === 'admin_office';
-
-        if (user.isActive === false) {
-            if (user.deactivatedAt) {
-                const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
-                const timeSinceDeactivation = Date.now() - new Date(user.deactivatedAt).getTime();
-
-                if (timeSinceDeactivation >= sevenDaysInMs) {
-                    return res.status(400).json({
-                        success: false,
-                        message: "Account cannot be restored. 7 days have already passed. Account is permanently deactivated.",
-                        isRestorable: false,
-                        deactivatedAt: user.deactivatedAt,
-                        canRestore: false
-                    });
-                }
-            }
-            return res.status(400).json({
-                success: false,
-                message: "Account already deactivated"
-            });
-        }
-
-        if (isAdminOfficeDelete) {
-            user.isActive = false;
-            user.deactivatedAt = new Date();
-            user.isRestorable = true; 
-            user.tokenVersion = (user.tokenVersion || 0) + 1;
-            await user.save();
-
-            return res.status(200).json({
-                success: true,
-                message: `User deleted successfully. Admin can restore within 7 days.`,
-            });
-        } else if (isSelfDelete) {
-            user.isActive = false;
-            user.deactivatedAt = new Date();
-            user.isRestorable = true;
-            user.tokenVersion = (user.tokenVersion || 0) + 1;
-            await user.save();
-
-            return res.status(200).json({
-                success: true,
-                message: `Account marked for deletion. Admin can restore within 7 days. After 7 days, account cannot be restored.`,
-            });
-        } else {
-            const newStatus = !user.isActive;
-            user.isActive = newStatus;
-
-            if (!newStatus) {
-                user.deactivatedAt = new Date();
-                user.isRestorable = true;
-            } else {
-                user.deactivatedAt = null;
-                user.isRestorable = true;
-            }
-
-            user.tokenVersion = (user.tokenVersion || 0) + 1;
-            await user.save();
-
-            return res.status(200).json({
-                success: true,
-                message: `User ${newStatus ? 'activated' : 'deactivated'} successfully`,
-            });
-        }
-
-    } catch (err) {
-        console.error("toggleUserStatus error:", err);
-        return res.status(500).json({
-            success: false,
-            message: "Server error",
-            error: err.message
-        });
-    }
-};
-
-// Login
 const login = async (req, res, Model, userType) => {
     try {
         const { email, username, password } = req.body;
@@ -1061,6 +907,377 @@ const login = async (req, res, Model, userType) => {
     }
 };
 
+
+const toggleUserStatus = async (req, res, Model, isSelfDelete = false) => {
+    try {
+        const { id } = req.params;
+        const schoolId = req.user.school;
+        const userId = req.user._id;
+
+        const targetId = isSelfDelete ? userId : id;
+
+        if (isSelfDelete && targetId.toString() !== userId.toString()) {
+            return res.status(403).json({
+                success: false,
+                message: "You can only delete your own account"
+            });
+        }
+
+        const user = await Model.findOne({
+            _id: targetId,
+            school: schoolId
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found in your school"
+            });
+        }
+
+        const isAdminOfficeDelete = !isSelfDelete && req.user.role === 'admin_office';
+
+        if (user.isActive === false) {
+            if (user.deactivatedAt) {
+                const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+                const timeSinceDeactivation = Date.now() - new Date(user.deactivatedAt).getTime();
+
+                if (timeSinceDeactivation >= sevenDaysInMs) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Account cannot be restored. 7 days have already passed. Account is permanently deactivated.",
+                        isRestorable: false,
+                        deactivatedAt: user.deactivatedAt,
+                        canRestore: false,
+                        daysPassed: Math.floor(timeSinceDeactivation / (24 * 60 * 60 * 1000))
+                    });
+                }
+            }
+            return res.status(400).json({
+                success: false,
+                message: "Account already deactivated. You can restore within 7 days.",
+                canRestore: true,
+                deactivatedAt: user.deactivatedAt
+            });
+        }
+
+        if (isAdminOfficeDelete) {
+            user.isActive = false;
+            user.deactivatedAt = new Date();
+            user.isRestorable = true;
+            user.tokenVersion = (user.tokenVersion || 0) + 1;
+            await user.save();
+
+            return res.status(200).json({
+                success: true,
+                message: `User deleted successfully. Admin can restore within 7 days.`,
+                deactivatedAt: user.deactivatedAt,
+                canRestore: true,
+                restoreDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            });
+        }
+
+        if (isSelfDelete) {
+            user.isActive = false;
+            user.deactivatedAt = new Date();
+            user.isRestorable = true;
+            user.tokenVersion = (user.tokenVersion || 0) + 1;
+            await user.save();
+
+            return res.status(200).json({
+                success: true,
+                message: `Account marked for deletion. Admin can restore within 7 days. After 7 days, account cannot be restored.`,
+                deactivatedAt: user.deactivatedAt,
+                canRestore: true,
+                restoreDeadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+            });
+        }
+
+        const newStatus = !user.isActive;
+        user.isActive = newStatus;
+
+        if (!newStatus) {
+            user.deactivatedAt = new Date();
+            user.isRestorable = true;
+        } else {
+            user.deactivatedAt = null;
+            user.isRestorable = true;
+        }
+
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+        await user.save();
+
+        return res.status(200).json({
+            success: true,
+            message: `User ${newStatus ? 'activated' : 'deactivated'} successfully`,
+            deactivatedAt: user.deactivatedAt,
+            canRestore: newStatus ? false : true
+        });
+
+    } catch (err) {
+        console.error("toggleUserStatus error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: err.message
+        });
+    }
+};
+
+const getDeletedUsers = async (req, res, Model, userType) => {
+    try {
+        const schoolId = req.user.school;
+        console.log('schoolId', req.user, 'userType', userType)
+        const {
+            page = 1,
+            limit = 10,
+            classId,
+            sectionId,
+            status,
+            search,
+            role 
+        } = req.query;
+
+        const filter = {
+            school: schoolId,
+            isActive: false
+        };
+
+        // Handle different status filters
+        switch (status) {
+            case "restore":
+                filter.isRestorable = true;
+                break;
+            case "left":
+                filter.status = "left";
+                break;
+            case "passout":
+                filter.status = "passout";
+                break;
+            default:
+                filter.status = { $in: ["active", "left", "passout"] };
+        }
+
+        // Staff specific filter
+        if (userType === 'staff' && role) {
+            filter.role = role;
+        }
+
+        // Student specific filters
+        if (userType === 'student') {
+            if (classId) {
+                filter["classInfo.id"] = classId;
+            }
+            if (sectionId) {
+                filter["sectionInfo.id"] = sectionId;
+            }
+        }
+
+        // Search
+        if (search) {
+            filter.$or = [
+                { name: { $regex: search, $options: 'i' } },
+                { username: { $regex: search, $options: 'i' } },
+                { email: { $regex: search, $options: 'i' } },
+                ...(userType === 'student' ? [{ rollNo: { $regex: search, $options: 'i' } }] : [])
+            ];
+        }
+
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+
+        const [users, total] = await Promise.all([
+            Model.find(filter)
+                .select("-password -otp -forgotPasswordOTP -tokenVersion")
+                .skip(skip)
+                .limit(parseInt(limit))
+                .sort({ deactivatedAt: -1, createdAt: -1 })
+                .lean(),
+            Model.countDocuments(filter)
+        ]);
+
+        const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+
+        // Format users with restoration info
+        const formattedUsers = users.map(user => {
+            const userObj = { ...user };
+
+            if (userObj.deactivatedAt) {
+                const timeSinceDeactivation = Date.now() - new Date(userObj.deactivatedAt).getTime();
+                const canRestore = timeSinceDeactivation < sevenDaysInMs && userObj.isRestorable !== false;
+                const remainingTime = sevenDaysInMs - timeSinceDeactivation;
+
+                userObj.restorationInfo = {
+                    canRestore: canRestore,
+                    daysPassed: Math.floor(timeSinceDeactivation / (24 * 60 * 60 * 1000)),
+                    remainingDays: Math.floor(remainingTime / (24 * 60 * 60 * 1000)),
+                    remainingHours: Math.floor((remainingTime % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000)),
+                    deactivatedAt: userObj.deactivatedAt,
+                    restoreDeadline: new Date(new Date(userObj.deactivatedAt).getTime() + sevenDaysInMs),
+                    isPermanentlyDeleted: timeSinceDeactivation >= sevenDaysInMs || userObj.isRestorable === false
+                };
+            }
+
+            return userObj;
+        });
+
+        return res.status(200).json({
+            success: true,
+            userType,
+            pagination: {
+                total,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                totalPages: Math.ceil(total / parseInt(limit))
+            },
+            users: formattedUsers
+        });
+
+    } catch (err) {
+        console.error(`Error fetching deleted ${userType}s:`, err);
+        return res.status(500).json({
+            success: false,
+            message: err.message || `Server error while fetching deleted ${userType}s`
+        });
+    }
+};
+
+const restoreUser = async (req, res, Model) => {
+    try {
+        const userId = req.params.userId || req.user._id;
+        const schoolId = req.user.school;
+
+        const user = await Model.findOne({
+            _id: userId,
+            school: schoolId,
+            isActive: false
+        });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "No deactivated account found"
+            });
+        }
+
+        if (user.isActive === true) {
+            return res.status(400).json({
+                success: false,
+                message: "User account is already active"
+            });
+        }
+
+        if (!user.deactivatedAt) {
+            return res.status(400).json({
+                success: false,
+                message: "User account is not marked for deletion"
+            });
+        }
+
+        const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
+        const timeSinceDeactivation = Date.now() - new Date(user.deactivatedAt).getTime();
+
+        if (timeSinceDeactivation >= sevenDaysInMs) {
+            user.isRestorable = false;
+            await user.save();
+
+            return res.status(400).json({
+                success: false,
+                message: "Account cannot be restored. 7 days have already passed. Account is permanently deactivated.",
+                canRestore: false,
+                deactivatedAt: user.deactivatedAt,
+                daysPassed: Math.floor(timeSinceDeactivation / (24 * 60 * 60 * 1000)),
+                isPermanentlyDeleted: true
+            });
+        }
+
+        if (user.isRestorable === false) {
+            return res.status(400).json({
+                success: false,
+                message: "Account is not eligible for restoration."
+            });
+        }
+
+        user.isActive = true;
+        user.deactivatedAt = null;
+        user.isRestorable = true;
+        user.tokenVersion = (user.tokenVersion || 0) + 1;
+        await user.save();
+
+        return res.status(200).json({
+            success: true,
+            message: `Account restored successfully for ${user.name}`,
+            data: {
+                _id: user._id,
+                name: user.name,
+                email: user.email,
+                role: user.role || 'student',
+                restoredAt: new Date()
+            }
+        });
+
+    } catch (err) {
+        console.error("restoreUser error:", err);
+        return res.status(500).json({
+            success: false,
+            message: "Server error",
+            error: err.message
+        });
+    }
+};
+
+const deleteOwnAccount = async (req, res, Model) => {
+    return toggleUserStatus(req, res, Model, true);
+};
+
+const updateOwnProfile = async (req, res, Model) => {
+    try {
+        const userId = req.user._id;
+        const existing = await Model.findById(userId);
+
+        if (!existing) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        const updatableFields = {};
+        const allowedFields = ['name', 'phone', 'address', 'cnic', 'fatherName', 'salary', 'joiningDate'];
+
+        allowedFields.forEach(field => {
+            if (req.body[field] !== undefined) {
+                updatableFields[field] = req.body[field];
+            }
+        });
+
+        if (req.files) {
+            const updatedImages = await uploadFiles(req.files, existing.images);
+            updatableFields.images = updatedImages;
+        }
+
+        updatableFields.updatedAt = new Date();
+
+        const updated = await Model.findByIdAndUpdate(
+            userId,
+            updatableFields,
+            { new: true }
+        ).select("-password -otp -forgotPasswordOTP -tokenVersion");
+
+        return res.status(200).json({
+            success: true,
+            message: "Profile updated successfully",
+            user: updated
+        });
+
+    } catch (err) {
+        console.error("Error updating profile:", err);
+        return res.status(500).json({
+            success: false,
+            message: err.message || "Server error while updating profile"
+        });
+    }
+};
+
 module.exports = {
     generateOTP,
     calculateOTPExpiry,
@@ -1075,5 +1292,9 @@ module.exports = {
     resetPassword,
     resendForgotPasswordOTP,
     toggleUserStatus,
-    login
+    login,
+    getDeletedUsers,
+    restoreUser,
+    deleteOwnAccount,
+    updateOwnProfile
 };

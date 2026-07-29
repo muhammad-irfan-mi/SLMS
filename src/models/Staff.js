@@ -12,6 +12,11 @@ const StaffSchema = new mongoose.Schema({
     joiningDate: Date,
     jobRole: String,
     isIncharge: { type: Boolean, default: false },
+    status: {
+        type: String,
+        enum: ['active', 'left'],
+        default: 'active'
+    },
     classInfo: {
         id: { type: mongoose.Schema.Types.ObjectId, ref: "ClassSection" },
     },

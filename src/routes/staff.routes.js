@@ -4,7 +4,7 @@ const { protect, isAdminOffice, isTeacherOrAdminOfficeOrSchool, isTeacher } = re
 const { upload } = require("../utils/multer");
 const validate = require("../middlewares/validate");
 const staffValidation = require("../validators/staff.validation");
-const { sendOTP, verifyOTP, resendOTP, setPasswordAfterOTP, login, forgotPassword, verifyForgotPasswordOTP, resetPasswordWithOTP, resetPassword, resendForgotPasswordOTP, addStaff, getAllStaff, getStaffById, updateOwnProfile, toggleStaffStatus, updateStaff, deleteOwnAccount, restoreOwnAccount, addStaffPermissions, removeStaffPermissions, updateStaffPermissions, getStaffPermissions } = require("../controllers/staff.controller");
+const { sendOTP, verifyOTP, resendOTP, setPasswordAfterOTP, login, forgotPassword, verifyForgotPasswordOTP, resetPasswordWithOTP, resetPassword, resendForgotPasswordOTP, addStaff, getAllStaff, getStaffById, toggleStaffStatus, updateStaff, restoreStaffAccount, addStaffPermissions, removeStaffPermissions, updateStaffPermissions, getStaffPermissions, getDeletedStaff, updateStaffProfile, deleteStaffAccount } = require("../controllers/staff.controller");
 const { checkPermission } = require("../middlewares/permission");
 
 // Public auth routes
@@ -115,6 +115,14 @@ router.get(
 );
 
 router.get(
+    "/deleted",
+    protect,
+    isAdminOffice,
+    checkPermission("staff"),
+    getDeletedStaff
+);
+
+router.get(
     "/:id",
     protect,
     isTeacherOrAdminOfficeOrSchool,
@@ -131,12 +139,12 @@ router.put(
     ]),
     validate(staffValidation.profile.update),
     checkPermission('staff'),
-    updateOwnProfile
+    updateStaffProfile
 );
 
-router.delete("/me/account", protect, isTeacher, checkPermission('staff'), deleteOwnAccount);
+router.delete("/account", protect, isTeacher, checkPermission('staff'), deleteStaffAccount);
 
-router.post("/account/restore/:userId",protect, isAdminOffice, checkPermission('staff'), restoreOwnAccount);
+router.post("/account/restore/:userId", protect, isAdminOffice, checkPermission('staff'), restoreStaffAccount);
 
 router.delete(
     "/:id",

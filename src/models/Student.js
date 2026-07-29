@@ -78,19 +78,30 @@ const StudentSchema = new mongoose.Schema({
 
 StudentSchema.index({ school: 1, username: 1 }, { unique: true });
 StudentSchema.index({ school: 1, email: 1 });
-StudentSchema.index({ school: 1, "classInfo.id": 1, "sectionInfo.id": 1, rollNo: 1 }, { unique: true, sparse: true });
-// StudentSchema.index({ school: 1, parentEmail: 1 });
-// StudentSchema.index({ siblingGroupId: 1 });
-// StudentSchema.index({ school: 1, enrollmentDate: 1 });
-StudentSchema.index({ school: 1, status: 1 });
-StudentSchema.index({ school: 1, "leftInfo.date": 1 });
-StudentSchema.index({ "otp.expiresAt": 1 }, {
-  expireAfterSeconds: 0,
-  partialFilterExpression: { "otp.expiresAt": { $exists: true }, verified: false }
+StudentSchema.index(
+  { school: 1, "classInfo.id": 1, "sectionInfo.id": 1, rollNo: 1 },
+  { unique: true, sparse: true }
+);
+StudentSchema.index({ school: 1, status: 1, status: 1 });
+StudentSchema.index({
+    school:1,
+    isActive:1,
+    deactivatedAt:-1
 });
 StudentSchema.index(
   { createdAt: 1 },
-  { expireAfterSeconds: 7 * 24 * 60 * 60, partialFilterExpression: { verified: false } }
+  {
+    expireAfterSeconds: 7 * 24 * 60 * 60,
+    partialFilterExpression: { verified: false }
+  }
+);
+
+StudentSchema.index(
+  { verificationExpiresAt: 1 },
+  {
+    expireAfterSeconds: 0,
+    partialFilterExpression: { verified: false }
+  }
 );
 
 module.exports = mongoose.model("Student", StudentSchema);

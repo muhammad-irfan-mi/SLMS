@@ -220,7 +220,7 @@ const createResult = async (req, res) => {
         const dbSubjects = await Subject.find({
             _id: { $in: subjectIds },
             school: schoolId,
-            isActive: true
+            // isActive: true
         }).select("name code totalMarks").lean();
 
         if (dbSubjects.length !== subjects.length) {

@@ -1,9 +1,22 @@
-// controllers/student.controller.js
+const csv = require('csv-parser');
+const { Readable } = require('stream');
+const { promisify } = require('util');
 const Student = require("../models/Student");
 const ClassSection = require("../models/ClassSection");
 const School = require("../models/School");
 const common = require("./common.controller");
+const emailService = require("../services/email.service");
 const { sendProfileUpdateNotification, sendEmailChangeNotification } = require("../utils/notificationService");
+
+const generateOTP = () => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+};
+
+const calculateOTPExpiry = (minutes = 10) => {
+    const expiry = new Date();
+    expiry.setMinutes(expiry.getMinutes() + minutes);
+    return expiry;
+};
 
 // Get class and section info
 const getClassAndSection = async (classId, sectionId, schoolId) => {
@@ -107,7 +120,7 @@ const addStudent = async (req, res) => {
             classId,
             sectionId,
             rollNo,
-            parentEmail,
+            // parentEmail,
             isFixed,
             discount
         } = req.body;
@@ -209,7 +222,7 @@ const addStudent = async (req, res) => {
             school: schoolId,
             images,
             siblingGroupId,
-            parentEmail: parentEmail?.toLowerCase(),
+            // parentEmail: parentEmail?.toLowerCase(),
             isFixed: isFixed || false,
             discount: discount || 0,
             verified: false,
@@ -234,7 +247,6 @@ const addStudent = async (req, res) => {
 
         await School.findByIdAndUpdate(schoolId, { $inc: { noOfStudents: 1 } });
 
-        const emailService = require("../services/email.service");
         await emailService.sendStudentRegistrationEmail(
             email,
             otpCode,
@@ -252,6 +264,346 @@ const addStudent = async (req, res) => {
     } catch (err) {
         return res.status(500).json({
             message: err.message || "Server error while adding student"
+        });
+    }
+};
+
+const addStudentFromCSV = async (req, res) => {
+    try {
+        const schoolId = req.user.school;
+
+        if (!req.file) {
+            return res.status(400).json({ message: 'CSV file is required' });
+        }
+
+        const rows = [];
+        await new Promise((resolve, reject) => {
+            Readable.from(req.file.buffer)
+                .pipe(csv())
+                .on('data', (row) => rows.push(row))
+                .on('end', resolve)
+                .on('error', reject);
+        });
+
+        if (rows.length === 0) {
+            return res.status(400).json({ message: 'CSV file is empty' });
+        }
+
+        if (rows.length > 100) {
+            return res.status(400).json({
+                message: 'Maximum 100 students allowed per upload'
+            });
+        }
+
+
+        const normalizedRows = rows.map((row, index) => ({
+            rowNumber: index + 2,
+            name: row.name?.trim(),
+            username: row.username?.trim()?.toLowerCase(),
+            email: row.email?.trim()?.toLowerCase(),
+            phone: row.phone?.trim() || null,
+            address: row.address?.trim() || null,
+            cnic: row.cnic?.trim() || null,
+            fatherName: row.fatherName?.trim() || null,
+            classId: row.classId?.trim(),
+            sectionId: row.sectionId?.trim() || null,
+            rollNo: row.rollNo?.trim() || null,
+            isFixed: String(row.isFixed || '').toLowerCase() === 'true',
+            discount: Number(row.discount || 0)
+        }));
+
+        const csvUsernameSet = new Set();
+        const csvEmailSet = new Set();
+        const csvRollSet = new Set();
+
+        const errors = [];
+        const validRows = [];
+
+        for (const row of normalizedRows) {
+            if (!row.name || !row.username || !row.email || !row.classId) {
+                errors.push({
+                    row: row.rowNumber,
+                    message: 'name, username, email and classId are required'
+                });
+                continue;
+            }
+
+            if (csvUsernameSet.has(row.username)) {
+                errors.push({
+                    row: row.rowNumber,
+                    field: 'username',
+                    value: row.username,
+                    message: 'Duplicate username in CSV'
+                });
+                continue;
+            }
+            csvUsernameSet.add(row.username);
+
+            if (csvEmailSet.has(row.email)) {
+                errors.push({
+                    row: row.rowNumber,
+                    field: 'email',
+                    value: row.email,
+                    message: 'Duplicate email in CSV'
+                });
+                continue;
+            }
+            csvEmailSet.add(row.email);
+
+            if (row.rollNo) {
+                const rollKey = `${row.classId}-${row.sectionId || 'none'}-${row.rollNo}`;
+                if (csvRollSet.has(rollKey)) {
+                    errors.push({
+                        row: row.rowNumber,
+                        field: 'rollNo',
+                        value: row.rollNo,
+                        message: 'Duplicate roll number in CSV for same class/section'
+                    });
+                    continue;
+                }
+                csvRollSet.add(rollKey);
+            }
+
+            validRows.push(row);
+        }
+
+        const usernames = validRows.map(r => r.username);
+        const emails = validRows.map(r => r.email);
+        const rollNos = validRows.filter(r => r.rollNo).map(r => r.rollNo);
+
+        const [existingUsernames, existingEmails, existingRolls] = await Promise.all([
+            Student.find({
+                school: schoolId,
+                username: { $in: usernames }
+            }).select('username').lean(),
+
+            Student.find({
+                email: { $in: emails },
+                school: { $ne: schoolId },
+                isActive: true
+            }).select('email').lean(),
+
+            Student.find({
+                school: schoolId,
+                rollNo: { $in: rollNos },
+                isActive: true
+            }).select('rollNo classInfo sectionInfo').lean()
+        ]);
+
+        const usernameSet = new Set(existingUsernames.map(u => u.username));
+        const emailSet = new Set(existingEmails.map(e => e.email.toLowerCase()));
+
+        const rollSet = new Set(
+            existingRolls.map(r =>
+                `${r.classInfo?.id}-${r.sectionInfo?.id || 'none'}-${r.rollNo}`
+            )
+        );
+
+        const studentDocs = [];
+        const emailJobs = [];
+
+        for (const row of validRows) {
+            if (usernameSet.has(row.username)) {
+                errors.push({
+                    row: row.rowNumber,
+                    field: 'username',
+                    value: row.username,
+                    message: 'Username already taken'
+                });
+                continue;
+            }
+
+            if (emailSet.has(row.email)) {
+                errors.push({
+                    row: row.rowNumber,
+                    field: 'email',
+                    value: row.email,
+                    message: 'Email already registered as active student in another school'
+                });
+                continue;
+            }
+
+            let classDoc;
+            try {
+                const result = await validateAndGetClassFee(
+                    row.classId,
+                    schoolId,
+                    row.discount || 0,
+                    row.isFixed || false
+                );
+                classDoc = result.classDoc;
+            } catch (error) {
+                errors.push({
+                    row: row.rowNumber,
+                    field: 'classId',
+                    value: row.classId,
+                    message: error.message
+                });
+                continue;
+            }
+
+            if (row.sectionId) {
+                const sectionExists = classDoc.sections.some(
+                    sec => sec._id.toString() === row.sectionId
+                );
+
+                if (!sectionExists) {
+                    errors.push({
+                        row: row.rowNumber,
+                        field: 'sectionId',
+                        value: row.sectionId,
+                        message: 'Section not found in this class'
+                    });
+                    continue;
+                }
+            }
+
+            if (row.rollNo) {
+                const rollKey = `${row.classId}-${row.sectionId || 'none'}-${row.rollNo}`;
+
+                if (rollSet.has(rollKey)) {
+                    errors.push({
+                        row: row.rowNumber,
+                        field: 'rollNo',
+                        value: row.rollNo,
+                        message: 'Roll number already exists in this class/section'
+                    });
+                    continue;
+                }
+            }
+
+            const existingSibling = await Student.findOne({
+                email: row.email,
+                school: schoolId
+            }).select('_id siblingGroupId').lean();
+
+            const siblingGroupId = existingSibling
+                ? (existingSibling.siblingGroupId || existingSibling._id)
+                : null;
+
+            const otpCode = common.generateOTP();
+            const otpExpiry = common.calculateOTPExpiry(10);
+
+            const student = {
+                name: row.name,
+                username: row.username,
+                email: row.email,
+                phone: row.phone,
+                address: row.address,
+                cnic: row.cnic,
+                fatherName: row.fatherName,
+                role: 'student',
+                rollNo: row.rollNo,
+                classInfo: { id: row.classId },
+                sectionInfo: { id: row.sectionId },
+                school: schoolId,
+                images: {
+                    cnicFront: null,
+                    cnicBack: null,
+                    recentPic: null
+                },
+                siblingGroupId,
+                // parentEmail: row.parentEmail,
+                isFixed: row.isFixed || false,
+                discount: row.discount || 0,
+                password: null,
+                verified: false,
+                isActive: true,
+                otp: {
+                    code: otpCode,
+                    expiresAt: otpExpiry,
+                    attempts: 0,
+                    lastAttempt: new Date()
+                },
+                verificationExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+            };
+
+            studentDocs.push(student);
+
+            emailJobs.push({
+                email: row.email,
+                otpCode,
+                name: row.name,
+                username: row.username
+            });
+        }
+
+        let insertedStudents = [];
+
+        if (studentDocs.length > 0) {
+            insertedStudents = await Student.insertMany(studentDocs, {
+                ordered: false
+            });
+
+            await Promise.all(
+                insertedStudents.map(async (student) => {
+                    await Student.updateMany(
+                        {
+                            email: student.email,
+                            school: schoolId
+                        },
+                        {
+                            $set: {
+                                siblingGroupId: student.siblingGroupId || student._id
+                            }
+                        }
+                    );
+                })
+            );
+
+            await School.findByIdAndUpdate(schoolId, {
+                $inc: { noOfStudents: insertedStudents.length }
+            });
+        }
+
+        if (insertedStudents.length > 0) {
+            const insertedEmailSet = new Set(
+                insertedStudents.map(s => s.email.toLowerCase())
+            );
+
+            const jobs = emailJobs.filter(job =>
+                insertedEmailSet.has(job.email.toLowerCase())
+            );
+
+            setImmediate(async () => {
+                await Promise.allSettled(
+                    jobs.map(job =>
+                        emailService.sendStudentRegistrationEmail(
+                            job.email,
+                            job.otpCode,
+                            job.name,
+                            job.username,
+                            schoolId
+                        )
+                    )
+                );
+            });
+        }
+
+        return res.status(201).json({
+            success: true,
+            message: `Imported ${insertedStudents.length} student(s).`,
+            summary: {
+                totalRows: rows.length,
+                imported: insertedStudents.length,
+                failed: errors.length
+            },
+            importedStudents: insertedStudents.map(s => ({
+                _id: s._id,
+                name: s.name,
+                username: s.username,
+                email: s.email,
+                rollNo: s.rollNo
+            })),
+            errors
+        });
+
+    } catch (err) {
+        console.error('addStudentFromCSV error:', err);
+
+        return res.status(500).json({
+            success: false,
+            message: err.message || 'Server error while importing students'
         });
     }
 };
@@ -283,7 +635,7 @@ const updateStudent = async (req, res) => {
             classId,
             sectionId,
             rollNo,
-            parentEmail,
+            // parentEmail,
             isFixed,
             discount
         } = req.body;
@@ -445,7 +797,7 @@ const updateStudent = async (req, res) => {
         if (discount !== undefined) student.discount = discount;
         if (isFixed !== undefined) student.isFixed = isFixed;
         if (fatherName !== undefined) student.fatherName = fatherName;
-        if (parentEmail !== undefined) student.parentEmail = parentEmail?.toLowerCase();
+        // if (parentEmail !== undefined) student.parentEmail = parentEmail?.toLowerCase();
 
         student.classInfo = classInfo;
         student.sectionInfo = sectionInfo;
@@ -676,52 +1028,6 @@ const getStudentById = async (req, res) => {
             }
         }
 
-        // Get siblings with their class/section names
-        // const siblings = await Student.find({
-        //     $or: [
-        //         { siblingGroupId: student.siblingGroupId },
-        //         { email: student.email, school: schoolId, _id: { $ne: id } }
-        //     ]
-        // })
-        //     .select("name username classInfo sectionInfo rollNo email discount isFixed")
-        //     .lean();
-
-        // const enrichedSiblings = await Promise.all(siblings.map(async (sibling) => {
-        //     let siblingClassInfo = sibling.classInfo;
-        //     let siblingSectionInfo = sibling.sectionInfo;
-
-        //     if (sibling.classInfo?.id) {
-        //         const classDoc = await ClassSection.findOne({
-        //             _id: sibling.classInfo.id,
-        //             school: schoolId
-        //         }).lean();
-
-        //         if (classDoc) {
-        //             siblingClassInfo = {
-        //                 id: classDoc._id,
-        //                 name: classDoc.class
-        //             };
-
-        //             if (sibling.sectionInfo?.id) {
-        //                 const section = classDoc.sections?.find(
-        //                     sec => sec._id.toString() === sibling.sectionInfo.id.toString()
-        //                 );
-        //                 if (section) {
-        //                     siblingSectionInfo = {
-        //                         id: section._id,
-        //                         name: section.name
-        //                     };
-        //                 }
-        //             }
-        //         }
-        //     }
-
-        //     return {
-        //         ...sibling,
-        //         classInfo: siblingClassInfo,
-        //         sectionInfo: siblingSectionInfo
-        //     };
-        // }));
 
         const studentResponse = {
             ...student,
@@ -731,8 +1037,6 @@ const getStudentById = async (req, res) => {
 
         return res.status(200).json({
             student: studentResponse,
-            // siblings: enrichedSiblings,
-            // siblingCount: enrichedSiblings.length
         });
 
     } catch (err) {
@@ -785,34 +1089,34 @@ const getStudentsBySection = async (req, res) => {
 };
 
 // Get students by parent email
-const getStudentsByParentEmail = async (req, res) => {
-    try {
-        const { email } = req.params;
-        const schoolId = req.user.school;
+// const getStudentsByParentEmail = async (req, res) => {
+//     try {
+//         const { email } = req.params;
+//         const schoolId = req.user.school;
 
-        const students = await Student.find({
-            parentEmail: { $regex: new RegExp(`^${email}$`, 'i') },
-            school: schoolId,
-            role: "student",
-            isActive: true
-        })
-            .select("name username classInfo sectionInfo rollNo discount")
-            .sort({ "classInfo.id": 1, rollNo: 1 });
+//         const students = await Student.find({
+//             parentEmail: { $regex: new RegExp(`^${email}$`, 'i') },
+//             school: schoolId,
+//             role: "student",
+//             isActive: true
+//         })
+//             .select("name username classInfo sectionInfo rollNo discount")
+//             .sort({ "classInfo.id": 1, rollNo: 1 });
 
-        return res.status(200).json({
-            message: "Students fetched successfully",
-            total: students.length,
-            parentEmail: email,
-            students
-        });
+//         return res.status(200).json({
+//             message: "Students fetched successfully",
+//             total: students.length,
+//             parentEmail: email,
+//             students
+//         });
 
-    } catch (err) {
-        console.error("Error fetching students by parent email:", err);
-        return res.status(500).json({
-            message: err.message || "Server error while fetching students by parent email"
-        });
-    }
-};
+//     } catch (err) {
+//         console.error("Error fetching students by parent email:", err);
+//         return res.status(500).json({
+//             message: err.message || "Server error while fetching students by parent email"
+//         });
+//     }
+// };
 
 // Get student siblings by email
 const getStudentSiblingsByEmail = async (req, res) => {
@@ -841,306 +1145,33 @@ const getStudentSiblingsByEmail = async (req, res) => {
     }
 };
 
-// Get deleted students
 const getDeletedStudents = async (req, res) => {
-    try {
-        const schoolId = req.user.school;
-        const {
-            page = 1,
-            limit = 10,
-            classId,
-            sectionId,
-            year,
-            status,
-            search
-        } = req.query;
-
-        const filter = {
-            school: schoolId,
-            isActive: false
-        };
-
-        if (status === 'passout') {
-            filter.status = 'passout';
-        } else if (status === 'left') {
-            filter.status = 'left';
-        } else if (status === 'deactivated') {
-            filter.status = { $ne: 'active' };
-        } else {
-            filter.status = { $in: ['passout', 'left'] };
-        }
-
-        if (classId) {
-            filter["classInfo.id"] = classId;
-        }
-        if (sectionId) {
-            filter["sectionInfo.id"] = sectionId;
-        }
-
-        if (year) {
-            const startDate = new Date(`${year}-01-01`);
-            const endDate = new Date(`${year}-12-31`);
-            filter["historyInfo.date"] = { $gte: startDate, $lte: endDate };
-        }
-
-        if (search) {
-            filter.$or = [
-                { name: { $regex: search, $options: 'i' } },
-                { username: { $regex: search, $options: 'i' } },
-                { email: { $regex: search, $options: 'i' } },
-                { rollNo: { $regex: search, $options: 'i' } }
-            ];
-        }
-
-        const skip = (parseInt(page) - 1) * parseInt(limit);
-
-        const [students, total] = await Promise.all([
-            Student.find(filter)
-                .select("-password -otp -forgotPasswordOTP -tokenVersion")
-                .skip(skip)
-                .limit(parseInt(limit))
-                .sort({ deactivatedAt: -1, createdAt: -1 })
-                .lean(),
-            Student.countDocuments(filter)
-        ]);
-
-        const classIds = new Set();
-
-        students.forEach(student => {
-            if (student.classInfo?.id) {
-                classIds.add(student.classInfo.id.toString());
-            }
-            if (student.historyInfo?.classId) {
-                classIds.add(student.historyInfo.classId.toString());
-            }
-        });
-
-        const classes = await ClassSection.find({
-            _id: { $in: Array.from(classIds) },
-            school: schoolId
-        }).lean();
-
-        const classMap = new Map();
-        classes.forEach(cls => {
-            classMap.set(cls._id.toString(), cls);
-        });
-
-        const getClassSectionInfo = (classId, sectionId) => {
-            if (!classId) return { classInfo: null, sectionInfo: null };
-
-            const classDoc = classMap.get(classId.toString());
-            if (!classDoc) return { classInfo: null, sectionInfo: null };
-
-            const classInfo = {
-                id: classDoc._id,
-                name: classDoc.class
-            };
-
-            let sectionInfo = null;
-            if (sectionId && classDoc.sections) {
-                const section = classDoc.sections.find(
-                    sec => sec._id.toString() === sectionId.toString()
-                );
-                if (section) {
-                    sectionInfo = {
-                        id: section._id,
-                        name: section.name
-                    };
-                }
-            }
-
-            return { classInfo, sectionInfo };
-        };
-
-        const studentsWithNames = students.map(student => {
-            const studentObj = { ...student };
-
-            if (studentObj.classInfo?.id) {
-                const { classInfo, sectionInfo } = getClassSectionInfo(
-                    studentObj.classInfo.id,
-                    studentObj.sectionInfo?.id
-                );
-                studentObj.classInfo = classInfo;
-                studentObj.sectionInfo = sectionInfo;
-            }
-
-            if (studentObj.historyInfo?.classId) {
-                const { classInfo, sectionInfo } = getClassSectionInfo(
-                    studentObj.historyInfo.classId,
-                    studentObj.historyInfo.sectionId
-                );
-
-                studentObj.historyInfo = {
-                    classInfo: classInfo,
-                    sectionInfo: sectionInfo,
-                    date: studentObj.historyInfo.date,
-                    reason: studentObj.historyInfo.reason
-                };
-            }
-
-            return studentObj;
-        });
-
-
-        return res.status(200).json({
-            total,
-            page: parseInt(page),
-            limit: parseInt(limit),
-            totalPages: Math.ceil(total / parseInt(limit)),
-            students: studentsWithNames
-        });
-
-    } catch (err) {
-        console.error("Error fetching students:", err);
-        return res.status(500).json({
-            message: err.message || "Server error while fetching students"
-        });
-    }
+    return common.getDeletedUsers(req, res, Student, 'student');
 };
 
-// Update own profile
-const updateOwnProfile = async (req, res) => {
-    try {
-        const userId = req.user._id;
-        const student = await Student.findById(userId);
-
-        if (!student) {
-            return res.status(404).json({ message: "Student not found" });
-        }
-
-        const updatedImages = await common.uploadFiles(req.files, student.images);
-
-        const updatableFields = {
-            name: req.body.name ?? student.name,
-            phone: req.body.phone ?? student.phone,
-            address: req.body.address ?? student.address,
-            cnic: req.body.cnic ?? student.cnic,
-            fatherName: req.body.fatherName ?? student.fatherName,
-            images: updatedImages,
-            updatedAt: new Date()
-        };
-
-        const updated = await Student.findByIdAndUpdate(
-            userId,
-            updatableFields,
-            { new: true }
-        ).select("-password -otp -forgotPasswordOTP");
-
-        return res.status(200).json({
-            message: "Profile updated successfully",
-            user: updated
-        });
-
-    } catch (err) {
-        console.error("Error updating profile:", err);
-        return res.status(500).json({
-            message: err.message || "Server error while updating profile"
-        });
-    }
+const restoreStudentAccount = async (req, res) => {
+    return common.restoreUser(req, res, Student);
 };
 
-const deleteOwnAccount = async (req, res) => {
+const deleteStudentAccount = async (req, res) => {
     const { role } = req.user;
-    let Model;
-
-    if (['student', 'admin_office'].includes(role)) {
-        Model = Student;
-    } else {
+    if (!['student', 'admin_office'].includes(role)) {
         return res.status(400).json({
             success: false,
             message: "Invalid user type for account deletion"
         });
     }
-
-    return common.toggleUserStatus(req, res, Model, true);
+    return common.toggleUserStatus(req, res, Student, true);
 };
 
-const restoreOwnAccount = async (req, res) => {
-    try {
-        const userId = req.params.userId;
-        const schoolId = req.user.school;
-        const role = req.user.role || 'school';
-
-        let Model = Student;
-        if (['school', 'admin_office'].includes(!role)) {
-            return res.status(400).json({
-                success: false,
-                message: "You are not eligible to restore this account."
-            });
-        }
-
-        const user = await Model.findOne({
-            _id: userId,
-            school: schoolId,
-            isActive: false
-        });
-
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: "No deactivated account found"
-            });
-        }
-
-        if (user.isActive !== false) {
-            return res.status(400).json({
-                success: false,
-                message: "User account is already active"
-            });
-        }
-
-        if (!user.deactivatedAt) {
-            return res.status(400).json({
-                success: false,
-                message: "User account is not marked for deletion"
-            });
-        }
-
-        const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
-        const timeSinceDeactivation = Date.now() - new Date(user.deactivatedAt).getTime();
-
-        if (timeSinceDeactivation >= sevenDaysInMs) {
-            return res.status(400).json({
-                success: false,
-                message: "Account cannot be restored. 7 days have already passed. Account is permanently deactivated.",
-                canRestore: false,
-                deactivatedAt: user.deactivatedAt,
-                daysPassed: Math.floor(timeSinceDeactivation / (24 * 60 * 60 * 1000))
-            });
-        }
-
-        if (user.isRestorable === false) {
-            return res.status(400).json({
-                success: false,
-                message: "Account is not eligible for restoration."
-            });
-        }
-
-        user.isActive = true;
-        user.deactivatedAt = null;
-        user.isRestorable = true;
-        user.tokenVersion = (user.tokenVersion || 0) + 1;
-        await user.save();
-
-        return res.status(200).json({
-            success: true,
-            message: `Account restored successfully for ${user.name}`,
-        });
-
-    } catch (err) {
-        console.error("restoreOwnAccount error:", err);
-        return res.status(500).json({
-            success: false,
-            message: "Server error",
-            error: err.message
-        });
-    }
-};
-
-// Toggle student status
 const toggleStudentStatus = async (req, res) => {
     return common.toggleUserStatus(req, res, Student);
 };
+
+const updateStudentProfile = async (req, res) => {
+    return common.updateOwnProfile(req, res, Student);
+};
+
 
 // Auth functions using common controller
 const sendOTP = (req, res) => common.sendOTP(req, res, Student, 'student');
@@ -1156,16 +1187,17 @@ const login = (req, res) => common.login(req, res, Student, 'student');
 
 module.exports = {
     addStudent,
+    addStudentFromCSV,
     updateStudent,
     getAllStudents,
     getStudentById,
     getStudentsBySection,
-    getStudentsByParentEmail,
+    // getStudentsByParentEmail,
     getStudentSiblingsByEmail,
     getDeletedStudents,
-    updateOwnProfile,
-    deleteOwnAccount,
-    restoreOwnAccount,
+    updateStudentProfile,
+    deleteStudentAccount,
+    restoreStudentAccount,
     toggleStudentStatus,
     sendOTP,
     verifyOTP,

@@ -476,148 +476,31 @@ const getStaffById = async (req, res) => {
     }
 };
 
-// Update own profile
-const updateOwnProfile = async (req, res) => {
-    try {
-        const userId = req.user._id;
-        const existing = await Staff.findById(userId);
-
-        if (!existing) {
-            return res.status(404).json({ message: "User not found" });
-        }
-
-        const updatedImages = await common.uploadFiles(req.files, existing.images);
-
-        const updatableFields = {
-            name: req.body.name ?? existing.name,
-            phone: req.body.phone ?? existing.phone,
-            address: req.body.address ?? existing.address,
-            cnic: req.body.cnic ?? existing.cnic,
-            images: updatedImages,
-            salary: req.body.salary ?? existing.salary,
-            joiningDate: req.body.joiningDate ?? existing.joiningDate,
-            updatedAt: new Date()
-        };
-
-        const updated = await Staff.findByIdAndUpdate(
-            userId,
-            updatableFields,
-            { new: true }
-        ).select("-password -otp -forgotPasswordOTP");
-
-        return res.status(200).json({
-            message: "Profile updated successfully",
-            user: updated
-        });
-
-    } catch (err) {
-        console.error("Error updating profile:", err);
-        return res.status(500).json({
-            message: err.message || "Server error while updating profile"
-        });
-    }
+const getDeletedStaff = async (req, res) => {
+    return common.getDeletedUsers(req, res, Staff, 'staff');
 };
 
-const deleteOwnAccount = async (req, res) => {
-    const { role } = req.user;
-    let Model;
+const restoreStaffAccount = async (req, res) => {
+    return common.restoreUser(req, res, Staff);
+};
 
-    if (['teacher', 'admin_office'].includes(role)) {
-        Model = Staff;
-    } else {
+const deleteStaffAccount = async (req, res) => {
+    const { role } = req.user;
+    if (!['teacher', 'admin_office'].includes(role)) {
         return res.status(400).json({
             success: false,
             message: "Invalid user type for account deletion"
         });
     }
-
-    return common.toggleUserStatus(req, res, Model, true);
-};
-
-const restoreOwnAccount = async (req, res) => {
-    try {
-        const userId = req.params.userId;
-        const schoolId = req.user.school;
-        const role = req.user.role || "school";
-
-        let Model = Staff;
-        if (['school', 'admin_office'].includes(!role)) {
-            return res.status(400).json({
-                success: false,
-                message: "You are not eligible to restore accounts."
-            });
-        }
-
-        const user = await Model.findOne({
-            _id: userId,
-            school: schoolId,
-            isActive: false
-        });
-
-        if (!user) {
-            return res.status(404).json({
-                success: false,
-                message: "No deactivated account found"
-            });
-        }
-
-        if (user.isActive !== false) {
-            return res.status(400).json({
-                success: false,
-                message: "User account is already active"
-            });
-        }
-
-        if (!user.deactivatedAt) {
-            return res.status(400).json({
-                success: false,
-                message: "User account is not marked for deletion"
-            });
-        }
-
-        const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
-        const timeSinceDeactivation = Date.now() - new Date(user.deactivatedAt).getTime();
-
-        if (timeSinceDeactivation >= sevenDaysInMs) {
-            return res.status(400).json({
-                success: false,
-                message: "Account cannot be restored. 7 days have already passed. Account is permanently deactivated.",
-                canRestore: false,
-                deactivatedAt: user.deactivatedAt,
-                daysPassed: Math.floor(timeSinceDeactivation / (24 * 60 * 60 * 1000))
-            });
-        }
-
-        if (user.isRestorable === false) {
-            return res.status(400).json({
-                success: false,
-                message: "Account is not eligible for restoration."
-            });
-        }
-
-        user.isActive = true;
-        user.deactivatedAt = null;
-        user.isRestorable = true;
-        user.tokenVersion = (user.tokenVersion || 0) + 1;
-        await user.save();
-
-        return res.status(200).json({
-            success: true,
-            message: `Account restored successfully for ${user.name}`,
-        });
-
-    } catch (err) {
-        console.error("restoreOwnAccount error:", err);
-        return res.status(500).json({
-            success: false,
-            message: "Server error",
-            error: err.message
-        });
-    }
+    return common.toggleUserStatus(req, res, Staff, true);
 };
 
 const toggleStaffStatus = async (req, res) => {
     return common.toggleUserStatus(req, res, Staff);
+};
+
+const updateStaffProfile = async (req, res) => {
+    return common.updateOwnProfile(req, res, Staff);
 };
 
 const addStaffPermissions = async (req, res) => {
@@ -802,9 +685,10 @@ module.exports = {
     updateStaff,
     getAllStaff,
     getStaffById,
-    updateOwnProfile,
-    deleteOwnAccount,
-    restoreOwnAccount,
+    getDeletedStaff,
+    updateStaffProfile,
+    deleteStaffAccount,
+    restoreStaffAccount,
     toggleStaffStatus,
     addStaffPermissions,
     removeStaffPermissions,

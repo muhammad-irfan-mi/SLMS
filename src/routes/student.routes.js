@@ -4,7 +4,7 @@ const { protect, isAdminOffice, isTeacherOrAdminOfficeOrSchool, allowedRoles, is
 const { upload } = require("../utils/multer");
 const validate = require("../middlewares/validate");
 const studentValidation = require("../validators/student.validation");
-const { sendOTP, verifyOTP, resendOTP, setPasswordAfterOTP, login, forgotPassword, verifyForgotPasswordOTP, resetPasswordWithOTP, resetPassword, resendForgotPasswordOTP, addStudent, getAllStudents, getStudentsBySection, getStudentSiblingsByEmail, getStudentsByParentEmail, getDeletedStudents, getStudentById, updateOwnProfile, toggleStudentStatus, updateStudent, deleteOwnAccount, restoreOwnAccount } = require("../controllers/student.controller");
+const { sendOTP, verifyOTP, resendOTP, setPasswordAfterOTP, login, forgotPassword, verifyForgotPasswordOTP, resetPasswordWithOTP, resetPassword, resendForgotPasswordOTP, addStudent, getAllStudents, getStudentsBySection, getStudentSiblingsByEmail, getDeletedStudents, getStudentById, toggleStudentStatus, updateStudent, restoreStudentAccount, addStudentFromCSV, updateStudentProfile, deleteStudentAccount } = require("../controllers/student.controller");
 const { checkPermission } = require("../middlewares/permission");
 
 // Public auth routes
@@ -82,6 +82,15 @@ router.post(
     addStudent
 );
 
+router.post(
+    "/import-csv",
+    protect,
+    isAdminOffice,
+    upload.single('file'),
+    checkPermission("student"),
+    addStudentFromCSV
+);
+
 router.put(
     "/:id",
     protect,
@@ -156,12 +165,12 @@ router.put(
         { name: "recentPic", maxCount: 1 },
     ]),
     validate(studentValidation.profile.update),
-    updateOwnProfile
+    updateStudentProfile
 );
 
-router.delete("/me/account", protect, isStudent, deleteOwnAccount);
+router.delete("/account", protect, isStudent, deleteStudentAccount);
 
-router.post("/account/restore/:userId",protect, isAdminOffice,checkPermission("student"), restoreOwnAccount);
+router.post("/account/restore/:userId",protect, isAdminOffice,checkPermission("student"), restoreStudentAccount);
 
 router.delete(
     "/:id",
