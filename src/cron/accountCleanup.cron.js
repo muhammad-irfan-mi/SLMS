@@ -94,7 +94,7 @@ const startAccountCleanupCron = () => {
     console.log("✅ Account cleanup job scheduled.");
 
     // Production
-    cron.schedule("* * * * *", async () => {
+    cron.schedule("0 0 * * *", async () => {
 
         console.log("[CRON] Running Account Cleanup...");
 
