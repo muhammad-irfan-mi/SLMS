@@ -16,7 +16,7 @@ router.use(protect);
 
 router.post('/', checkPermission('cash'), createCashAccount);
 router.get('/', checkPermission('cash'), getCashAccount);
-router.get('/:id', checkPermission('cash'), getCashAccountDetails);
+// router.get('/:id', checkPermission('cash'), getCashAccountDetails);
 router.put('/:id', checkPermission('cash'), updateCashAccount);
 router.delete('/:id', checkPermission('cash'), deleteCashAccount);
 
